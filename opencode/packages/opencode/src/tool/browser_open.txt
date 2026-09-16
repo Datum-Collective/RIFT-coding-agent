@@ -1,0 +1,10 @@
+- Opens a URL in the user's default OS browser
+- Takes a URL as input
+- Returns a simple confirmation, no page content is read back
+- Use this tool when the user asks to open, view, or show something in the browser
+
+Usage notes:
+  - The URL must be a fully-formed valid URL
+  - HTTP URLs will be automatically upgraded to HTTPS
+  - Runs `open` on macOS, `xdg-open` on Linux, and `start` on Windows
+  - This tool performs an external side effect, so it always goes through the permission/approval flow
