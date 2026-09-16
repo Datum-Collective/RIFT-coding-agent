@@ -1,0 +1,14 @@
+{
+  "main.go": {
+    "mtime": 1788864542.307764,
+    "seen": 1788884359.176845,
+    "ast_hash": "e46008b122fe688af515395eabc9e05a",
+    "semantic_hash": "e46008b122fe688af515395eabc9e05a"
+  },
+  "main_test.go": {
+    "mtime": 1788864551.460353,
+    "seen": 1788884359.1768498,
+    "ast_hash": "dec7290bb691079a5131861ed3c69f43",
+    "semantic_hash": "dec7290bb691079a5131861ed3c69f43"
+  }
+}
