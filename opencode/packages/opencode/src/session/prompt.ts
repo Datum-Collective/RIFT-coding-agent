@@ -36,12 +36,13 @@ import { Permission } from "@/permission"
 import { SessionStatus } from "./status"
 import { LLM } from "./llm"
 import { Shell } from "@opencode-ai/core/shell"
-import { ShellID } from "@/tool/shell/id"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Truncate } from "@/tool/truncate"
 import { Image } from "@/image/image"
 import { decodeDataUrl } from "@/util/data-url"
 import { Process } from "@/util/process"
+import { Verify } from "./verify"
+import { ShellID } from "@/tool/shell/id"
 import { Cause, Effect, Exit, Latch, Layer, Option, Scope, Context, Schema, Types } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { TaskTool, type TaskPromptOps } from "@/tool/task"
@@ -112,6 +113,27 @@ function parseVibePlan(text: string): VibePlan {
     throw new Error("Vibe Mode planner returned an empty or invalid plan")
   }
   return parsed.value as unknown as VibePlan
+}
+
+const VIBE_REVIEW_SYSTEM_PROMPT = `You are the reviewer for Vibe Mode. A cheaper executor model just attempted one step of your plan. Judge only from the transcript whether the step was completed fully and correctly: the described change was actually made, tool calls succeeded, nothing was left half-done, and no obvious bugs or unrelated edits were introduced. Output JSON only with this exact shape:
+{"approved":true,"feedback":"short reason"}
+If not approved, feedback must state exactly what is wrong and what the executor must do to fix it. Do not include prose outside the JSON object.`
+
+const VibeReviewSchema = Schema.Struct({
+  approved: Schema.Boolean,
+  feedback: Schema.String,
+})
+
+function parseVibeReview(text: string) {
+  const start = text.indexOf("{")
+  const end = text.lastIndexOf("}")
+  if (start === -1 || end <= start) return undefined
+  try {
+    const parsed = Schema.decodeUnknownOption(VibeReviewSchema)(JSON.parse(text.slice(start, end + 1)))
+    return Option.isSome(parsed) ? parsed.value : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function formatVibePlan(plan: VibePlan) {
@@ -696,7 +718,7 @@ const layer = Layer.effect(
         (cfg.executorModel ? Provider.parseModel(cfg.executorModel) : undefined)
       if (!planner || !executor) {
         throw new Error(
-          "Vibe Mode is enabled but plannerModel and executorModel are not configured. Run /vibe to select both models.",
+          "You haven't chosen your Vibe Mode models yet! Run /vibe to pick a smart planner and a cheap executor, then send your prompt again.",
         )
       }
       return {
@@ -716,18 +738,14 @@ const layer = Layer.effect(
         instruction.system().pipe(Effect.orDie),
         sys.mcp(agent, session.permission),
       ])
-      return [
-        ...env,
-        ...instructions,
-        ...(mcpInstructions ? [mcpInstructions] : []),
-        ...(skills ? [skills] : []),
-      ]
+      return [...env, ...instructions, ...(mcpInstructions ? [mcpInstructions] : []), ...(skills ? [skills] : [])]
     })
 
     const vibeStepMessage = (input: {
       lastUser: SessionV1.User
       step: VibePlan["steps"][number]
       model: Provider.Model
+      feedback?: string
     }): SessionV1.WithParts => {
       const messageID = MessageID.ascending()
       const text = [
@@ -735,6 +753,12 @@ const layer = Layer.effect(
         `Target files: ${input.step.files.join(", ") || "not specified"}`,
         `Target functions: ${input.step.functions.join(", ") || "not specified"}`,
         `Instructions: ${input.step.description}`,
+        ...(input.feedback
+          ? [
+              `A previous attempt at this step was rejected by the reviewer. Its changes are already applied; fix them rather than starting over.`,
+              `Reviewer feedback: ${input.feedback}`,
+            ]
+          : []),
         "Work only on this step. Verify the result before replying, then stop.",
       ].join("\n")
       return {
@@ -1206,6 +1230,101 @@ const layer = Layer.effect(
       throw new Error("Impossible")
     })
 
+    // Run the project's own checks once the agent claims it is done, and attach the real results.
+    const runVerification = Effect.fn("SessionPrompt.runVerification")(function* (
+      sessionID: SessionID,
+      baseline: string[],
+    ) {
+      const cfg = yield* config.get()
+      if (cfg.verify === false) return
+      const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+      if (session.parentID) return
+      const all = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
+        Effect.provideService(Database.Service, database),
+      )
+      const userIndex = all.findLastIndex(
+        (m) => m.info.role === "user" && m.parts.some((p) => p.type === "text" && !p.synthetic),
+      )
+      const turn = all.slice(userIndex + 1)
+      const last = turn.findLast((m) => m.info.role === "assistant" && m.info.mode !== "vibe-planner")
+      if (!last || last.info.role !== "assistant" || last.info.error) return
+      const tools = turn.flatMap((m) =>
+        m.parts.flatMap((p) => (p.type === "tool" ? [{ tool: p.tool, status: p.state.status }] : [])),
+      )
+      if (!Verify.editedFiles(tools)) return
+      const ctx = yield* InstanceState.context
+      yield* Effect.logInfo("verification", { "session.id": sessionID })
+      const checks = yield* Effect.promise(() =>
+        Verify.resolve(ctx.directory, { commands: cfg.verify_commands ? [...cfg.verify_commands] : undefined }),
+      )
+      const entries: Verify.Entry[] = checks.map((check) => ({ check }))
+      const partID = PartID.ascending()
+      const publish = (done: boolean, scopeFiles: string[] = []) =>
+        sessions.updatePart({
+          id: partID,
+          messageID: last.info.id,
+          sessionID,
+          type: "text",
+          text: Verify.format({ entries, scopeFiles, scopeWarnFiles: cfg.verify_scope_warn_files ?? 15, done }),
+        } satisfies SessionV1.TextPart)
+
+      const agent = yield* agents.get(last.info.agent)
+      const ruleset = Permission.merge(agent?.permission ?? [], session.permission ?? [])
+      const timeoutMs = cfg.verify_timeout_ms ?? 10 * 60 * 1000
+
+      yield* Effect.gen(function* () {
+        yield* publish(false)
+        // Sequential on purpose: checks often share build caches and lockfiles.
+        for (const entry of entries) {
+          const command = entry.check.command
+          // Verification runs shell commands, so it goes through the same permission rules as the bash tool.
+          const denied = yield* permission
+            .ask({
+              permission: ShellID.ToolID,
+              patterns: [command],
+              always: [command],
+              sessionID,
+              metadata: { command, source: "verification" },
+              ruleset,
+            })
+            .pipe(
+              Effect.as(false),
+              Effect.catch(() => Effect.succeed(true)),
+            )
+          entry.result = denied
+            ? Verify.notRun(entry.check, "permission denied")
+            : yield* Effect.promise(async (signal) => {
+                try {
+                  return await Verify.runCheck(entry.check, ctx.directory, {
+                    timeoutMs,
+                    cancel: signal,
+                    shell: Shell.acceptable(cfg.shell),
+                  })
+                } catch (error) {
+                  return Verify.notRun(
+                    entry.check,
+                    `could not start: ${error instanceof Error ? error.message : String(error)}`,
+                  )
+                }
+              })
+          yield* publish(false)
+        }
+        const before = new Set(baseline)
+        const scopeFiles = (yield* Effect.promise(() => Verify.changedFiles(ctx.directory))).filter(
+          (file) => !before.has(file),
+        )
+        yield* publish(true, scopeFiles)
+      }).pipe(
+        // A cancelled session must not leave the report stuck on "queued".
+        Effect.onInterrupt(() =>
+          Effect.gen(function* () {
+            for (const entry of entries) entry.result ??= Verify.notRun(entry.check, "cancelled")
+            yield* publish(true)
+          }).pipe(Effect.ignore),
+        ),
+      )
+    })
+
     const runLoop: (sessionID: SessionID) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.run")(
       function* (sessionID: SessionID) {
         const ctx = yield* InstanceState.context
@@ -1218,6 +1337,13 @@ const layer = Layer.effect(
         const vibeEscalated = new Set<number>()
         let vibeStepUserID: MessageID | undefined
         let vibeAdvancedAssistantID: MessageID | undefined
+        let vibeRetryPending = false
+        const vibeReviewEscalated = new Set<number>()
+        const verifyBaseline = yield* Effect.promise(() => Verify.changedFiles(ctx.directory)).pipe(
+          Effect.catchCause(() => Effect.succeed([] as string[])),
+        )
+        const vibeReviewRounds = new Map<number, number>()
+        const vibeFeedback = new Map<number, string>()
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
 
         const reviseVibeStep = Effect.fn("SessionPrompt.reviseVibeStep")(function* (input: {
@@ -1257,6 +1383,104 @@ const layer = Layer.effect(
           return parseVibePlan(text)
         })
 
+        const recordPlannerMessage = Effect.fn("SessionPrompt.recordPlannerMessage")(function* (input: {
+          agent: Agent.Info
+          parentID: MessageID
+          model: Provider.Model
+          text: string
+        }) {
+          const message: SessionV1.Assistant = yield* sessions.updateMessage({
+            id: MessageID.ascending(),
+            sessionID,
+            parentID: input.parentID,
+            role: "assistant",
+            mode: "vibe-planner",
+            agent: input.agent.name,
+            path: { cwd: ctx.directory, root: ctx.worktree },
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            modelID: input.model.id,
+            providerID: input.model.providerID,
+            time: { created: Date.now(), completed: Date.now() },
+            finish: "stop",
+          })
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: message.id,
+            sessionID,
+            type: "text",
+            text: input.text,
+          } satisfies SessionV1.TextPart)
+        })
+
+        const reviewVibeStep = Effect.fn("SessionPrompt.reviewVibeStep")(function* (input: {
+          agent: Agent.Info
+          user: SessionV1.User
+          stepUserID: MessageID
+          step: VibePlan["steps"][number]
+          model: Provider.Model
+        }) {
+          const all = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
+          const transcript = all
+            .filter((item) => item.info.id >= input.stepUserID)
+            .sort((a, b) => (a.info.id < b.info.id ? -1 : 1))
+          const system = yield* loadSystemContext(input.agent, input.model, session)
+          const messages = yield* MessageV2.toModelMessagesEffect(transcript, input.model)
+          // The reviewer has no tools, so show it the files as they are on disk right now.
+          const files = yield* Effect.forEach(
+            input.step.files,
+            (file) =>
+              Effect.promise(async () => {
+                const abs = path.resolve(ctx.directory, file)
+                if (path.relative(ctx.directory, abs).startsWith("..")) return undefined
+                const text = await Bun.file(abs).text()
+                const max = 100_000
+                const body =
+                  text.length > max
+                    ? `${text.slice(0, max)}\n… (truncated, ${text.length - max} more characters)`
+                    : text
+                return `--- ${file} ---\n${body}`
+              }).pipe(Effect.catchCause(() => Effect.succeed(undefined))),
+            { concurrency: 4 },
+          )
+          const fileContext = files.filter((item): item is string => !!item).join("\n\n")
+          const text = yield* llm
+            .stream({
+              user: input.user,
+              sessionID,
+              model: input.model,
+              agent: input.agent,
+              system: [
+                VIBE_REVIEW_SYSTEM_PROMPT,
+                ...system,
+                ...(fileContext ? [`Current contents of the step's target files:\n${fileContext}`] : []),
+              ],
+              messages: [
+                ...messages,
+                {
+                  role: "user" as const,
+                  content: `Review the executor's work on this step now.\nStep: ${JSON.stringify(input.step)}`,
+                },
+              ],
+              tools: {},
+              toolChoice: "none",
+              retries: 2,
+            })
+            .pipe(
+              Stream.filter(LLMEvent.is.textDelta),
+              Stream.map((event) => event.text),
+              Stream.mkString,
+              Effect.orDie,
+            )
+          // An unparseable verdict must not silently approve or wedge the loop.
+          return (
+            parseVibeReview(text) ?? {
+              approved: false,
+              feedback: "Reviewer returned an unparseable verdict; re-verify the step.",
+            }
+          )
+        })
+
         while (true) {
           yield* status.set(sessionID, { type: "busy" })
           yield* Effect.logInfo("loop", { "session.id": sessionID, step })
@@ -1269,9 +1493,14 @@ const layer = Layer.effect(
 
           if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
 
-          const lastAssistantMsg = msgs.findLast(
-            (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
-          )
+          // Planner notes (plan, review verdicts) are stored as assistant messages; skip them so the
+          // executor's own turn decides whether a step finished.
+          const turnAssistantMsg =
+            lastAssistant?.mode === "vibe-planner"
+              ? msgs.findLast((msg) => msg.info.role === "assistant" && msg.info.mode !== "vibe-planner")
+              : msgs.findLast((msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id)
+          const turnAssistant = turnAssistantMsg?.info.role === "assistant" ? turnAssistantMsg.info : undefined
+          const lastAssistantMsg = turnAssistantMsg
           // Some providers return "stop" even when the assistant message contains
           // tool calls. Keep the loop running so tool results can be sent back to
           // the model, but ignore cleanup-marked interrupted orphans.
@@ -1281,17 +1510,17 @@ const layer = Layer.effect(
             ) ?? false
 
           if (
-            lastAssistant?.finish &&
-            !["tool-calls", "unknown"].includes(lastAssistant.finish) &&
+            turnAssistant?.finish &&
+            !["tool-calls", "unknown"].includes(turnAssistant.finish) &&
             !hasToolCalls &&
-            lastAssistant.parentID === lastUser.id &&
-            lastAssistant.mode !== "vibe-planner" &&
-            lastAssistant.id !== vibeAdvancedAssistantID
+            turnAssistant.parentID === lastUser.id &&
+            turnAssistant.id !== vibeAdvancedAssistantID &&
+            !vibeRetryPending
           ) {
             if (vibePlan && vibeStepIndex + 1 < vibePlan.steps.length) {
               vibeStepIndex++
               vibeStepUserID = undefined
-              vibeAdvancedAssistantID = lastAssistant.id
+              vibeAdvancedAssistantID = turnAssistant.id
               continue
             }
             const orphan = lastAssistantMsg?.parts.find(
@@ -1300,7 +1529,7 @@ const layer = Layer.effect(
             if (orphan) {
               yield* Effect.logWarning("loop exit with orphaned interrupted tool", {
                 "session.id": sessionID,
-                messageID: lastAssistant.id,
+                messageID: turnAssistant.id,
                 tool: orphan.tool,
                 callID: orphan.callID,
               })
@@ -1309,6 +1538,7 @@ const layer = Layer.effect(
             break
           }
 
+          vibeRetryPending = false
           step++
           if (step === 1)
             yield* title({
@@ -1386,28 +1616,12 @@ const layer = Layer.effect(
                 Effect.orDie,
               )
             vibePlan = parseVibePlan(plannerText)
-            const planMessage: SessionV1.Assistant = yield* sessions.updateMessage({
-              id: MessageID.ascending(),
-              sessionID,
+            yield* recordPlannerMessage({
+              agent,
               parentID: lastUser.id,
-              role: "assistant",
-              mode: "vibe-planner",
-              agent: agent.name,
-              path: { cwd: ctx.directory, root: ctx.worktree },
-              cost: 0,
-              tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-              modelID: vibeModels.planner.id,
-              providerID: vibeModels.planner.providerID,
-              time: { created: Date.now(), completed: Date.now() },
-              finish: "stop",
-            })
-            yield* sessions.updatePart({
-              id: PartID.ascending(),
-              messageID: planMessage.id,
-              sessionID,
-              type: "text",
+              model: vibeModels.planner,
               text: formatVibePlan(vibePlan),
-            } satisfies SessionV1.TextPart)
+            })
           }
           const turnModel = vibeModels?.executor ?? model
           const maxSteps = agent.steps ?? Infinity
@@ -1426,6 +1640,7 @@ const layer = Layer.effect(
               lastUser,
               step: vibePlan.steps[vibeStepIndex]!,
               model: turnModel,
+              feedback: vibeFeedback.get(vibeStepIndex),
             })
             yield* sessions.updateMessage(stepMessage.info)
             for (const part of stepMessage.parts) yield* sessions.updatePart(part)
@@ -1530,24 +1745,26 @@ const layer = Layer.effect(
               sessionID,
               parentSessionID: session.parentID,
               system,
-              messages: [...modelMsgs, ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS_PROMPT }] : [])],
+              messages: [
+                ...modelMsgs,
+                ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS_PROMPT }] : []),
+              ],
               tools,
               model: turnModel,
               toolChoice: format.type === "json_schema" ? "required" : undefined,
             })
 
             if (vibePlan) {
-              const current = (yield* sessions.messages({ sessionID, limit: 100 }).pipe(Effect.orDie)).find(
-                (item) => item.info.id === handle.message.id,
+              const current = yield* MessageV2.get({ sessionID, messageID: handle.message.id }).pipe(
+                Effect.provideService(Database.Service, database),
+                Effect.orDie,
               )
-              const output = current?.parts
+              const output = current.parts
                 .filter((part): part is SessionV1.TextPart => part.type === "text")
                 .map((part) => part.text)
                 .join("\n")
                 .toLowerCase()
-              const toolFailed = current?.parts.some(
-                (part) => part.type === "tool" && part.state.status === "error",
-              )
+              const toolFailed = current.parts.some((part) => part.type === "tool" && part.state.status === "error")
               const reportedFailure =
                 output?.includes("can't proceed") ||
                 output?.includes("cannot proceed") ||
@@ -1557,7 +1774,8 @@ const layer = Layer.effect(
               if (failed) {
                 const attempt = (vibeAttempts.get(vibeStepIndex) ?? 0) + 1
                 vibeAttempts.set(vibeStepIndex, attempt)
-                const maxAttempts = Math.max(1, (yield* config.get()).vibe_max_attempts ?? 2)
+                const configuredAttempts = (yield* config.get()).vibe_max_attempts ?? 2
+                const maxAttempts = configuredAttempts <= 0 ? Infinity : configuredAttempts
                 if (vibeEscalated.has(vibeStepIndex)) return "break" as const
                 if (attempt >= maxAttempts) {
                   vibeEscalated.add(vibeStepIndex)
@@ -1573,32 +1791,86 @@ const layer = Layer.effect(
                   vibePlan.steps[vibeStepIndex] = revised.steps[0]!
                   vibeAttempts.set(vibeStepIndex, 0)
                   vibeStepUserID = undefined
-                  const revisedMessage: SessionV1.Assistant = yield* sessions.updateMessage({
-                    id: MessageID.ascending(),
-                    sessionID,
+                  yield* recordPlannerMessage({
+                    agent,
                     parentID: executionUser.id,
-                    role: "assistant",
-                    mode: "vibe-planner",
-                    agent: agent.name,
-                    path: { cwd: ctx.directory, root: ctx.worktree },
-                    cost: 0,
-                    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-                    modelID: vibeModels!.planner.id,
-                    providerID: vibeModels!.planner.providerID,
-                    time: { created: Date.now(), completed: Date.now() },
-                    finish: "stop",
-                  })
-                  yield* sessions.updatePart({
-                    id: PartID.ascending(),
-                    messageID: revisedMessage.id,
-                    sessionID,
-                    type: "text",
+                    model: vibeModels!.planner,
                     text: `Revised Vibe Mode step\n${formatVibePlan(revised)}`,
-                  } satisfies SessionV1.TextPart)
+                  })
                 }
                 return "continue" as const
               }
               vibeAttempts.delete(vibeStepIndex)
+
+              const reviewedStep = vibePlan.steps[vibeStepIndex]
+              if ((yield* config.get()).vibe_review !== false && vibeStepUserID && reviewedStep) {
+                const step = reviewedStep
+                const verdict = yield* reviewVibeStep({
+                  agent,
+                  user: executionUser,
+                  stepUserID: vibeStepUserID,
+                  step,
+                  model: vibeModels!.planner,
+                })
+                const label = `Vibe Mode review of step ${vibeStepIndex + 1}/${vibePlan.steps.length}`
+                if (verdict.approved) {
+                  vibeReviewRounds.delete(vibeStepIndex)
+                  vibeFeedback.delete(vibeStepIndex)
+                  yield* recordPlannerMessage({
+                    agent,
+                    parentID: executionUser.id,
+                    model: vibeModels!.planner,
+                    text: `${label}: approved${verdict.feedback ? `\n${verdict.feedback}` : ""}`,
+                  })
+                } else {
+                  const rounds = (vibeReviewRounds.get(vibeStepIndex) ?? 0) + 1
+                  vibeReviewRounds.set(vibeStepIndex, rounds)
+                  const configuredRounds = (yield* config.get()).vibe_review_max_rounds ?? 2
+                  const maxRounds = configuredRounds <= 0 ? Infinity : configuredRounds
+                  yield* recordPlannerMessage({
+                    agent,
+                    parentID: executionUser.id,
+                    model: vibeModels!.planner,
+                    text: `${label}: changes requested (${rounds}/${Number.isFinite(maxRounds) ? maxRounds : "unlimited"})\n${verdict.feedback}`,
+                  })
+                  if (rounds < maxRounds) {
+                    vibeFeedback.set(vibeStepIndex, verdict.feedback)
+                    vibeStepUserID = undefined
+                    vibeRetryPending = true
+                    return "continue" as const
+                  }
+                  if (!vibeReviewEscalated.has(vibeStepIndex)) {
+                    vibeReviewEscalated.add(vibeStepIndex)
+                    const revised = yield* reviseVibeStep({
+                      agent,
+                      user: executionUser,
+                      messages: executionMessages,
+                      step,
+                      failure: `Reviewer rejected the executor's work ${rounds} times: ${verdict.feedback}`,
+                      model: vibeModels!.planner,
+                    })
+                    vibePlan.steps[vibeStepIndex] = revised.steps[0]!
+                    vibeReviewRounds.delete(vibeStepIndex)
+                    vibeFeedback.delete(vibeStepIndex)
+                    vibeStepUserID = undefined
+                    vibeRetryPending = true
+                    yield* recordPlannerMessage({
+                      agent,
+                      parentID: executionUser.id,
+                      model: vibeModels!.planner,
+                      text: `Revised Vibe Mode step\n${formatVibePlan(revised)}`,
+                    })
+                    return "continue" as const
+                  }
+                  // Already revised once: stop looping and move on rather than burn tokens forever.
+                  yield* recordPlannerMessage({
+                    agent,
+                    parentID: executionUser.id,
+                    model: vibeModels!.planner,
+                    text: `${label}: unresolved after revision; continuing with reviewer concerns outstanding.`,
+                  })
+                }
+              }
             }
 
             if (structured !== undefined) {
@@ -1651,6 +1923,7 @@ const layer = Layer.effect(
           continue
         }
 
+        yield* runVerification(sessionID, verifyBaseline)
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
         return yield* lastAssistant(sessionID)
       },

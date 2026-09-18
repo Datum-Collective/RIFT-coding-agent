@@ -310,6 +310,7 @@ function vibeProviderCfg(url: string) {
     plannerModel: "test/planner-model",
     executorModel: "test/executor-model",
     vibe_mode: true,
+    vibe_review: false,
     provider: {
       ...cfg.provider,
       test: {
@@ -609,10 +610,66 @@ it.instance("vibe mode uses planner and executor models for separate turns", () 
     expect(hits[1]?.body.model).toBe("executor-model")
     expect(hits[2]?.body.model).toBe("executor-model")
     const messages = yield* sessions.messages({ sessionID: chat.id })
-    expect(messages.some((message) => message.info.role === "assistant" && message.info.mode === "vibe-planner")).toBe(true)
-    expect(messages.filter((message) => message.info.role === "assistant" && message.info.mode === "vibe-executor")).toHaveLength(2)
-    expect(messages.filter((message) => message.info.role === "user" && message.parts.some((part) => part.type === "text" && part.synthetic))).toHaveLength(2)
-    expect(messages.some((message) => message.parts.some((part) => part.type === "text" && part.text.includes("Update run")))).toBe(true)
+    expect(messages.some((message) => message.info.role === "assistant" && message.info.mode === "vibe-planner")).toBe(
+      true,
+    )
+    expect(
+      messages.filter((message) => message.info.role === "assistant" && message.info.mode === "vibe-executor"),
+    ).toHaveLength(2)
+    expect(
+      messages.filter(
+        (message) =>
+          message.info.role === "user" && message.parts.some((part) => part.type === "text" && part.synthetic),
+      ),
+    ).toHaveLength(2)
+    expect(
+      messages.some((message) =>
+        message.parts.some((part) => part.type === "text" && part.text.includes("Update run")),
+      ),
+    ).toBe(true)
+  }),
+)
+
+function vibeReviewProviderCfg(url: string) {
+  return { ...vibeProviderCfg(url), vibe_review: true }
+}
+
+it.instance("vibe mode planner reviews executor steps and requests fixes", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(vibeReviewProviderCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({
+      title: "Pinned",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "Implement the requested change" }],
+    })
+    yield* llm.text('{"steps":[{"files":["src/example.ts"],"functions":["run"],"description":"Update run"}]}')
+    yield* llm.text("executor first attempt")
+    yield* llm.text('{"approved":false,"feedback":"run() still returns the old value"}')
+    yield* llm.text("executor second attempt")
+    yield* llm.text('{"approved":true,"feedback":"looks right"}')
+
+    yield* prompt.loop({ sessionID: chat.id })
+    const hits = yield* llm.hits
+
+    expect(hits.map((hit) => hit.body.model)).toEqual([
+      "planner-model",
+      "executor-model",
+      "planner-model",
+      "executor-model",
+      "planner-model",
+    ])
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    const texts = messages.flatMap((m) => m.parts.filter((p) => p.type === "text").map((p) => p.text))
+    expect(texts.some((t) => t.includes("changes requested (1/2)"))).toBe(true)
+    expect(texts.some((t) => t.includes("Reviewer feedback: run() still returns the old value"))).toBe(true)
+    expect(texts.some((t) => t.includes("step 1/1: approved"))).toBe(true)
   }),
 )
 
@@ -937,6 +994,163 @@ it.instance("loop continues when finish is unknown", () =>
       expect(result.parts.some((part) => part.type === "text" && part.text === "second")).toBe(true)
       expect(result.info.finish).toBe("stop")
     }
+  }),
+)
+
+function verifyProviderCfg(extra: Record<string, unknown>) {
+  return (url: string) => ({ ...providerCfg(url), ...extra })
+}
+
+function verificationText(result: { parts: ReadonlyArray<{ type: string; text?: string }> }) {
+  return result.parts.flatMap((part) =>
+    part.type === "text" && part.text?.startsWith("Automated verification") ? [part.text] : [],
+  )
+}
+
+it.instance("verification runs real checks after edits and reports failures the agent did not mention", () =>
+  Effect.gen(function* () {
+    const { dir, llm } = yield* useServerConfig(verifyProviderCfg({ verify_commands: ["echo tests-ran", "exit 4"] }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Verify",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "write a file" }],
+    })
+    yield* llm.tool("write", { filePath: path.join(dir, "out.txt"), content: "hello" })
+    yield* llm.text("Done, all tests pass!")
+
+    const result = yield* prompt.loop({ sessionID: session.id })
+    const [report] = verificationText(result)
+    expect(report).toContain("`echo tests-ran` ✓ passed")
+    expect(report).toContain("`exit 4` ✗ failed (exit 4)")
+    expect(report).toContain("1 passed, 1 failed, 0 not run.")
+    // The agent's own claim is still there, but the real result sits next to it.
+    expect(result.parts.some((part) => part.type === "text" && part.text === "Done, all tests pass!")).toBe(true)
+  }),
+)
+
+it.instance("verification does not run when nothing was edited or when disabled", () =>
+  Effect.gen(function* () {
+    const { dir, llm } = yield* useServerConfig(verifyProviderCfg({ verify_commands: ["echo ran"] }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "No edit",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* writeText(path.join(dir, "probe.txt"), "probe")
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "look around" }],
+    })
+    yield* llm.tool("glob", { pattern: "**/*.txt" })
+    yield* llm.text("nothing to change")
+    const result = yield* prompt.loop({ sessionID: session.id })
+    expect(verificationText(result)).toHaveLength(0)
+  }),
+)
+
+it.instance("verification respects bash permission rules and does not run denied commands", () =>
+  Effect.gen(function* () {
+    const marker = "verify-marker.txt"
+    const { dir, llm } = yield* useServerConfig(verifyProviderCfg({ verify_commands: [`touch ${marker}`] }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Denied",
+      permission: [
+        { permission: "*", pattern: "*", action: "allow" },
+        { permission: "bash", pattern: "*", action: "deny" },
+      ],
+    })
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "write a file" }],
+    })
+    yield* llm.tool("write", { filePath: path.join(dir, "out.txt"), content: "hello" })
+    yield* llm.text("done")
+
+    const result = yield* prompt.loop({ sessionID: session.id })
+    const [report] = verificationText(result)
+    expect(report).toContain("not run (permission denied)")
+    expect(report).toContain("0 passed, 0 failed, 1 not run.")
+    expect(report).toContain("not fully verified")
+    expect(yield* Effect.promise(() => Bun.file(path.join(dir, marker)).exists())).toBe(false)
+  }),
+)
+
+it.instance(
+  "cancelling during verification stops the running check and leaves no queued state",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(
+        verifyProviderCfg({ verify_commands: ["touch verify-started && sleep 30", "echo never"] }),
+      )
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({
+        title: "Cancel verify",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "write a file" }],
+      })
+      yield* llm.tool("write", { filePath: path.join(dir, "out.txt"), content: "hello" })
+      yield* llm.text("done")
+
+      const fiber = yield* prompt.loop({ sessionID: session.id }).pipe(Effect.forkChild)
+      yield* pollWithTimeout(
+        Effect.promise(async () => ((await Bun.file(path.join(dir, "verify-started")).exists()) ? true : undefined)),
+        "timed out waiting for the verification command to start",
+      )
+      yield* prompt.cancel(session.id)
+      yield* Fiber.await(fiber)
+
+      const messages = yield* sessions.messages({ sessionID: session.id })
+      const report = messages
+        .flatMap((message) => message.parts)
+        .flatMap((part) =>
+          part.type === "text" && part.text.startsWith("Automated verification") ? [part.text] : [],
+        )[0]
+      expect(report).toContain("not run (cancelled)")
+      expect(report).not.toContain("queued")
+      expect(report).not.toContain("✓")
+    }),
+  15_000,
+)
+
+it.instance("verification says so when the project has no checks configured", () =>
+  Effect.gen(function* () {
+    const { dir, llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Unconfigured",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "write a file" }],
+    })
+    yield* llm.tool("write", { filePath: path.join(dir, "out.txt"), content: "hello" })
+    yield* llm.text("done")
+    const result = yield* prompt.loop({ sessionID: session.id })
+    expect(verificationText(result)[0]).toContain("Not configured")
   }),
 )
 
