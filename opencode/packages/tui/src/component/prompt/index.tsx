@@ -976,6 +976,15 @@ export function Prompt(props: PromptProps) {
       void exit()
       return true
     }
+    if (agent.name === "vibe" && !local.agent.vibe.configured()) {
+      toast.show({
+        title: "Whoa there, vibe coder!",
+        message: "Your planner and executor models are still a mystery. Pick them and we'll get vibing.",
+        variant: "warning",
+      })
+      dialog.replace(() => <DialogVibeModels />)
+      return false
+    }
     const selectedModel = local.model.current()
     if (!selectedModel) {
       void promptModelWarning()
