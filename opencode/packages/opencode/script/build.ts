@@ -15,6 +15,7 @@ const generated = await import("./generate.ts")
 
 import { Script } from "@opencode-ai/script"
 import pkg from "../package.json"
+import { BRAND } from "@opencode-ai/core/brand"
 
 const singleFlag = process.argv.includes("--single")
 const baselineFlag = process.argv.includes("--baseline")
@@ -233,14 +234,35 @@ for (const item of targets) {
 }
 
 if (Script.release) {
+  // The dist directory name doubles as the npm platform package name that `bin/opencode`
+  // resolves, so it stays as it is. Only what ships in the release is renamed: the archive
+  // becomes rift-<target> and the binary inside it becomes rift, which is what the install
+  // scripts look for. The binary is renamed in place and put back rather than copied, because
+  // copying twelve 103MB binaries would add over a gigabyte to the runner.
+  const assets: string[] = []
   for (const key of Object.keys(binaries)) {
-    if (key.includes("linux")) {
-      await $`tar -czf ../../${key}.tar.gz *`.cwd(`dist/${key}/bin`)
-    } else {
-      await $`zip -r ../../${key}.zip *`.cwd(`dist/${key}/bin`)
+    const bin = `dist/${key}/bin`
+    const [compiled] = await Array.fromAsync(new Bun.Glob("*").scan({ cwd: bin }))
+    if (!compiled) throw new Error(`no compiled binary in ${bin}`)
+    // Bun appends .exe for win32 targets even though outfile does not say so.
+    const branded = compiled.replace(pkg.name, BRAND)
+    const asset = key.replace(pkg.name, BRAND)
+    await $`mv ${compiled} ${branded}`.cwd(bin)
+    try {
+      if (key.includes("linux")) {
+        await $`tar -czf ../../${asset}.tar.gz ${branded}`.cwd(bin)
+        assets.push(`./dist/${asset}.tar.gz`)
+      } else {
+        await $`zip -r ../../${asset}.zip ${branded}`.cwd(bin)
+        assets.push(`./dist/${asset}.zip`)
+      }
+    } finally {
+      await $`mv ${branded} ${compiled}`.cwd(bin)
     }
   }
-  await $`gh release upload v${Script.version} ./dist/*.zip ./dist/*.tar.gz --clobber --repo ${process.env.GH_REPO}`
+  // Upload the archives we actually produced. A shell glob throws when it matches nothing, so
+  // a partial target list would fail the upload after the whole build had already run.
+  await $`gh release upload v${Script.version} ${assets} --clobber --repo ${process.env.GH_REPO}`
 }
 
 export { binaries }

@@ -1,3 +1,10 @@
+import {
+  INSTALL_DIR_NAME,
+  INSTALL_PS1_URL,
+  INSTALL_SH_URL,
+  LEGACY_INSTALL_DIR_NAME,
+  RELEASES_API,
+} from "@opencode-ai/core/brand"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
@@ -144,12 +151,16 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
 
     const upgradeCurl = Effect.fnUntraced(
       function* (target: string) {
-        const response = yield* httpOk.execute(HttpClientRequest.get("https://opencode.ai/install"))
+        // Windows has no sh, so it re-runs the PowerShell installer instead. Both scripts read
+        // VERSION from the environment, which is what makes a pinned upgrade work.
+        const windows = process.platform === "win32"
+        const response = yield* httpOk.execute(HttpClientRequest.get(windows ? INSTALL_PS1_URL : INSTALL_SH_URL))
         const body = yield* response.text
         const bodyBytes = new TextEncoder().encode(body)
-        const shell = yield* upgradeScriptShell()
+        const shell = windows ? "powershell.exe" : yield* upgradeScriptShell()
+        const args = windows ? ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", "-"] : []
         const result = yield* appProcess.run(
-          ChildProcess.make(shell, [], {
+          ChildProcess.make(shell, args, {
             stdin: Stream.make(bodyBytes),
             env: { VERSION: target },
             extendEnv: true,
@@ -172,7 +183,9 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
         }
       }),
       method: Effect.fn("Installation.method")(function* () {
-        if (process.execPath.includes(path.join(".opencode", "bin"))) return "curl" as Method
+        if (process.execPath.includes(path.join(INSTALL_DIR_NAME, "bin"))) return "curl" as Method
+        // An install made before the rename still lives here, and should still self-upgrade.
+        if (process.execPath.includes(path.join(LEGACY_INSTALL_DIR_NAME, "bin"))) return "curl" as Method
         if (process.execPath.includes(path.join(".local", "bin"))) return "curl" as Method
         const exec = process.execPath.toLowerCase()
 
@@ -254,11 +267,7 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
           return data.version
         }
 
-        const response = yield* httpOk.execute(
-          HttpClientRequest.get("https://api.github.com/repos/anomalyco/opencode/releases/latest").pipe(
-            HttpClientRequest.acceptJson,
-          ),
-        )
+        const response = yield* httpOk.execute(HttpClientRequest.get(RELEASES_API).pipe(HttpClientRequest.acceptJson))
         const data = yield* HttpClientResponse.schemaBodyJson(GitHubRelease)(response)
         return data.tag_name.replace(/^v/, "")
       }, Effect.orDie),

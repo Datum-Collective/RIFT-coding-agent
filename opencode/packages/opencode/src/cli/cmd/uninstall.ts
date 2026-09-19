@@ -1,3 +1,4 @@
+import { INSTALL_DIR_NAME, LEGACY_INSTALL_DIR_NAME } from "@opencode-ai/core/brand"
 import type { Argv } from "yargs"
 import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
@@ -8,6 +9,12 @@ import path from "path"
 import os from "os"
 import { Filesystem } from "@/util/filesystem"
 import { Process } from "@/util/process"
+
+// An install made before the rename wrote "# opencode" and ~/.opencode/bin; both spellings are
+// cleaned up so uninstalling never leaves a dangling PATH entry behind.
+const DIRS = [INSTALL_DIR_NAME, LEGACY_INSTALL_DIR_NAME]
+const MARKERS = DIRS.map((dir) => `# ${dir.replace(/^\./, "")}`)
+const BIN_PATHS = DIRS.map((dir) => `${dir}/bin`)
 
 interface UninstallArgs {
   keepConfig: boolean
@@ -215,7 +222,7 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
     prompts.log.info(`  rm "${targets.binary}"`)
 
     const binDir = path.dirname(targets.binary)
-    if (binDir.includes(".opencode")) {
+    if (binDir.includes(INSTALL_DIR_NAME) || binDir.includes(LEGACY_INSTALL_DIR_NAME)) {
       prompts.log.info(`  rmdir "${binDir}" 2>/dev/null`)
     }
   }
@@ -266,7 +273,7 @@ async function getShellConfigFile(): Promise<string | null> {
     if (!exists) continue
 
     const content = await Filesystem.readText(file).catch(() => "")
-    if (content.includes("# opencode") || content.includes(".opencode/bin")) {
+    if (MARKERS.some((marker) => content.includes(marker)) || BIN_PATHS.some((dir) => content.includes(dir))) {
       return file
     }
   }
@@ -284,21 +291,21 @@ async function cleanShellConfig(file: string) {
   for (const line of lines) {
     const trimmed = line.trim()
 
-    if (trimmed === "# opencode") {
+    if (MARKERS.includes(trimmed)) {
       skip = true
       continue
     }
 
     if (skip) {
       skip = false
-      if (trimmed.includes(".opencode/bin") || trimmed.includes("fish_add_path")) {
+      if (BIN_PATHS.some((dir) => trimmed.includes(dir)) || trimmed.includes("fish_add_path")) {
         continue
       }
     }
 
     if (
-      (trimmed.startsWith("export PATH=") && trimmed.includes(".opencode/bin")) ||
-      (trimmed.startsWith("fish_add_path") && trimmed.includes(".opencode"))
+      (trimmed.startsWith("export PATH=") && BIN_PATHS.some((dir) => trimmed.includes(dir))) ||
+      (trimmed.startsWith("fish_add_path") && DIRS.some((dir) => trimmed.includes(dir)))
     ) {
       continue
     }

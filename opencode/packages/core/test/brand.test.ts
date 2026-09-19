@@ -8,8 +8,14 @@ import {
   BRAND,
   CONFIG_NAMES,
   CONFIG_NAMES_ASCENDING,
+  GITHUB_REPO,
+  INSTALL_DIR_NAME,
+  INSTALL_PS1_URL,
+  INSTALL_SH_URL,
   LEGACY_BRAND,
+  LEGACY_INSTALL_DIR_NAME,
   PROJECT_DIRS,
+  RELEASES_API,
 } from "../src/brand"
 
 const made: string[] = []
@@ -90,5 +96,26 @@ describe("config names", () => {
       expect(names.indexOf("opencode.jsonc")).toBeLessThan(names.indexOf("opencode.json"))
       expect(names.indexOf("rift.json")).toBeLessThan(names.indexOf("opencode.jsonc"))
     }
+  })
+})
+
+describe("distribution", () => {
+  // These are baked into every shipped binary: `rift upgrade` re-runs the install script from
+  // these URLs. If they are wrong, an installed copy can never update itself.
+  test("the install scripts are fetched from this repo's main branch", () => {
+    expect(INSTALL_SH_URL).toBe(`https://raw.githubusercontent.com/${GITHUB_REPO}/main/opencode/install`)
+    expect(INSTALL_PS1_URL).toBe(`${INSTALL_SH_URL}.ps1`)
+    expect(RELEASES_API).toBe(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`)
+  })
+
+  test("the repo is this fork, not upstream", () => {
+    expect(GITHUB_REPO).not.toContain("anomalyco")
+    expect(GITHUB_REPO).toMatch(/^[\w.-]+\/[\w.-]+$/)
+  })
+
+  // Upgrade detection matches the install directory by name, so these must track the brands.
+  test("install directories are the dotted brand names", () => {
+    expect(INSTALL_DIR_NAME).toBe(`.${BRAND}`)
+    expect(LEGACY_INSTALL_DIR_NAME).toBe(`.${LEGACY_BRAND}`)
   })
 })
