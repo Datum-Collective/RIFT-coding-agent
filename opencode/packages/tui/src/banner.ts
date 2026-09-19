@@ -4,7 +4,10 @@
  * Generated from the source art, which is a fixed-palette pixel drawing: the five inks and two
  * fills below are the artwork's own colours and are reproduced exactly. Mapping them onto theme
  * colours destroys the drawing, because two of the inks are greys that only differ in value.
- * Every row is `BANNER_WIDTH` cells wide, which the home screen relies on to decide if it fits.
+ *
+ * The rows are cropped to the drawing's own ink, so `BANNER_WIDTH` is the width you can actually
+ * see. Padding baked into the data would push the artwork out of line with anything sized to
+ * match it, which is exactly what happened when the source's trailing blank columns were kept.
  */
 export const BANNER_INK = {
   navy: "#0000AA",
@@ -28,7 +31,7 @@ export type BannerRun = {
   bg?: BannerFill
 }
 
-export const BANNER_WIDTH = 76
+export const BANNER_WIDTH = 72
 
 export const banner: BannerRun[][] = [
   [
@@ -50,7 +53,7 @@ export const banner: BannerRun[][] = [
     { text: "\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584\u2584", fg: "shadow" },
     { text: "\u2584\u2584\u2584", fg: "silver" },
     { text: "\u2584", fg: "shadow" },
-    { text: "     ", fg: "silver" },
+    { text: " ", fg: "silver" },
   ],
   [
     { text: "\u2588\u2580", fg: "navy" },
@@ -78,7 +81,7 @@ export const banner: BannerRun[][] = [
     { text: "\u2584\u2584\u2588\u2580\u2580\u2591\u2591\u2593", fg: "shadow" },
     { text: "\u2593\u2591\u2593", fg: "shadow", bg: "silver" },
     { text: "\u258c", fg: "shadow" },
-    { text: "     ", fg: "silver" },
+    { text: " ", fg: "silver" },
   ],
   [
     { text: "\u2588", fg: "navy" },
@@ -115,7 +118,6 @@ export const banner: BannerRun[][] = [
     { text: "\u2588", fg: "shadow" },
     { text: " ", fg: "silver" },
     { text: "\u2591", fg: "navy" },
-    { text: "    ", fg: "silver" },
   ],
   [
     { text: "\u2588\u2584", fg: "navy" },
@@ -152,7 +154,6 @@ export const banner: BannerRun[][] = [
     { text: "\u2580", fg: "shadow" },
     { text: " ", fg: "silver" },
     { text: "\u2588", fg: "navy" },
-    { text: "    ", fg: "silver" },
   ],
   [
     { text: "\u2588\u2588\u2580", fg: "navy" },
@@ -190,7 +191,6 @@ export const banner: BannerRun[][] = [
     { text: "\u2584", fg: "shadow", bg: "silver" },
     { text: "  ", fg: "silver" },
     { text: "\u2588\u2588", fg: "navy" },
-    { text: "    ", fg: "silver" },
   ],
   [
     { text: "\u2591", fg: "azure", bg: "navy" },
@@ -229,7 +229,6 @@ export const banner: BannerRun[][] = [
     { text: "\u2580", fg: "shadow" },
     { text: "\u2580 ", fg: "silver" },
     { text: "\u2584\u2584\u2588\u2588", fg: "navy" },
-    { text: "    ", fg: "silver" },
   ],
   [
     { text: "\u2592\u2592\u2584", fg: "azure", bg: "navy" },
@@ -260,7 +259,6 @@ export const banner: BannerRun[][] = [
     { text: "\u2593\u2591", fg: "shadow", bg: "silver" },
     { text: "\u2588 ", fg: "silver" },
     { text: "\u2588\u2593\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2593\u2593", fg: "navy" },
-    { text: "    ", fg: "silver" },
   ],
   [
     { text: "\u2593\u2580", fg: "azure", bg: "navy" },
@@ -291,7 +289,6 @@ export const banner: BannerRun[][] = [
     { text: "\u2591", fg: "shadow", bg: "silver" },
     { text: "\u2588\u2588 ", fg: "silver" },
     { text: "\u2592\u2593\u2588\u2588\u2588\u2588\u2588\u2588\u2593\u2593\u2593", fg: "navy" },
-    { text: "    ", fg: "silver" },
   ],
   [
     { text: "\u2580", fg: "azure" },
@@ -325,7 +322,6 @@ export const banner: BannerRun[][] = [
     { text: "\u2584", fg: "azure" },
     { text: "\u2593", fg: "azure", bg: "navy" },
     { text: "\u2592\u2588\u2588\u2588\u2593\u2593\u2593\u2593", fg: "navy" },
-    { text: "    ", fg: "silver" },
   ],
   [
     { text: " \u2588", fg: "silver" },
@@ -355,7 +351,6 @@ export const banner: BannerRun[][] = [
     { text: "\u2588\u2588  ", fg: "silver" },
     { text: "\u2580", fg: "azure", bg: "navy" },
     { text: "\u2588\u2591\u2588\u2588\u2588\u2588\u2588\u2588\u2588", fg: "navy" },
-    { text: "    ", fg: "silver" },
   ],
   [
     { text: " \u2584", fg: "silver" },
@@ -391,7 +386,6 @@ export const banner: BannerRun[][] = [
     { text: "\u2580\u2588\u2588", fg: "white", bg: "silver" },
     { text: "\u2588\u2584 ", fg: "silver" },
     { text: "\u2580\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588", fg: "navy" },
-    { text: "    ", fg: "silver" },
   ],
   [
     { text: "\u2591\u2591\u2584\u2584\u2588", fg: "shadow", bg: "silver" },
@@ -426,6 +420,5 @@ export const banner: BannerRun[][] = [
     { text: "\u2588\u2584", fg: "shadow" },
     { text: " ", fg: "silver" },
     { text: "\u2588\u2588\u2588\u2588\u2588\u2588\u2588", fg: "navy" },
-    { text: "    ", fg: "silver" },
   ],
 ]
