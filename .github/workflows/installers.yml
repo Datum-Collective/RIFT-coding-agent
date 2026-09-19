@@ -1,0 +1,62 @@
+name: installers
+
+# The install scripts are the one part of RIFT with no unit tests and the widest blast radius:
+# a syntax error ships a broken `curl | bash` to everyone. These jobs parse both on the
+# platforms that actually run them.
+
+on:
+  push:
+    paths:
+      - "opencode/install"
+      - "opencode/install.ps1"
+      - ".github/workflows/installers.yml"
+  pull_request:
+    paths:
+      - "opencode/install"
+      - "opencode/install.ps1"
+  workflow_dispatch:
+
+jobs:
+  bash:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse
+        run: bash -n opencode/install
+      - name: Lint
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          # Style nits in a 460-line vendored script are noise; syntax and real bugs are not.
+          shellcheck --severity=warning opencode/install
+      - name: Help text renders
+        run: bash opencode/install --help
+
+  powershell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "opencode/install.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) {
+            $errors | ForEach-Object { Write-Host "::error::$($_.Message)" }
+            exit 1
+          }
+          Write-Host "install.ps1 parsed with no errors"
+      - name: Install from a local binary and check both commands
+        shell: pwsh
+        run: |
+          # No release is needed: -BinaryPath exercises the install, alias and PATH paths
+          # against a stand-in executable.
+          $fake = Join-Path $env:RUNNER_TEMP 'fake-rift.exe'
+          Copy-Item "$env:SystemRoot\System32\where.exe" $fake
+          $dir = Join-Path $env:RUNNER_TEMP 'riftbin'
+          ./opencode/install.ps1 -BinaryPath $fake -InstallDir $dir -NoModifyPath
+          if (-not (Test-Path (Join-Path $dir 'rift.exe'))) { throw "rift.exe missing" }
+          if (-not (Test-Path (Join-Path $dir 'opencode.cmd'))) { throw "opencode.cmd missing" }
+          # Re-run to prove replacing an existing install works.
+          ./opencode/install.ps1 -BinaryPath $fake -InstallDir $dir -NoModifyPath
+          Write-Host "installed and reinstalled cleanly"

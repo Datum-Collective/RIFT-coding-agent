@@ -24,6 +24,22 @@ export const ENV_PREFIX = "RIFT_"
 export const LEGACY_ENV_PREFIX = "OPENCODE_"
 
 /**
+ * Where RIFT is published and installed from.
+ *
+ * The install scripts are standalone shell and PowerShell files and must repeat these literals,
+ * so a repo rename touches this file, `install` and `install.ps1` — and nowhere else.
+ */
+export const GITHUB_REPO = "shiv207/RIFT-coding-agent"
+export const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`
+export const RAW_BASE = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/opencode`
+export const INSTALL_SH_URL = `${RAW_BASE}/install`
+export const INSTALL_PS1_URL = `${RAW_BASE}/install.ps1`
+
+/** Directory the install scripts put the binary in, under the user's home. */
+export const INSTALL_DIR_NAME = `.${BRAND}`
+export const LEGACY_INSTALL_DIR_NAME = `.${LEGACY_BRAND}`
+
+/**
  * Config basenames, most preferred first. Use when picking a single file, where the first hit
  * wins. `.jsonc` beats `.json` and RIFT beats the legacy name.
  */

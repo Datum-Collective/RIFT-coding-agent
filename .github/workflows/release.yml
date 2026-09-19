@@ -1,0 +1,85 @@
+name: release
+
+# Tag a commit on main and push it:
+#   git tag v0.1.0 && git push origin v0.1.0
+# That builds every platform and publishes the archives the installers download.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, without the leading v (e.g. 0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency: release-${{ github.ref }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: opencode
+    steps:
+      - uses: actions/checkout@v4
+
+      # Bun cross-compiles every target from Linux, so one job covers all twelve.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: opencode/package.json
+
+      # node-gyp runs during postinstall and needs a recent Node.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Resolve version
+        id: version
+        run: |
+          VERSION="${{ inputs.version || github.ref_name }}"
+          VERSION="${VERSION#v}"
+          # build.ts uploads to v$VERSION, so a tag that is not semver would silently target a
+          # release that does not exist and fail after the whole build had run.
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+' || {
+            echo "::error::version must be X.Y.Z, got '$VERSION'"
+            exit 1
+          }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - run: command -v zip >/dev/null || sudo apt-get install -y zip
+
+      - run: bun install
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          # gh release upload needs the release to exist. Creating it as a draft keeps a
+          # half-uploaded release out of releases/latest, which is what the installers read.
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+                 --title "$TAG" --generate-notes --draft
+
+      - name: Build every target and upload the archives
+        run: ./packages/opencode/script/build.ts
+        env:
+          # Setting this makes packages/script use the tag verbatim instead of asking npm for
+          # the latest opencode-ai version, which is not this fork.
+          OPENCODE_VERSION: ${{ steps.version.outputs.version }}
+          OPENCODE_RELEASE: "1"
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false

@@ -46,14 +46,25 @@
 ### Installation
 
 ```bash
-# YOLO
-curl -fsSL https://opencode.ai/install | bash
+# macOS, Linux, WSL, Git Bash
+curl -fsSL https://raw.githubusercontent.com/shiv207/RIFT-coding-agent/main/opencode/install | bash
+```
 
-# Package managers
+```powershell
+# Windows
+irm https://raw.githubusercontent.com/shiv207/RIFT-coding-agent/main/opencode/install.ps1 | iex
+```
+
+Both `rift` and `opencode` start it. Update with `rift upgrade`.
+
+RIFT is not published to npm, Homebrew, scoop or choco — the installers above download a
+prebuilt binary from [Releases](https://github.com/shiv207/RIFT-coding-agent/releases).
+
+<!-- upstream package managers, kept for reference; these install OpenCode, not RIFT
 npm i -g opencode-ai@latest        # or bun/pnpm/yarn
 scoop install opencode             # Windows
 choco install opencode             # Windows
-brew install anomalyco/tap/opencode # macOS and Linux (recommended, always up to date)
+brew install anomalyco/tap/opencode # macOS and Linux
 brew install opencode              # macOS and Linux (official brew formula, updated less)
 sudo pacman -S opencode            # Arch Linux (Stable)
 paru -S opencode-bin               # Arch Linux (Latest from AUR)
@@ -84,18 +95,15 @@ scoop bucket add extras; scoop install extras/opencode-desktop
 
 #### Installation Directory
 
-The install script respects the following priority order for the installation path:
-
-1. `$OPENCODE_INSTALL_DIR` - Custom installation directory
-2. `$XDG_BIN_DIR` - XDG Base Directory Specification compliant path
-3. `$HOME/bin` - Standard user binary directory (if it exists or can be created)
-4. `$HOME/.opencode/bin` - Default fallback
+The install script puts the binary in `$RIFT_INSTALL_DIR` when it is set, and
+`$HOME/.rift/bin` otherwise.
 
 ```bash
-# Examples
-OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/install | bash
-XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
+# Example
+RIFT_INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/shiv207/RIFT-coding-agent/main/opencode/install | bash
 ```
+
+On Windows the equivalent is `-InstallDir`, or the `RIFT_INSTALL_DIR` environment variable.
 
 ### Agents
 
