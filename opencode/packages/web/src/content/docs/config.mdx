@@ -742,6 +742,61 @@ For example, to ensure that the `edit` and `bash` tools require user approval:
 
 ---
 
+### Verification
+
+After the agent edits files, OpenCode runs your project's own checks and appends the real results to the reply, so you don't have to rely on the agent saying "tests pass". Checks are detected from `package.json` scripts (`typecheck`, `lint`, `test`), `go.mod`, `Cargo.toml` and pytest config. In a monorepo, each edited file uses the nearest parent directory that has checks of its own, so a change in `packages/a` runs that package's scripts (and the package manager is found from the workspace lockfile). Each check runs through the same `bash` [permission](/docs/permissions) rules as the shell tool, and is reported as passed, failed, timed out, or not run. If no checks are found, the report says so.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "verify": true,
+  "verify_commands": ["bun run typecheck", "bun test"],
+  "verify_timeout_ms": 600000,
+  "verify_scope_warn_files": 15
+}
+```
+
+- `verify` - set to `false` to turn verification off. Defaults to `true`.
+- `verify_commands` - commands to run instead of auto-detecting them. Explicit commands always run from the project root, so use this when you want the same commands regardless of what was edited.
+- `verify_timeout_ms` - kill a single check after this many milliseconds. Defaults to 10 minutes; `0` disables the timeout.
+- `verify_scope_warn_files` - show a soft warning when more files than this changed since the task started. Defaults to `15`; `0` disables it.
+
+A second pass then compares the agent's own summary of what it did against the real `git diff` of the files it edited, and flags claims the diff does not support ("claimed it added retries, the diff only adds a plain fetch call"). This costs one extra model call on each turn that edits files. A model that answers in the wrong format is reported as not run, never as agreement.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "verify_claims": true,
+  "verify_claims_model": "anthropic/claude-opus-5"
+}
+```
+
+- `verify_claims` - set to `false` to skip the summary-vs-diff pass. Defaults to `true`.
+- `verify_claims_model` - the model that does the comparison. Defaults to the Vibe Mode planner when Vibe Mode is on, otherwise the session's own model. Set this to a stronger model than the one writing the code, since a model checking its own work is the weakest version of this check.
+
+---
+
+### Vibe Mode
+
+Vibe Mode uses a smarter planner model to plan the work and a cheaper executor model to build it. Run `/vibe` to pick both models.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plannerModel": "anthropic/claude-opus-5",
+  "executorModel": "anthropic/claude-haiku-4-5-20251001",
+  "vibe_review": true,
+  "vibe_review_max_rounds": 2,
+  "vibe_max_attempts": 2
+}
+```
+
+- `vibe_review` - the planner reviews each executor step (using the transcript, the current contents of the step's target files and their `git diff`) and either approves it or sends it back with feedback. Defaults to `true`.
+- `vibe_review_max_rounds` - rejected reviews per step before the planner rewrites the step. Defaults to `2`; `0` means unlimited.
+- `vibe_max_attempts` - failed executor attempts before the planner rewrites the step. Defaults to `2`; `0` means unlimited.
+
+---
+
 ### Compaction
 
 You can control context compaction behavior through the `compaction` option.
