@@ -16,6 +16,7 @@
     "dev:temporary": "bun run ./src/temporary.ts"
   },
   "bin": {
+    "rift": "./bin/opencode",
     "opencode": "./bin/opencode"
   },
   "exports": {
