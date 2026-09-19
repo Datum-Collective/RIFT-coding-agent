@@ -29,15 +29,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Bun cross-compiles every target from Linux, so one job covers all twelve.
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: opencode/package.json
-
-      # node-gyp runs during postinstall and needs a recent Node.
-      - uses: actions/setup-node@v4
+      # node-gyp runs during postinstall and needs a newer Node than the runner image ships.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
+
+      # Mirrors .github/actions/setup-bun, which cannot be reused directly because a composite
+      # action does not inherit this job's working-directory and the monorepo is a level down.
+      - name: Resolve the baseline bun build
+        id: bun-url
+        run: |
+          # x64 runners take the baseline build; the standard one assumes CPU features the
+          # runner may not have.
+          if [ "$RUNNER_ARCH" = "X64" ]; then
+            V=$(node -p "require('./package.json').packageManager.split('@')[1]")
+            echo "url=https://github.com/oven-sh/bun/releases/download/bun-v${V}/bun-linux-x64-baseline.zip" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Bun cross-compiles every target from Linux, so one job covers all twelve.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: ${{ !steps.bun-url.outputs.url && 'opencode/package.json' || '' }}
+          bun-download-url: ${{ steps.bun-url.outputs.url }}
+
+      - name: Get the bun cache directory
+        id: cache
+        run: echo "dir=$(bun pm cache)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ steps.cache.outputs.dir }}
+          key: ${{ runner.os }}-bun-${{ hashFiles('opencode/bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: Install setuptools for distutils compatibility
+        run: python3 -m pip install setuptools || pip install setuptools || true
 
       - name: Resolve version
         id: version

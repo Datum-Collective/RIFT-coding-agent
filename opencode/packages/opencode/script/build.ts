@@ -242,9 +242,9 @@ if (Script.release) {
   const assets: string[] = []
   for (const key of Object.keys(binaries)) {
     const bin = `dist/${key}/bin`
-    const [compiled] = await Array.fromAsync(new Bun.Glob("*").scan({ cwd: bin }))
-    if (!compiled) throw new Error(`no compiled binary in ${bin}`)
     // Bun appends .exe for win32 targets even though outfile does not say so.
+    const compiled = `${pkg.name}${key.includes("windows") ? ".exe" : ""}`
+    if (!(await Bun.file(`${bin}/${compiled}`).exists())) throw new Error(`missing ${bin}/${compiled}`)
     const branded = compiled.replace(pkg.name, BRAND)
     const asset = key.replace(pkg.name, BRAND)
     await $`mv ${compiled} ${branded}`.cwd(bin)
