@@ -378,9 +378,12 @@ function describe(result: CheckResult) {
 /** Key under which the structured report rides along on the verification text part. */
 export const METADATA_KEY = "rift_verification"
 
+/** Wire status: a check that has not started yet is "queued", never "not_run". */
+export type ReportedStatus = Status | "queued"
+
 export interface Summary {
   done: boolean
-  checks: Array<{ command: string; where?: string; status: Status; reason?: string; ms: number }>
+  checks: Array<{ command: string; where?: string; status: ReportedStatus; reason?: string; ms: number }>
   passed: number
   failed: number
   notRun: number
@@ -398,8 +401,9 @@ export function summarize(report: Report): Summary {
     checks: report.entries.map((entry) => ({
       command: entry.check.command,
       where: entry.check.where,
-      status: entry.result?.status ?? "not_run",
-      reason: entry.result ? entry.result.reason : report.done ? "not run" : "queued",
+      // Matches what format() prints: unfinished checks are queued, not "did not run".
+      status: entry.result?.status ?? (report.done ? "not_run" : "queued"),
+      reason: entry.result?.reason,
       ms: entry.result?.ms ?? 0,
     })),
     passed: count("passed"),

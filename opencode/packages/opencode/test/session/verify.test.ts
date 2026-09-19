@@ -170,6 +170,25 @@ describe("verify", () => {
     })
   })
 
+  test("the structured summary agrees with the printed report", () => {
+    const check = (command: string) => ({ name: command, command })
+    const entries = [
+      { check: check("a"), result: { ...check("a"), status: "passed" as const, ms: 100, output: "" } },
+      { check: check("b"), result: Verify.notRun(check("b"), "permission denied") },
+      { check: check("c") },
+    ]
+    const running = Verify.summarize({ entries, scopeFiles: [], scopeWarnFiles: 15, done: false })
+    // A check that has not started is queued in both the prose and the structured twin.
+    expect(running.checks.map((item) => item.status)).toEqual(["passed", "not_run", "queued"])
+    expect(running.checks.filter((item) => item.status === "not_run").length).toBe(running.notRun)
+    expect(Verify.format({ entries, scopeFiles: [], scopeWarnFiles: 15, done: false })).toContain("… queued")
+
+    const done = Verify.summarize({ entries, scopeFiles: [], scopeWarnFiles: 15, done: true })
+    expect(done.checks.map((item) => item.status)).toEqual(["passed", "not_run", "not_run"])
+    expect(done.passed).toBe(1)
+    expect(done.checks[1]?.reason).toBe("permission denied")
+  })
+
   test("format distinguishes not configured, running, passed, failed and not run", () => {
     const check = (command: string) => ({ name: command, command })
     expect(Verify.format({ entries: [], scopeFiles: [], scopeWarnFiles: 15, done: true })).toContain("Not configured")

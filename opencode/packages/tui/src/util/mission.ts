@@ -101,14 +101,21 @@ export function missionSummary(task: Task): string {
   return "no activity"
 }
 
-export function missionRow(input: { sessionID: string; task: Task; current: boolean }): MissionRow {
+export function missionRow(input: {
+  sessionID: string
+  task: Task
+  current: boolean
+  /** False while the session's detail is still loading, so the row says so instead of "no activity". */
+  loaded?: boolean
+}): MissionRow {
   const state = missionState(input.task)
+  const pending = input.loaded === false && state === "idle"
   return {
     sessionID: input.sessionID,
     title: input.task.title,
     state,
     signal: MISSION_SIGNAL[state],
-    summary: missionSummary(input.task),
+    summary: pending ? "loading…" : missionSummary(input.task),
     current: input.current,
     attention: state === "blocked" || state === "failed",
   }

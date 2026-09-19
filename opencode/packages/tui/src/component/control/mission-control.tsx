@@ -4,7 +4,7 @@
  * Built on the shared DialogSelect so filtering, keyboard navigation and actions behave exactly
  * like every other picker in the app.
  */
-import { createMemo } from "solid-js"
+import { createMemo, onMount } from "solid-js"
 import { DialogSelect } from "../../ui/dialog-select"
 import { useDialog } from "../../ui/dialog"
 import { useRoute } from "../../context/route"
@@ -50,7 +50,6 @@ export function MissionBoard(props: { rows: readonly MissionRow[]; onOpen: (row:
           </>
         ),
         footer: row.summary,
-        onSelect: () => props.onOpen(row),
       }))}
       onSelect={(option) => {
         const row = props.rows.find((item) => item.sessionID === option.value)
@@ -60,23 +59,33 @@ export function MissionBoard(props: { rows: readonly MissionRow[]; onOpen: (row:
   )
 }
 
+/** How many sessions the board pulls detail for when it opens. */
+const SYNC_LIMIT = 25
+
 export function MissionControl() {
   const dialog = useDialog()
   const route = useRoute()
   const sync = useSync()
 
+  const sessions = createMemo(() => sync.data.session.filter((session) => !session.parentID))
+
+  // Messages, diffs and todos load per session. Without this the board would report every
+  // session the user has not opened this run as idle with nothing to show.
+  onMount(() => {
+    for (const session of sessions().slice(0, SYNC_LIMIT)) void sync.session.sync(session.id)
+  })
+
   const rows = createMemo(() => {
     const current = route.data.type === "session" ? route.data.sessionID : undefined
     return orderRows(
-      sync.data.session
-        .filter((session) => !session.parentID)
-        .map((session) =>
-          missionRow({
-            sessionID: session.id,
-            current: session.id === current,
-            task: deriveTask(taskInput(sync, session.id)),
-          }),
-        ),
+      sessions().map((session) =>
+        missionRow({
+          sessionID: session.id,
+          current: session.id === current,
+          task: deriveTask(taskInput(sync, session.id)),
+          loaded: (sync.data.message[session.id]?.length ?? 0) > 0,
+        }),
+      ),
     )
   })
 

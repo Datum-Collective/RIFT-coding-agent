@@ -32,6 +32,10 @@ const tool = (name: string, state: Partial<TaskPart & { state: unknown }> | Reco
 const text = (value: string, extra: Record<string, unknown> = {}): TaskPart =>
   ({ type: "text", text: value, ...extra }) as TaskPart
 
+/** Matches what the server actually writes for a Vibe step: synthetic, and numbered. */
+const stepMessage = (index: number, total: number): TaskPart =>
+  text(`Execute this Vibe Mode plan step using the available tools. Step ${index} of ${total}.`, { synthetic: true })
+
 describe("execution phases", () => {
   test("collapses a run of tool calls into readable states", () => {
     const built = build([
@@ -146,9 +150,9 @@ describe("plan", () => {
   test("marks steps done from review approvals and active from the running step", () => {
     const built = build([
       { message: { role: "assistant", mode: "vibe-planner" }, parts: [text(planText)] },
-      { message: { role: "user" }, parts: [text("Execute this Vibe Mode plan step using the available tools.")] },
+      { message: { role: "user" }, parts: [stepMessage(1, 2)] },
       { message: { role: "assistant", mode: "vibe-planner" }, parts: [text("Vibe Mode review of step 1/2: approved")] },
-      { message: { role: "user" }, parts: [text("Execute this Vibe Mode plan step using the available tools.")] },
+      { message: { role: "user" }, parts: [stepMessage(2, 2)] },
     ])
     const result = plan(input(built))
     expect(result.source).toBe("vibe")
@@ -158,13 +162,28 @@ describe("plan", () => {
   test("a rejected review does not mark the step done", () => {
     const built = build([
       { message: { role: "assistant", mode: "vibe-planner" }, parts: [text(planText)] },
-      { message: { role: "user" }, parts: [text("Execute this Vibe Mode plan step using the available tools.")] },
+      { message: { role: "user" }, parts: [stepMessage(1, 2)] },
       {
         message: { role: "assistant", mode: "vibe-planner" },
         parts: [text("Vibe Mode review of step 1/2: changes requested (1/2)\nstill wrong")],
       },
     ])
     expect(plan(input(built)).steps[0]?.signal).toBe("active")
+  })
+
+  test("a retried step keeps the same number instead of advancing the plan", () => {
+    const built = build([
+      { message: { role: "user" }, parts: [text("do the thing")] },
+      { message: { role: "assistant", mode: "vibe-planner" }, parts: [text(planText)] },
+      { message: { role: "user" }, parts: [stepMessage(1, 2)] },
+      {
+        message: { role: "assistant", mode: "vibe-planner" },
+        parts: [text("Vibe Mode review of step 1/2: changes requested (1/2)\nnot done")],
+      },
+      // The retry repeats step 1; counting messages would wrongly mark step 2 active.
+      { message: { role: "user" }, parts: [stepMessage(1, 2)] },
+    ])
+    expect(plan(input(built)).steps.map((step) => step.signal)).toEqual(["active", "pending"])
   })
 
   test("falls back to todos, then to nothing", () => {
@@ -214,11 +233,19 @@ describe("verification", () => {
     expect(result.scope).toEqual({ files: 20, threshold: 15 })
   })
 
-  test("is running until the report says done", () => {
+  test("is running while the session is busy, and not stuck there once it is not", () => {
+    const report = withSummary({ done: false, checks: [{ command: "bun test", status: "queued" }] })
+    expect(verification(input(report, { busy: true })).state).toBe("running")
+    // A report left unfinished by a crash or restart must not pin the session in "verifying".
+    expect(verification(input(report)).state).toBe("incomplete")
+  })
+
+  test("reads a queued check as pending rather than as a pass", () => {
     const result = verification(
-      input(withSummary({ done: false, checks: [{ command: "bun test", status: "not_run" }] })),
+      input(withSummary({ done: false, checks: [{ command: "bun test", status: "queued" }] }), { busy: true }),
     )
-    expect(result.state).toBe("running")
+    expect(result.checks[0]?.status).toBe("queued")
+    expect(result.state).not.toBe("passed")
   })
 
   test("checks that did not run are incomplete, never passed", () => {
@@ -359,6 +386,21 @@ describe("task state", () => {
     expect(task(input(editing, { busy: true })).state).toBe("executing")
     expect(task(input(editing)).state).toBe("done")
     expect(task(input(build([]))).state).toBe("idle")
+  })
+
+  test("an old failure does not keep the newest request marked failed", () => {
+    const built = build([
+      { message: { role: "user" }, parts: [text("first request")] },
+      { message: { role: "assistant" }, parts: [tool("edit", { status: "error", input: { filePath: "a.ts" } })] },
+      { message: { role: "user" }, parts: [text("second request")] },
+      { message: { role: "assistant" }, parts: [tool("edit", { input: { filePath: "b.ts" } })] },
+    ])
+    const result = task(input(built))
+    expect(result.title).toBe("second request")
+    // Only this turn's work is shown, so the earlier failure cannot haunt the new request.
+    expect(result.execution).toHaveLength(1)
+    expect(result.execution[0]).toMatchObject({ signal: "done" })
+    expect(result.state).toBe("done")
   })
 
   test("a failed check or a failed tool call fails the task", () => {

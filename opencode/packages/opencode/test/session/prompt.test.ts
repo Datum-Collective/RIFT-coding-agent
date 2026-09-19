@@ -673,6 +673,49 @@ it.instance("vibe mode planner reviews executor steps and requests fixes", () =>
   }),
 )
 
+it.instance(
+  "vibe reviewer runs once per finished step, not after every executor turn",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(vibeReviewProviderCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Pinned",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "Implement the requested change" }],
+      })
+      yield* llm.text('{"steps":[{"files":["src/example.ts"],"functions":["run"],"description":"Update run"}]}')
+      // A realistic step: the executor calls a tool, gets the result, then reports back.
+      yield* llm.tool("write", { filePath: path.join(dir, "example.ts"), content: "export const run = () => 1\n" })
+      yield* llm.text("step complete")
+      yield* llm.text('{"approved":true,"feedback":"looks right"}')
+
+      yield* prompt.loop({ sessionID: chat.id })
+
+      // planner plan, executor tool turn, executor text turn, planner review.
+      expect((yield* llm.hits).map((hit) => hit.body.model)).toEqual([
+        "planner-model",
+        "executor-model",
+        "executor-model",
+        "planner-model",
+      ])
+
+      // The step message states its own number so clients never have to count messages.
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const step = messages
+        .flatMap((message) => message.parts)
+        .find((part) => part.type === "text" && part.text.startsWith("Execute this Vibe Mode plan step"))
+      expect(step?.type === "text" ? step.text : "").toContain("Step 1 of 1.")
+    }),
+  30_000,
+)
+
 withMcpInstructions.instance(
   "loop includes MCP instructions in model system context",
   () =>
