@@ -258,6 +258,37 @@ describe("verification", () => {
     expect(result.checks[0]?.reason).toBe("permission denied")
   })
 
+  test("a browser check that failed fails the task even when every command passed", () => {
+    const result = verification(
+      input(
+        withSummary({
+          done: true,
+          checks: [{ command: "bun test", status: "passed" }],
+          browser: {
+            url: "http://localhost:3000/",
+            status: "failed",
+            httpStatus: 200,
+            errors: ["boom is not defined"],
+          },
+        }),
+      ),
+    )
+    expect(result.state).toBe("failed")
+    expect(result.browser?.errors).toEqual(["boom is not defined"])
+  })
+
+  test("a malformed browser result is dropped rather than shown as a pass", () => {
+    for (const bad of [
+      null,
+      "nope",
+      { url: "http://x/" },
+      { status: "passed" },
+      { url: "http://x/", status: "weird" },
+    ]) {
+      expect(verification(input(withSummary({ done: true, checks: [], browser: bad }))).browser).toBeUndefined()
+    }
+  })
+
   test("a claims mismatch fails the task even when every check passed", () => {
     const result = verification(
       input(

@@ -1351,6 +1351,7 @@ const layer = Layer.effect(
       const partID = PartID.ascending()
       let scopeFiles: string[] = []
       let claims: Verify.Claims = { status: "off" }
+      let browser: Verify.BrowserCheck | undefined
       const publish = (done: boolean) => {
         const report: Verify.Report = {
           entries,
@@ -1358,6 +1359,7 @@ const layer = Layer.effect(
           scopeWarnFiles: cfg.verify_scope_warn_files ?? 15,
           done,
           claims,
+          browser,
         }
         return sessions.updatePart({
           id: partID,
@@ -1412,6 +1414,14 @@ const layer = Layer.effect(
               })
           yield* publish(false)
         }
+        // A UI change can typecheck and pass its tests while throwing on every render.
+        if (cfg.verify_browser_url) {
+          browser = yield* Effect.promise(() => Verify.checkBrowser(cfg.verify_browser_url!)).pipe(
+            Effect.catchCause(() => Effect.succeed(undefined)),
+          )
+          yield* publish(false)
+        }
+
         const before = new Set(baseline)
         scopeFiles = (yield* Effect.promise(() => Verify.changedFiles(ctx.directory))).filter(
           (file) => !before.has(file),

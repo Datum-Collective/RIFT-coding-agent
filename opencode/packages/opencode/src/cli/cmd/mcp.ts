@@ -16,6 +16,7 @@ import { ConfigMCPV1 } from "@opencode-ai/core/v1/config/mcp"
 import { InstanceRef } from "@/effect/instance-ref"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import path from "path"
+import { BRAND, LEGACY_BRAND, PROJECT_DIRS } from "@opencode-ai/core/brand"
 import { Global } from "@opencode-ai/core/global"
 import { modify, applyEdits } from "jsonc-parser"
 import { Filesystem } from "@/util/filesystem"
@@ -392,11 +393,13 @@ export const McpLogoutCommand = effectCmd({
 })
 
 async function resolveConfigPath(baseDir: string, global = false) {
-  // Check for existing config files (prefer .jsonc over .json, check .opencode/ subdirectory too)
-  const candidates = [path.join(baseDir, "opencode.json"), path.join(baseDir, "opencode.jsonc")]
+  // An existing config is edited in place whatever it is called; a new one takes the RIFT name.
+  // `.json` leads here, unlike config loading, so a file created by `mcp add` stays plain JSON.
+  const names = [`${BRAND}.json`, `${BRAND}.jsonc`, `${LEGACY_BRAND}.json`, `${LEGACY_BRAND}.jsonc`]
+  const candidates = names.map((name) => path.join(baseDir, name))
 
   if (!global) {
-    candidates.push(path.join(baseDir, ".opencode", "opencode.json"), path.join(baseDir, ".opencode", "opencode.jsonc"))
+    for (const dir of PROJECT_DIRS) candidates.push(...names.map((name) => path.join(baseDir, dir, name)))
   }
 
   for (const candidate of candidates) {
@@ -405,7 +408,6 @@ async function resolveConfigPath(baseDir: string, global = false) {
     }
   }
 
-  // Default to opencode.json if none exist
   return candidates[0]
 }
 
