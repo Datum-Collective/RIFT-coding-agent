@@ -1347,20 +1347,25 @@ const layer = Layer.effect(
       const partID = PartID.ascending()
       let scopeFiles: string[] = []
       let claims: Verify.Claims = { status: "off" }
-      const publish = (done: boolean) =>
-        sessions.updatePart({
+      const publish = (done: boolean) => {
+        const report: Verify.Report = {
+          entries,
+          scopeFiles,
+          scopeWarnFiles: cfg.verify_scope_warn_files ?? 15,
+          done,
+          claims,
+        }
+        return sessions.updatePart({
           id: partID,
           messageID: last.info.id,
           sessionID,
           type: "text",
-          text: Verify.format({
-            entries,
-            scopeFiles,
-            scopeWarnFiles: cfg.verify_scope_warn_files ?? 15,
-            done,
-            claims,
-          }),
+          text: Verify.format(report),
+          // Structured twin of the text, so clients can render verification as state
+          // instead of parsing the prose back out of the transcript.
+          metadata: { [Verify.METADATA_KEY]: Verify.summarize(report) },
         } satisfies SessionV1.TextPart)
+      }
 
       const agent = yield* agents.get(last.info.agent)
       const ruleset = Permission.merge(agent?.permission ?? [], session.permission ?? [])
