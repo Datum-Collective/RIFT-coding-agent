@@ -997,6 +997,10 @@ it.instance("loop continues when finish is unknown", () =>
   }),
 )
 
+// Cross-platform stand-ins for `touch` and `sleep`, so these tests do not depend on POSIX shell tools.
+const TOUCH_SCRIPT = 'require("fs").writeFileSync(process.argv[2], "")'
+const HOLD_SCRIPT = 'require("fs").writeFileSync("verify-started", ""); setTimeout(() => {}, 30000)'
+
 function verifyProviderCfg(extra: Record<string, unknown>) {
   return (url: string) => ({ ...providerCfg(url), ...extra })
 }
@@ -1007,95 +1011,104 @@ function verificationText(result: { parts: ReadonlyArray<{ type: string; text?: 
   )
 }
 
-it.instance("verification runs real checks after edits and reports failures the agent did not mention", () =>
-  Effect.gen(function* () {
-    const { dir, llm } = yield* useServerConfig(verifyProviderCfg({ verify_commands: ["echo tests-ran", "exit 4"] }))
-    const prompt = yield* SessionPrompt.Service
-    const sessions = yield* Session.Service
-    const session = yield* sessions.create({
-      title: "Verify",
-      permission: [{ permission: "*", pattern: "*", action: "allow" }],
-    })
-    yield* prompt.prompt({
-      sessionID: session.id,
-      agent: "build",
-      noReply: true,
-      parts: [{ type: "text", text: "write a file" }],
-    })
-    yield* llm.tool("write", { filePath: path.join(dir, "out.txt"), content: "hello" })
-    yield* llm.text("Done, all tests pass!")
+it.instance(
+  "verification runs real checks after edits and reports failures the agent did not mention",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(verifyProviderCfg({ verify_commands: ["echo tests-ran", "exit 4"] }))
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({
+        title: "Verify",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "write a file" }],
+      })
+      yield* llm.tool("write", { filePath: path.join(dir, "out.txt"), content: "hello" })
+      yield* llm.text("Done, all tests pass!")
 
-    const result = yield* prompt.loop({ sessionID: session.id })
-    const [report] = verificationText(result)
-    expect(report).toContain("`echo tests-ran` ✓ passed")
-    expect(report).toContain("`exit 4` ✗ failed (exit 4)")
-    expect(report).toContain("1 passed, 1 failed, 0 not run.")
-    // The agent's own claim is still there, but the real result sits next to it.
-    expect(result.parts.some((part) => part.type === "text" && part.text === "Done, all tests pass!")).toBe(true)
-  }),
+      const result = yield* prompt.loop({ sessionID: session.id })
+      const [report] = verificationText(result)
+      expect(report).toContain("`echo tests-ran` ✓ passed")
+      expect(report).toContain("`exit 4` ✗ failed (exit 4)")
+      expect(report).toContain("1 passed, 1 failed, 0 not run.")
+      // The agent's own claim is still there, but the real result sits next to it.
+      expect(result.parts.some((part) => part.type === "text" && part.text === "Done, all tests pass!")).toBe(true)
+    }),
+  30_000,
 )
 
-it.instance("verification does not run when nothing was edited or when disabled", () =>
-  Effect.gen(function* () {
-    const { dir, llm } = yield* useServerConfig(verifyProviderCfg({ verify_commands: ["echo ran"] }))
-    const prompt = yield* SessionPrompt.Service
-    const sessions = yield* Session.Service
-    const session = yield* sessions.create({
-      title: "No edit",
-      permission: [{ permission: "*", pattern: "*", action: "allow" }],
-    })
-    yield* writeText(path.join(dir, "probe.txt"), "probe")
-    yield* prompt.prompt({
-      sessionID: session.id,
-      agent: "build",
-      noReply: true,
-      parts: [{ type: "text", text: "look around" }],
-    })
-    yield* llm.tool("glob", { pattern: "**/*.txt" })
-    yield* llm.text("nothing to change")
-    const result = yield* prompt.loop({ sessionID: session.id })
-    expect(verificationText(result)).toHaveLength(0)
-  }),
+it.instance(
+  "verification does not run when nothing was edited or when disabled",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(verifyProviderCfg({ verify_commands: ["echo ran"] }))
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({
+        title: "No edit",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* writeText(path.join(dir, "probe.txt"), "probe")
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "look around" }],
+      })
+      yield* llm.tool("glob", { pattern: "**/*.txt" })
+      yield* llm.text("nothing to change")
+      const result = yield* prompt.loop({ sessionID: session.id })
+      expect(verificationText(result)).toHaveLength(0)
+    }),
+  30_000,
 )
 
-it.instance("verification respects bash permission rules and does not run denied commands", () =>
-  Effect.gen(function* () {
-    const marker = "verify-marker.txt"
-    const { dir, llm } = yield* useServerConfig(verifyProviderCfg({ verify_commands: [`touch ${marker}`] }))
-    const prompt = yield* SessionPrompt.Service
-    const sessions = yield* Session.Service
-    const session = yield* sessions.create({
-      title: "Denied",
-      permission: [
-        { permission: "*", pattern: "*", action: "allow" },
-        { permission: "bash", pattern: "*", action: "deny" },
-      ],
-    })
-    yield* prompt.prompt({
-      sessionID: session.id,
-      agent: "build",
-      noReply: true,
-      parts: [{ type: "text", text: "write a file" }],
-    })
-    yield* llm.tool("write", { filePath: path.join(dir, "out.txt"), content: "hello" })
-    yield* llm.text("done")
+it.instance(
+  "verification respects bash permission rules and does not run denied commands",
+  () =>
+    Effect.gen(function* () {
+      const marker = "verify-marker.txt"
+      const { dir, llm } = yield* useServerConfig(verifyProviderCfg({ verify_commands: [`bun touch.js ${marker}`] }))
+      yield* writeText(path.join(dir, "touch.js"), TOUCH_SCRIPT)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({
+        title: "Denied",
+        permission: [
+          { permission: "*", pattern: "*", action: "allow" },
+          { permission: "bash", pattern: "*", action: "deny" },
+        ],
+      })
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "write a file" }],
+      })
+      yield* llm.tool("write", { filePath: path.join(dir, "out.txt"), content: "hello" })
+      yield* llm.text("done")
 
-    const result = yield* prompt.loop({ sessionID: session.id })
-    const [report] = verificationText(result)
-    expect(report).toContain("not run (permission denied)")
-    expect(report).toContain("0 passed, 0 failed, 1 not run.")
-    expect(report).toContain("not fully verified")
-    expect(yield* Effect.promise(() => Bun.file(path.join(dir, marker)).exists())).toBe(false)
-  }),
+      const result = yield* prompt.loop({ sessionID: session.id })
+      const [report] = verificationText(result)
+      expect(report).toContain("not run (permission denied)")
+      expect(report).toContain("0 passed, 0 failed, 1 not run.")
+      expect(report).toContain("not fully verified")
+      expect(yield* Effect.promise(() => Bun.file(path.join(dir, marker)).exists())).toBe(false)
+    }),
+  30_000,
 )
 
 it.instance(
   "cancelling during verification stops the running check and leaves no queued state",
   () =>
     Effect.gen(function* () {
-      const { dir, llm } = yield* useServerConfig(
-        verifyProviderCfg({ verify_commands: ["touch verify-started && sleep 30", "echo never"] }),
-      )
+      const { dir, llm } = yield* useServerConfig(verifyProviderCfg({ verify_commands: ["bun hold.js", "echo never"] }))
+      yield* writeText(path.join(dir, "hold.js"), HOLD_SCRIPT)
       const prompt = yield* SessionPrompt.Service
       const sessions = yield* Session.Service
       const session = yield* sessions.create({
@@ -1132,26 +1145,60 @@ it.instance(
   15_000,
 )
 
-it.instance("verification says so when the project has no checks configured", () =>
-  Effect.gen(function* () {
-    const { dir, llm } = yield* useServerConfig(providerCfg)
-    const prompt = yield* SessionPrompt.Service
-    const sessions = yield* Session.Service
-    const session = yield* sessions.create({
-      title: "Unconfigured",
-      permission: [{ permission: "*", pattern: "*", action: "allow" }],
-    })
-    yield* prompt.prompt({
-      sessionID: session.id,
-      agent: "build",
-      noReply: true,
-      parts: [{ type: "text", text: "write a file" }],
-    })
-    yield* llm.tool("write", { filePath: path.join(dir, "out.txt"), content: "hello" })
-    yield* llm.text("done")
-    const result = yield* prompt.loop({ sessionID: session.id })
-    expect(verificationText(result)[0]).toContain("Not configured")
-  }),
+it.instance(
+  "verification runs the package's own checks in a monorepo",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({
+        title: "Monorepo",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* writeText(path.join(dir, "bun.lock"), "")
+      yield* writeText(path.join(dir, "packages/a/mark.js"), 'require("fs").writeFileSync("ran-in-package", "")')
+      yield* writeText(path.join(dir, "packages/a/package.json"), JSON.stringify({ scripts: { test: "bun mark.js" } }))
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "change package a" }],
+      })
+      yield* llm.tool("write", { filePath: path.join(dir, "packages/a/src/x.ts"), content: "export {}" })
+      yield* llm.text("done")
+
+      const result = yield* prompt.loop({ sessionID: session.id })
+      const [report] = verificationText(result)
+      expect(report).toContain("`bun run test` in packages/a ✓ passed")
+      expect(yield* Effect.promise(() => Bun.file(path.join(dir, "packages/a/ran-in-package")).exists())).toBe(true)
+    }),
+  30_000,
+)
+
+it.instance(
+  "verification says so when the project has no checks configured",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({
+        title: "Unconfigured",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "write a file" }],
+      })
+      yield* llm.tool("write", { filePath: path.join(dir, "out.txt"), content: "hello" })
+      yield* llm.text("done")
+      const result = yield* prompt.loop({ sessionID: session.id })
+      expect(verificationText(result)[0]).toContain("Not configured")
+    }),
+  30_000,
 )
 
 it.instance("glob tool keeps instance context during prompt runs", () =>

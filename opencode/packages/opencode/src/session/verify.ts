@@ -9,6 +9,10 @@ import { Process } from "@/util/process"
 export interface Check {
   name: string
   command: string
+  /** Directory to run in, when it is not the project root (monorepo packages). */
+  dir?: string
+  /** `dir` relative to the project root, for display. */
+  where?: string
 }
 
 /**
@@ -33,15 +37,39 @@ export interface Entry {
 }
 
 export interface Options {
-  /** Explicit commands; skips auto-detection when set. */
+  /** Explicit commands; skips auto-detection when set. They always run from the project root. */
   commands?: string[]
+  /** Files the agent edited, used to find the nearest package in a monorepo. */
+  files?: string[]
 }
 
 const TOOLS_THAT_EDIT = new Set(["edit", "write", "apply_patch"])
 const SCRIPTS = ["typecheck", "lint", "test"] as const
 
-export function editedFiles(tools: Array<{ tool: string; status: string }>) {
+export interface ToolUse {
+  tool: string
+  status: string
+  input?: unknown
+}
+
+export function editedFiles(tools: ToolUse[]) {
   return tools.some((part) => TOOLS_THAT_EDIT.has(part.tool) && part.status === "completed")
+}
+
+/** Paths touched by completed edit-like tool calls, resolved against `root`. */
+export function editedPaths(tools: ToolUse[], root: string) {
+  const paths = new Set<string>()
+  for (const part of tools) {
+    if (!TOOLS_THAT_EDIT.has(part.tool) || part.status !== "completed") continue
+    const input = typeof part.input === "object" && part.input !== null ? part.input : {}
+    if ("filePath" in input && typeof input.filePath === "string") paths.add(path.resolve(root, input.filePath))
+    if ("patchText" in input && typeof input.patchText === "string") {
+      for (const match of input.patchText.matchAll(/^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/gm)) {
+        paths.add(path.resolve(root, match[1].trim()))
+      }
+    }
+  }
+  return [...paths]
 }
 
 async function read(file: string) {
@@ -54,10 +82,17 @@ async function exists(file: string) {
   return Bun.file(file).exists()
 }
 
-async function packageRunner(dir: string) {
-  if ((await exists(path.join(dir, "bun.lock"))) || (await exists(path.join(dir, "bun.lockb")))) return "bun run"
-  if (await exists(path.join(dir, "pnpm-lock.yaml"))) return "pnpm run"
-  if (await exists(path.join(dir, "yarn.lock"))) return "yarn run"
+// Lockfiles usually live at the workspace root, so look from the package up to the project root.
+async function packageRunner(dir: string, root: string) {
+  let current = dir
+  while (!path.relative(root, current).startsWith("..")) {
+    if ((await exists(path.join(current, "bun.lock"))) || (await exists(path.join(current, "bun.lockb"))))
+      return "bun run"
+    if (await exists(path.join(current, "pnpm-lock.yaml"))) return "pnpm run"
+    if (await exists(path.join(current, "yarn.lock"))) return "yarn run"
+    if (current === root) break
+    current = path.dirname(current)
+  }
   return "npm run"
 }
 
@@ -66,7 +101,7 @@ function isPlaceholder(script: string) {
   return /no test specified/.test(script) || /(^|&&|;)\s*exit 1\s*$/.test(script)
 }
 
-export async function detect(dir: string): Promise<Check[]> {
+export async function detect(dir: string, root = dir): Promise<Check[]> {
   const checks: Check[] = []
 
   const pkg = await read(path.join(dir, "package.json"))
@@ -80,7 +115,7 @@ export async function detect(dir: string): Promise<Check[]> {
         return {}
       }
     })()
-    const runner = await packageRunner(dir)
+    const runner = await packageRunner(dir, root)
     for (const name of SCRIPTS) {
       const script = scripts[name]
       if (typeof script === "string" && !isPlaceholder(script)) checks.push({ name, command: `${runner} ${name}` })
@@ -106,9 +141,43 @@ function tail(text: string, lines = 40) {
   return all.length <= lines ? all.join("\n") : ["…", ...all.slice(-lines)].join("\n")
 }
 
+/**
+ * Picks the checks to run. Explicit commands win. Otherwise each edited file uses the nearest
+ * directory (walking up to the project root) that has checks of its own, so a change in one
+ * monorepo package runs that package's scripts. With no usable files it falls back to the root.
+ */
 export async function resolve(dir: string, options: Options = {}): Promise<Check[]> {
   if (options.commands?.length) return options.commands.map((command) => ({ name: command, command }))
-  return detect(dir)
+
+  const cache = new Map<string, Check[]>()
+  const detectIn = async (target: string) => {
+    const hit = cache.get(target)
+    if (hit) return hit
+    const found = await detect(target, dir)
+    cache.set(target, found)
+    return found
+  }
+
+  const targets = new Set<string>()
+  for (const file of options.files ?? []) {
+    let current = path.dirname(file)
+    while (!path.relative(dir, current).startsWith("..")) {
+      if ((await detectIn(current)).length > 0) {
+        targets.add(current)
+        break
+      }
+      if (current === dir) break
+      current = path.dirname(current)
+    }
+  }
+  if (targets.size === 0) return detectIn(dir)
+
+  const checks: Check[] = []
+  for (const target of [...targets].sort()) {
+    const where = path.relative(dir, target)
+    for (const check of await detectIn(target)) checks.push({ ...check, dir: target, where })
+  }
+  return checks
 }
 
 export function notRun(check: Check, reason: string): CheckResult {
@@ -162,7 +231,7 @@ export async function runCheck(check: Check, dir: string, options: RunOptions): 
   const timeout = options.timeoutMs > 0 ? AbortSignal.timeout(options.timeoutMs) : undefined
   const signals = [timeout, options.cancel].filter((item): item is AbortSignal => !!item)
   const abort = signals.length ? AbortSignal.any(signals) : undefined
-  const result = await exec(options.shell ?? Shell.acceptable(), check.command, dir, abort)
+  const result = await exec(options.shell ?? Shell.acceptable(), check.command, check.dir ?? dir, abort)
   const ms = Date.now() - started
   const output = tail(result.output)
   if (options.cancel?.aborted)
@@ -180,6 +249,34 @@ export async function changedFiles(dir: string): Promise<string[]> {
     .split("\n")
     .filter(Boolean)
     .map((line) => line.slice(3).split(" -> ").pop()!.replace(/^"|"$/g, ""))
+}
+
+function truncate(text: string, max: number) {
+  return text.length > max ? `${text.slice(0, max)}\n… (truncated, ${text.length - max} more characters)` : text
+}
+
+function insideProject(dir: string, file: string) {
+  return !path.relative(dir, path.resolve(dir, file)).startsWith("..")
+}
+
+/** Current on-disk contents of `files`, for showing a reviewer. Skips unreadable files and paths outside `dir`. */
+export async function fileContents(dir: string, files: string[], max = 100_000) {
+  const sections = await Promise.all(
+    files.map(async (file) => {
+      if (!insideProject(dir, file)) return undefined
+      const text = await read(path.resolve(dir, file))
+      return text === undefined ? undefined : `--- ${file} ---\n${truncate(text, max)}`
+    }),
+  )
+  return sections.filter((item): item is string => !!item).join("\n\n")
+}
+
+/** Uncommitted changes to `files` relative to HEAD. Empty outside a git repo or when nothing changed. */
+export async function diffOf(dir: string, files: string[], max = 100_000) {
+  const inside = files.filter((file) => insideProject(dir, file))
+  if (inside.length === 0) return ""
+  const result = await Process.run(["git", "diff", "HEAD", "--", ...inside], { cwd: dir, nothrow: true })
+  return result.code === 0 ? truncate(result.stdout.toString().trim(), max) : ""
 }
 
 export interface Report {
@@ -210,7 +307,7 @@ export function format(report: Report) {
   }
   for (const entry of entries) {
     const state = entry.result ? describe(entry.result) : done ? "– not run" : "… queued"
-    lines.push(`- \`${entry.check.command}\` ${state}`)
+    lines.push(`- \`${entry.check.command}\`${entry.check.where ? ` in ${entry.check.where}` : ""} ${state}`)
   }
   for (const entry of entries) {
     const result = entry.result
