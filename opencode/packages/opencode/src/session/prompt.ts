@@ -1249,13 +1249,18 @@ const layer = Layer.effect(
       const last = turn.findLast((m) => m.info.role === "assistant" && m.info.mode !== "vibe-planner")
       if (!last || last.info.role !== "assistant" || last.info.error) return
       const tools = turn.flatMap((m) =>
-        m.parts.flatMap((p) => (p.type === "tool" ? [{ tool: p.tool, status: p.state.status }] : [])),
+        m.parts.flatMap((p) =>
+          p.type === "tool" ? [{ tool: p.tool, status: p.state.status, input: p.state.input }] : [],
+        ),
       )
       if (!Verify.editedFiles(tools)) return
       const ctx = yield* InstanceState.context
       yield* Effect.logInfo("verification", { "session.id": sessionID })
       const checks = yield* Effect.promise(() =>
-        Verify.resolve(ctx.directory, { commands: cfg.verify_commands ? [...cfg.verify_commands] : undefined }),
+        Verify.resolve(ctx.directory, {
+          commands: cfg.verify_commands ? [...cfg.verify_commands] : undefined,
+          files: Verify.editedPaths(tools, ctx.directory),
+        }),
       )
       const entries: Verify.Entry[] = checks.map((check) => ({ check }))
       const partID = PartID.ascending()
@@ -1284,7 +1289,7 @@ const layer = Layer.effect(
               patterns: [command],
               always: [command],
               sessionID,
-              metadata: { command, source: "verification" },
+              metadata: { command, cwd: entry.check.dir ?? ctx.directory, source: "verification" },
               ruleset,
             })
             .pipe(
@@ -1426,24 +1431,13 @@ const layer = Layer.effect(
             .sort((a, b) => (a.info.id < b.info.id ? -1 : 1))
           const system = yield* loadSystemContext(input.agent, input.model, session)
           const messages = yield* MessageV2.toModelMessagesEffect(transcript, input.model)
-          // The reviewer has no tools, so show it the files as they are on disk right now.
-          const files = yield* Effect.forEach(
-            input.step.files,
-            (file) =>
-              Effect.promise(async () => {
-                const abs = path.resolve(ctx.directory, file)
-                if (path.relative(ctx.directory, abs).startsWith("..")) return undefined
-                const text = await Bun.file(abs).text()
-                const max = 100_000
-                const body =
-                  text.length > max
-                    ? `${text.slice(0, max)}\n… (truncated, ${text.length - max} more characters)`
-                    : text
-                return `--- ${file} ---\n${body}`
-              }).pipe(Effect.catchCause(() => Effect.succeed(undefined))),
-            { concurrency: 4 },
-          )
-          const fileContext = files.filter((item): item is string => !!item).join("\n\n")
+          // The reviewer has no tools, so show it what is on disk now and what changed.
+          const [fileContext, diff] = yield* Effect.promise(() =>
+            Promise.all([
+              Verify.fileContents(ctx.directory, input.step.files),
+              Verify.diffOf(ctx.directory, input.step.files),
+            ]),
+          ).pipe(Effect.catchCause(() => Effect.succeed(["", ""] as const)))
           const text = yield* llm
             .stream({
               user: input.user,
@@ -1453,6 +1447,7 @@ const layer = Layer.effect(
               system: [
                 VIBE_REVIEW_SYSTEM_PROMPT,
                 ...system,
+                ...(diff ? [`Uncommitted changes to the step's target files (git diff against HEAD):\n${diff}`] : []),
                 ...(fileContext ? [`Current contents of the step's target files:\n${fileContext}`] : []),
               ],
               messages: [

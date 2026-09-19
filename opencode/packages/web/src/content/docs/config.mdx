@@ -744,7 +744,7 @@ For example, to ensure that the `edit` and `bash` tools require user approval:
 
 ### Verification
 
-After the agent edits files, OpenCode runs your project's own checks and appends the real results to the reply, so you don't have to rely on the agent saying "tests pass". Checks are detected from `package.json` scripts (`typecheck`, `lint`, `test`), `go.mod`, `Cargo.toml` and pytest config. Each check runs through the same `bash` [permission](/docs/permissions) rules as the shell tool, and is reported as passed, failed, timed out, or not run. If no checks are found, the report says so.
+After the agent edits files, OpenCode runs your project's own checks and appends the real results to the reply, so you don't have to rely on the agent saying "tests pass". Checks are detected from `package.json` scripts (`typecheck`, `lint`, `test`), `go.mod`, `Cargo.toml` and pytest config. In a monorepo, each edited file uses the nearest parent directory that has checks of its own, so a change in `packages/a` runs that package's scripts (and the package manager is found from the workspace lockfile). Each check runs through the same `bash` [permission](/docs/permissions) rules as the shell tool, and is reported as passed, failed, timed out, or not run. If no checks are found, the report says so.
 
 ```json title="opencode.json"
 {
@@ -757,7 +757,7 @@ After the agent edits files, OpenCode runs your project's own checks and appends
 ```
 
 - `verify` - set to `false` to turn verification off. Defaults to `true`.
-- `verify_commands` - commands to run instead of auto-detecting them. Useful in monorepos, where only root scripts are detected.
+- `verify_commands` - commands to run instead of auto-detecting them. Explicit commands always run from the project root, so use this when you want the same commands regardless of what was edited.
 - `verify_timeout_ms` - kill a single check after this many milliseconds. Defaults to 10 minutes; `0` disables the timeout.
 - `verify_scope_warn_files` - show a soft warning when more files than this changed since the task started. Defaults to `15`; `0` disables it.
 
@@ -778,7 +778,7 @@ Vibe Mode uses a smarter planner model to plan the work and a cheaper executor m
 }
 ```
 
-- `vibe_review` - the planner reviews each executor step (using the transcript and the current contents of the step's target files) and either approves it or sends it back with feedback. Defaults to `true`.
+- `vibe_review` - the planner reviews each executor step (using the transcript, the current contents of the step's target files and their `git diff`) and either approves it or sends it back with feedback. Defaults to `true`.
 - `vibe_review_max_rounds` - rejected reviews per step before the planner rewrites the step. Defaults to `2`; `0` means unlimited.
 - `vibe_max_attempts` - failed executor attempts before the planner rewrites the step. Defaults to `2`; `0` means unlimited.
 
