@@ -1,6 +1,7 @@
 import { Prompt, type PromptRef } from "../component/prompt"
 import { createEffect, createMemo, createSignal, onMount } from "solid-js"
-import { Logo } from "../component/logo"
+import { Banner, bannerFits } from "../component/banner"
+import { BANNER_WIDTH } from "../banner"
 import { useSync } from "../context/sync"
 import { Toast } from "../ui/toast"
 import { useArgs } from "../context/args"
@@ -35,6 +36,10 @@ export function Home() {
     if (configured === "auto") return Math.max(75, Math.floor(dimensions().width * 0.7))
     return configured ?? 75
   })
+  // The banner is fixed-width art, so when it is on screen the prompt takes the same width and
+  // the two line up exactly. Without this they are sized independently and only ever agree by
+  // accident.
+  const contentWidth = createMemo(() => (bannerFits(dimensions().width) ? BANNER_WIDTH : promptMaxWidth()))
   let sent = false
 
   onMount(() => {
@@ -72,13 +77,13 @@ export function Home() {
       <box flexGrow={1} alignItems="center" paddingLeft={2} paddingRight={2}>
         <box flexGrow={1} minHeight={0} />
         <box height={4} minHeight={0} flexShrink={1} />
-        <box flexShrink={0}>
+        <box width="100%" maxWidth={contentWidth()} flexShrink={0}>
           <pluginRuntime.Slot name="home_logo" mode="replace">
-            <Logo />
+            <Banner />
           </pluginRuntime.Slot>
         </box>
         <box height={1} minHeight={0} flexShrink={1} />
-        <box width="100%" maxWidth={promptMaxWidth()} zIndex={1000} paddingTop={1} flexShrink={0}>
+        <box width="100%" maxWidth={contentWidth()} zIndex={1000} paddingTop={1} flexShrink={0}>
           <pluginRuntime.Slot name="home_prompt" mode="replace" ref={bind}>
             <Prompt ref={bind} right={<pluginRuntime.Slot name="home_prompt_right" />} placeholders={placeholder} />
           </pluginRuntime.Slot>

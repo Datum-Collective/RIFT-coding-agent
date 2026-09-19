@@ -27,6 +27,60 @@ Give me a quick summary of the codebase.
 
 ---
 
+## Task view
+
+The session screen opens on the task, not the chat transcript. It answers four questions at a
+glance: what the agent is doing, what changed, whether it needs you, and whether the work held up.
+
+```text
+TASK ─────────────────────────────────────────────────
+  Add retry logic to the API client
+  ● executing · opus-5 → haiku-4.5 · 4 files +82 −11 · 38% context
+
+PLAN ─────────────────────────────────────────────────
+  ✓ 1. Add the retry helper                 src/retry.ts
+  ● 2. Wire it into the client             src/client.ts
+  ○ 3. Cover it with tests            test/retry.test.ts
+
+EXECUTION ────────────────────────────────────────────
+  ✓ Analyzing code                                 2.1s
+  ✓ Editing 4 files                                8.4s
+  ● Running tests
+
+VERIFICATION ─────────────────────────────────────────
+  ✓ bun run typecheck                              1.2s
+  ✗ bun test                                     failed
+  ⚠ summary does not match the diff (1)
+```
+
+Runs of tool calls collapse into the states worth reading — dozens of reads become one
+"Analyzing code" line. Nothing is lost: the full transcript is one keystroke away.
+
+Sections appear only when they have something to say. `NEEDS YOU` is pinned directly under the
+header whenever a permission request or question is waiting, so a blocked session is never
+buried. `VERIFICATION` shows the real result of your project's own commands, and a check that
+could not run is reported as such rather than counted as a pass.
+
+| Key         | Action                                        |
+| ----------- | --------------------------------------------- |
+| `<leader>v` | Switch between the task view and the full log |
+| `<leader>o` | Open Mission Control                          |
+| `<leader>d` | Open the diff viewer to review the changes    |
+
+The choice of view persists between runs.
+
+---
+
+## Mission Control
+
+`<leader>o` puts every session on one board, ordered so anything waiting on you is at the top,
+then failures, then work still in flight. Each row names where the session got to — "2 permission
+requests waiting", "1 check failed — bun test" — rather than just that it is busy.
+
+Type to filter, including by state: typing `failed` narrows the board to failed sessions.
+
+---
+
 ## File references
 
 You can reference files in your messages using `@`. This does a fuzzy file search in the current working directory.

@@ -1947,6 +1947,7 @@ export type Config = {
   verify_commands?: Array<string>
   verify_timeout_ms?: number
   verify_scope_warn_files?: number
+  verify_browser_url?: string
   verify_claims?: boolean
   verify_claims_model?: string
   default_agent?: string

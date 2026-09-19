@@ -1,0 +1,16 @@
+Drive a real browser page: load a URL, read what rendered, interact with it, and see the
+console errors a screenshot would never show.
+
+Use this to check your own work on anything with a UI. A page that "looks fine" can still be
+throwing on every render, and only the console says so.
+
+Actions:
+- open:       load a url. Returns the title, the HTTP status and any console errors.
+- read:       the current url, title and console errors, without reloading.
+- text:       the visible text of the page, or of one CSS selector.
+- click:      click the first element matching a CSS selector.
+- type:       set the value of an input matching a CSS selector.
+- screenshot: a PNG of the current page.
+
+The page stays open between calls in a session, so you can open once and then read, click and
+type against it. Selectors that match nothing are reported as errors rather than ignored.

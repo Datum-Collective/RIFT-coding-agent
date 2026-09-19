@@ -108,6 +108,10 @@ export const Info = Schema.Struct({
   verify_scope_warn_files: Schema.optional(Schema.Int).annotate({
     description: "Warn when more than this many files are changed in the working tree. Use 0 to disable",
   }),
+  verify_browser_url: Schema.optional(Schema.String).annotate({
+    description:
+      "After the agent edits files, load this URL in a real browser and report whether it rendered and what the console said, e.g. http://localhost:3000",
+  }),
   verify_claims: Schema.optional(Schema.Boolean).annotate({
     description:
       "After verification, have a model compare the agent's own summary against the real diff and flag mismatches. Costs one extra model call per turn that edits files. Defaults to true",

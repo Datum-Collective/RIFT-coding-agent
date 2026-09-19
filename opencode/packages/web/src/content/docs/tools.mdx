@@ -41,7 +41,27 @@ You can also use wildcards to control multiple tools at once. For example, to re
 
 ## Built-in
 
-Here are all the built-in tools available in OpenCode.
+Here are all the built-in tools available in RIFT.
+
+---
+
+### browser
+
+Drive a real page: load a URL, read what rendered, click and type, and see the console errors a
+screenshot would never show. It uses a Chromium-family browser already on your machine (Chrome,
+Chromium, Edge, Brave, or Playwright's cached build) in a throwaway profile, so your own browser
+data is never touched. Set `RIFT_BROWSER_PATH` to point at a specific executable.
+
+Loading a page goes through the same `browser_open` permission as opening a URL.
+
+```json title="rift.json" {4}
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "browser_open": "ask"
+  }
+}
+```
 
 ---
 

@@ -751,10 +751,14 @@ const layer = Layer.effect(
       step: VibePlan["steps"][number]
       model: Provider.Model
       feedback?: string
+      index: number
+      total: number
     }): SessionV1.WithParts => {
       const messageID = MessageID.ascending()
       const text = [
-        "Execute this Vibe Mode plan step using the available tools.",
+        // The step number is stated rather than implied: clients read it directly instead of
+        // counting step messages, which repeat whenever a step is retried or revised.
+        `Execute this Vibe Mode plan step using the available tools. Step ${input.index + 1} of ${input.total}.`,
         `Target files: ${input.step.files.join(", ") || "not specified"}`,
         `Target functions: ${input.step.functions.join(", ") || "not specified"}`,
         `Instructions: ${input.step.description}`,
@@ -1347,20 +1351,27 @@ const layer = Layer.effect(
       const partID = PartID.ascending()
       let scopeFiles: string[] = []
       let claims: Verify.Claims = { status: "off" }
-      const publish = (done: boolean) =>
-        sessions.updatePart({
+      let browser: Verify.BrowserCheck | undefined
+      const publish = (done: boolean) => {
+        const report: Verify.Report = {
+          entries,
+          scopeFiles,
+          scopeWarnFiles: cfg.verify_scope_warn_files ?? 15,
+          done,
+          claims,
+          browser,
+        }
+        return sessions.updatePart({
           id: partID,
           messageID: last.info.id,
           sessionID,
           type: "text",
-          text: Verify.format({
-            entries,
-            scopeFiles,
-            scopeWarnFiles: cfg.verify_scope_warn_files ?? 15,
-            done,
-            claims,
-          }),
+          text: Verify.format(report),
+          // Structured twin of the text, so clients can render verification as state
+          // instead of parsing the prose back out of the transcript.
+          metadata: { [Verify.METADATA_KEY]: Verify.summarize(report) },
         } satisfies SessionV1.TextPart)
+      }
 
       const agent = yield* agents.get(last.info.agent)
       const ruleset = Permission.merge(agent?.permission ?? [], session.permission ?? [])
@@ -1403,6 +1414,14 @@ const layer = Layer.effect(
               })
           yield* publish(false)
         }
+        // A UI change can typecheck and pass its tests while throwing on every render.
+        if (cfg.verify_browser_url) {
+          browser = yield* Effect.promise(() => Verify.checkBrowser(cfg.verify_browser_url!)).pipe(
+            Effect.catchCause(() => Effect.succeed(undefined)),
+          )
+          yield* publish(false)
+        }
+
         const before = new Set(baseline)
         scopeFiles = (yield* Effect.promise(() => Verify.changedFiles(ctx.directory))).filter(
           (file) => !before.has(file),
@@ -1743,6 +1762,8 @@ const layer = Layer.effect(
               step: vibePlan.steps[vibeStepIndex]!,
               model: turnModel,
               feedback: vibeFeedback.get(vibeStepIndex),
+              index: vibeStepIndex,
+              total: vibePlan.steps.length,
             })
             yield* sessions.updateMessage(stepMessage.info)
             for (const part of stepMessage.parts) yield* sessions.updatePart(part)
@@ -1867,6 +1888,15 @@ const layer = Layer.effect(
                 .join("\n")
                 .toLowerCase()
               const toolFailed = current.parts.some((part) => part.type === "tool" && part.state.status === "error")
+              // A turn that ends in tool calls is mid-step: the results still have to go back to
+              // the executor. Reviewing here would judge half-finished work and restart the step.
+              const stepFinished =
+                !!handle.message.finish &&
+                !["tool-calls", "unknown"].includes(handle.message.finish) &&
+                !current.parts.some(
+                  (part) =>
+                    part.type === "tool" && (part.state.status === "running" || part.state.status === "pending"),
+                )
               const reportedFailure =
                 output?.includes("can't proceed") ||
                 output?.includes("cannot proceed") ||
@@ -1905,7 +1935,7 @@ const layer = Layer.effect(
               vibeAttempts.delete(vibeStepIndex)
 
               const reviewedStep = vibePlan.steps[vibeStepIndex]
-              if ((yield* config.get()).vibe_review !== false && vibeStepUserID && reviewedStep) {
+              if (stepFinished && (yield* config.get()).vibe_review !== false && vibeStepUserID && reviewedStep) {
                 const step = reviewedStep
                 const verdict = yield* reviewVibeStep({
                   agent,

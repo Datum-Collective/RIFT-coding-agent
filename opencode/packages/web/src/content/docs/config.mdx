@@ -752,6 +752,7 @@ After the agent edits files, OpenCode runs your project's own checks and appends
   "verify": true,
   "verify_commands": ["bun run typecheck", "bun test"],
   "verify_timeout_ms": 600000,
+  "verify_browser_url": "http://localhost:3000",
   "verify_scope_warn_files": 15
 }
 ```
@@ -759,6 +760,7 @@ After the agent edits files, OpenCode runs your project's own checks and appends
 - `verify` - set to `false` to turn verification off. Defaults to `true`.
 - `verify_commands` - commands to run instead of auto-detecting them. Explicit commands always run from the project root, so use this when you want the same commands regardless of what was edited.
 - `verify_timeout_ms` - kill a single check after this many milliseconds. Defaults to 10 minutes; `0` disables the timeout.
+- `verify_browser_url` - load this URL in a real browser after the commands run, and report whether it rendered and what the console said. A UI change can typecheck and pass its tests while throwing on every render; only the console shows that. A page that returns no HTTP response at all is reported as failed, never as a pass.
 - `verify_scope_warn_files` - show a soft warning when more files than this changed since the task started. Defaults to `15`; `0` disables it.
 
 A second pass then compares the agent's own summary of what it did against the real `git diff` of the files it edited, and flags claims the diff does not support ("claimed it added retries, the diff only adds a plain fetch call"). This costs one extra model call on each turn that edits files. A model that answers in the wrong format is reported as not run, never as agreement.
