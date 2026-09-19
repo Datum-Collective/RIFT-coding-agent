@@ -40,6 +40,7 @@ function checkRight(check: VerifyCheck) {
   if (check.status === "passed") return formatDuration(check.ms) || "passed"
   if (check.status === "timed_out") return "timed out"
   if (check.status === "failed") return "failed"
+  if (check.status === "queued") return "queued"
   return check.reason ?? "not run"
 }
 

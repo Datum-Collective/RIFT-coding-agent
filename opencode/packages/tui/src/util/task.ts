@@ -39,7 +39,7 @@ export type ChangeFile = {
 export type VerifyCheck = {
   command: string
   where?: string
-  status: "passed" | "failed" | "timed_out" | "not_run"
+  status: "passed" | "failed" | "timed_out" | "not_run" | "queued"
   reason?: string
   ms: number
 }
@@ -206,6 +206,7 @@ function label(kind: PhaseKind, count: number, files: Set<string>): string {
  */
 export function phases(input: TaskInput): Phase[] {
   const out: Phase[] = []
+  const messages = turnOf(input)
   let open:
     | { kind: PhaseKind; count: number; files: Set<string>; failed: number; running: boolean; ms: number }
     | undefined
@@ -224,7 +225,7 @@ export function phases(input: TaskInput): Phase[] {
     open = undefined
   }
 
-  for (const message of input.messages) {
+  for (const message of messages) {
     if (message.role !== "assistant") continue
     for (const part of input.parts(message.id)) {
       if (part.type !== "tool" || !part.tool || !part.state) continue
@@ -250,11 +251,6 @@ export function phases(input: TaskInput): Phase[] {
 }
 
 // --- plan ---------------------------------------------------------------------------------
-
-const VIBE_PLAN_STEP = /^\s*(\d+)\.\s+(.*)$/
-const VIBE_PLAN_FILES = /^\s*Files:\s*(.*)$/
-const VIBE_STEP_RUNNING = /^Execute this Vibe Mode plan step/m
-const VIBE_REVIEW = /review of step (\d+)\/(\d+):\s*(approved|changes requested)/i
 
 /** Reads the planner's own plan text. The planner emits a stable numbered format. */
 export function parseVibePlan(text: string): PlanStep[] {
@@ -282,12 +278,34 @@ function todoSignal(status: string): Signal {
   return "pending"
 }
 
+const VIBE_PLAN_STEP = /^\s*(\d+)\.\s+(.*)$/
+const VIBE_PLAN_FILES = /^\s*Files:\s*(.*)$/
+const VIBE_STEP_RUNNING = /^Execute this Vibe Mode plan step[^\n]*?Step (\d+) of (\d+)/m
+const VIBE_REVIEW = /review of step (\d+)\/(\d+):\s*(approved|changes requested)/i
+
+/**
+ * Messages belonging to the request in flight: everything after the newest real user message.
+ * Without this, a failure from an hour ago would keep the task marked failed forever.
+ */
+export function turnOf(input: TaskInput): readonly TaskMessage[] {
+  for (let index = input.messages.length - 1; index >= 0; index--) {
+    const message = input.messages[index]
+    if (message?.role !== "user") continue
+    // A step message is the server talking to the executor, not the user starting a new task.
+    const real = input
+      .parts(message.id)
+      .some((part) => part.type === "text" && !part.synthetic && !VIBE_STEP_RUNNING.test(part.text ?? ""))
+    if (real) return input.messages.slice(index)
+  }
+  return input.messages
+}
+
 export function plan(input: TaskInput): Plan {
   let steps: PlanStep[] = []
-  let running = 0
+  let running: number | undefined
   let approved = 0
 
-  for (const message of input.messages) {
+  for (const message of turnOf(input)) {
     for (const part of input.parts(message.id)) {
       if (part.type !== "text" || typeof part.text !== "string") continue
       const text = part.text
@@ -298,7 +316,9 @@ export function plan(input: TaskInput): Plan {
         if (review && review[3].toLowerCase() === "approved") approved = Math.max(approved, Number(review[1]))
         continue
       }
-      if (message.role === "user" && VIBE_STEP_RUNNING.test(text)) running++
+      const step = message.role === "user" ? VIBE_STEP_RUNNING.exec(text) : null
+      // The server states the step number; retries repeat the same number rather than advancing.
+      if (step) running = Number(step[1])
     }
   }
 
@@ -334,7 +354,7 @@ function record(value: unknown): Record<string, unknown> | undefined {
     : undefined
 }
 
-const CHECK_STATUS = new Set<string>(["passed", "failed", "timed_out", "not_run"])
+const CHECK_STATUS = new Set<string>(["passed", "failed", "timed_out", "not_run", "queued"])
 
 const CLAIM_STATUS = new Set<string>(["off", "pending", "ok", "mismatch", "not_run"])
 
@@ -393,9 +413,11 @@ export function verification(input: TaskInput): Verification {
     ]
   })
 
-  const done = summary.done === true
+  // A report left at done:false by a crash or restart must not pin the session in "verifying"
+  // forever; without a live run there is nothing left to wait for.
+  const done = summary.done === true || (!input.busy && summary.done !== true)
   const failed = checks.filter((check) => check.status === "failed" || check.status === "timed_out").length
-  const notRun = checks.filter((check) => check.status === "not_run").length
+  const notRun = checks.filter((check) => check.status === "not_run" || check.status === "queued").length
   const claims = parseClaims(summary.claims)
 
   const state: Verification["state"] = !done
