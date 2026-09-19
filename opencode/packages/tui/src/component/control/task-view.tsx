@@ -250,6 +250,26 @@ export function TaskView(props: { task: Task; width: number; compact?: boolean }
                 </Row>
               )}
             </For>
+            <Show when={verification().browser}>
+              {(browser) => (
+                <Row
+                  signal={browser().status === "passed" ? "done" : browser().status === "failed" ? "failed" : "pending"}
+                  right={
+                    <text fg={browser().status === "failed" ? theme.error : theme.textMuted}>
+                      {browser().status === "passed"
+                        ? "rendered"
+                        : browser().status === "not_run"
+                          ? (browser().reason ?? "not checked")
+                          : browser().errors.length > 0
+                            ? `${browser().errors.length} console ${browser().errors.length === 1 ? "error" : "errors"}`
+                            : (browser().reason ?? `HTTP ${browser().httpStatus}`)}
+                    </text>
+                  }
+                >
+                  <text fg={theme.text}>{browser().url}</text>
+                </Row>
+              )}
+            </Show>
             <Show when={verification().claims && verification().claims!.status !== "off"}>
               <Row signal={claimsSignal(verification().claims!)}>
                 <text fg={theme.text}>{claimsLabel(verification().claims!)}</text>

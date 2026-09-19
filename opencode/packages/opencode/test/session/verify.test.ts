@@ -324,3 +324,84 @@ describe("verify", () => {
     expect(Verify.editedFiles([{ tool: "apply_patch", status: "completed" }])).toBe(true)
   })
 })
+
+describe("browser check", () => {
+  test("reports a page that rendered cleanly", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: () =>
+        new Response("<!doctype html><title>Fine</title><p>ok</p>", { headers: { "content-type": "text/html" } }),
+    })
+    try {
+      const result = await Verify.checkBrowser(`http://localhost:${server.port}/`)
+      if (result.status === "not_run") return // no browser on this machine
+      expect(result.status).toBe("passed")
+      expect(result.title).toBe("Fine")
+      expect(result.httpStatus).toBe(200)
+      expect(result.errors).toEqual([])
+    } finally {
+      server.stop(true)
+    }
+  }, 60_000)
+
+  test("fails a page that renders but throws in the console", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: () =>
+        new Response("<!doctype html><title>Looks fine</title><h1>Looks fine</h1><script>boom()</script>", {
+          headers: { "content-type": "text/html" },
+        }),
+    })
+    try {
+      const result = await Verify.checkBrowser(`http://localhost:${server.port}/`)
+      if (result.status === "not_run") return
+      // The page rendered and returned 200; only the console reveals it is broken.
+      expect(result.httpStatus).toBe(200)
+      expect(result.title).toBe("Looks fine")
+      expect(result.status).toBe("failed")
+      expect(result.errors.join(" ")).toMatch(/boom|not defined/)
+    } finally {
+      server.stop(true)
+    }
+  }, 60_000)
+
+  test("fails an error status even with a clean console", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => new Response("<title>Gone</title>", { status: 500, headers: { "content-type": "text/html" } }),
+    })
+    try {
+      const result = await Verify.checkBrowser(`http://localhost:${server.port}/`)
+      if (result.status === "not_run") return
+      expect(result.httpStatus).toBe(500)
+      expect(result.status).toBe("failed")
+    } finally {
+      server.stop(true)
+    }
+  }, 60_000)
+
+  test("an unreachable page never passes, even though its console is clean", async () => {
+    const result = await Verify.checkBrowser("http://localhost:1/", 10_000)
+    expect(result.status).not.toBe("passed")
+    if (result.status === "failed") expect(result.reason).toMatch(/did not load/)
+  }, 60_000)
+
+  test("the report names the page and its console errors", () => {
+    const base = { entries: [], scopeFiles: [], scopeWarnFiles: 15, done: true }
+    expect(
+      Verify.format({ ...base, browser: { url: "http://x/", status: "passed", httpStatus: 200, errors: [] } }),
+    ).toContain("✓ rendered (200), no console errors")
+    expect(
+      Verify.format({
+        ...base,
+        browser: { url: "http://x/", status: "failed", httpStatus: 200, errors: ["boom is not defined"] },
+      }),
+    ).toContain("boom is not defined")
+    expect(
+      Verify.format({
+        ...base,
+        browser: { url: "http://x/", status: "not_run", reason: "no browser found", errors: [] },
+      }),
+    ).toContain("not checked (no browser found)")
+  })
+})

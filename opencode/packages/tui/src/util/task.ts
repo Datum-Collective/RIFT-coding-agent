@@ -51,11 +51,21 @@ export type Claims =
   | { status: "mismatch"; items: Array<{ claim: string; reality: string }> }
   | { status: "not_run"; reason: string }
 
+export type BrowserCheck = {
+  url: string
+  status: "passed" | "failed" | "not_run"
+  reason?: string
+  httpStatus?: number
+  title?: string
+  errors: string[]
+}
+
 export type Verification = {
   /** "none" means no verification ran for this task, not that it passed. */
   state: "none" | "running" | "passed" | "failed" | "incomplete"
   checks: VerifyCheck[]
   claims?: Claims
+  browser?: BrowserCheck
   scope?: { files: number; threshold: number }
 }
 
@@ -356,6 +366,26 @@ function record(value: unknown): Record<string, unknown> | undefined {
 
 const CHECK_STATUS = new Set<string>(["passed", "failed", "timed_out", "not_run", "queued"])
 
+/** Validates the browser result rather than trusting the metadata's shape. */
+function parseBrowser(value: unknown): BrowserCheck | undefined {
+  const entry = record(value)
+  if (!entry) return undefined
+  const url = typeof entry.url === "string" ? entry.url : undefined
+  const status = entry.status
+  if (!url || (status !== "passed" && status !== "failed" && status !== "not_run")) return undefined
+  const errors = Array.isArray(entry.errors)
+    ? entry.errors.filter((item): item is string => typeof item === "string")
+    : []
+  return {
+    url,
+    status,
+    reason: typeof entry.reason === "string" ? entry.reason : undefined,
+    httpStatus: typeof entry.httpStatus === "number" ? entry.httpStatus : undefined,
+    title: typeof entry.title === "string" ? entry.title : undefined,
+    errors,
+  }
+}
+
 const CLAIM_STATUS = new Set<string>(["off", "pending", "ok", "mismatch", "not_run"])
 
 /** Validates the claims verdict rather than trusting the shape of the metadata. */
@@ -419,10 +449,12 @@ export function verification(input: TaskInput): Verification {
   const failed = checks.filter((check) => check.status === "failed" || check.status === "timed_out").length
   const notRun = checks.filter((check) => check.status === "not_run" || check.status === "queued").length
   const claims = parseClaims(summary.claims)
+  const browser = parseBrowser(summary.browser)
 
+  const browserFailed = browser?.status === "failed"
   const state: Verification["state"] = !done
     ? "running"
-    : failed > 0
+    : failed > 0 || browserFailed
       ? "failed"
       : checks.length === 0 || notRun > 0
         ? "incomplete"
@@ -437,6 +469,7 @@ export function verification(input: TaskInput): Verification {
     state,
     checks,
     claims,
+    browser,
     scope: threshold > 0 && scopeFiles > threshold ? { files: scopeFiles, threshold } : undefined,
   }
 }

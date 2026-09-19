@@ -2,6 +2,8 @@ import path from "path"
 import { spawn } from "child_process"
 import { Shell } from "@opencode-ai/core/shell"
 import { Process } from "@/util/process"
+import { BrowserSession } from "@/browser/session"
+import { find } from "@/browser/discover"
 
 // Verification / trust layer: after an agent claims it is done, actually run the repo's own
 // checks and report the real output instead of trusting the agent's "tests pass".
@@ -357,6 +359,16 @@ export function parseClaims(text: string): Mismatch[] | undefined {
   return items
 }
 
+/** A page loaded and read after the commands ran. */
+export type BrowserCheck = {
+  url: string
+  status: "passed" | "failed" | "not_run"
+  reason?: string
+  httpStatus?: number
+  title?: string
+  errors: string[]
+}
+
 export interface Report {
   entries: Entry[]
   /** Files changed since the task started, when the project is a git repo. */
@@ -365,6 +377,7 @@ export interface Report {
   /** False while checks are still queued or running. */
   done: boolean
   claims?: Claims
+  browser?: BrowserCheck
 }
 
 function describe(result: CheckResult) {
@@ -373,6 +386,41 @@ function describe(result: CheckResult) {
   if (result.status === "timed_out") return `✗ timed out after ${seconds}`
   if (result.status === "not_run") return `– not run (${result.reason ?? "skipped"})`
   return `✗ failed (exit ${result.code}) in ${seconds}`
+}
+
+/**
+ * Loads a page and reports what actually rendered. A UI change that typechecks and passes its
+ * tests can still throw on every render, and only the console says so.
+ */
+export async function checkBrowser(url: string, timeoutMs = 30_000): Promise<BrowserCheck> {
+  if (!find()) return { url, status: "not_run", reason: "no browser found", errors: [] }
+  let session: BrowserSession | undefined
+  try {
+    session = await BrowserSession.launch()
+    const state = await session.navigate(url, timeoutMs)
+    const errors = state.console.filter((entry) => entry.level === "error").map((entry) => entry.text)
+    // No response at all means the request never reached a server — the browser is showing its
+    // own error page. A clean console there must not read as a page that works.
+    if (state.status === undefined) {
+      return { url, status: "failed", reason: "the page did not load (no HTTP response)", title: state.title, errors }
+    }
+    return {
+      url,
+      status: errors.length > 0 || state.status >= 400 ? "failed" : "passed",
+      httpStatus: state.status,
+      title: state.title,
+      errors,
+    }
+  } catch (error) {
+    return {
+      url,
+      status: "not_run",
+      reason: error instanceof Error ? error.message : String(error),
+      errors: [],
+    }
+  } finally {
+    await session?.close().catch(() => {})
+  }
 }
 
 /** Key under which the structured report rides along on the verification text part. */
@@ -390,6 +438,7 @@ export interface Summary {
   scopeFiles: number
   scopeWarnFiles: number
   claims?: Claims
+  browser?: BrowserCheck
 }
 
 /** Machine-readable twin of `format`. Kept beside it so the two cannot drift apart. */
@@ -412,6 +461,7 @@ export function summarize(report: Report): Summary {
     scopeFiles: report.scopeFiles.length,
     scopeWarnFiles: report.scopeWarnFiles,
     claims: report.claims,
+    browser: report.browser,
   }
 }
 
@@ -442,6 +492,21 @@ export function format(report: Report) {
     if (failed > 0) lines.push("Do not treat this task as done until the failing checks are fixed.")
     else if (count("not_run") > 0) lines.push("Some checks did not run, so this task is not fully verified.")
   }
+  const browser = report.browser
+  if (browser) {
+    const label = `- ${browser.url}`
+    if (browser.status === "passed") {
+      lines.push(`${label} ✓ rendered${browser.httpStatus ? ` (${browser.httpStatus})` : ""}, no console errors`)
+    } else if (browser.status === "not_run") {
+      lines.push(`${label} – not checked (${browser.reason ?? "unknown"})`)
+    } else {
+      lines.push(
+        `${label} ✗ ${browser.httpStatus && browser.httpStatus >= 400 ? `HTTP ${browser.httpStatus}` : `${browser.errors.length} console ${browser.errors.length === 1 ? "error" : "errors"}`}`,
+      )
+      for (const error of browser.errors.slice(0, 5)) lines.push(`    ${error}`)
+    }
+  }
+
   const claims = report.claims
   if (claims && claims.status !== "off") {
     if (claims.status === "pending") lines.push("", "Checking the summary against the diff…")
