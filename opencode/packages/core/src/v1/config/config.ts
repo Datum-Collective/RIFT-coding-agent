@@ -108,6 +108,14 @@ export const Info = Schema.Struct({
   verify_scope_warn_files: Schema.optional(Schema.Int).annotate({
     description: "Warn when more than this many files are changed in the working tree. Use 0 to disable",
   }),
+  verify_claims: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "After verification, have a model compare the agent's own summary against the real diff and flag mismatches. Costs one extra model call per turn that edits files. Defaults to true",
+  }),
+  verify_claims_model: Schema.optional(Schema.String).annotate({
+    description:
+      "Model used to compare the agent's summary against the diff, in the format of provider/model. Defaults to the Vibe Mode planner, or the session model",
+  }),
   default_agent: Schema.optional(Schema.String).annotate({
     description:
       "Default agent to use when none is specified. Must be a primary agent. Falls back to 'build' if not set or if the specified agent is invalid.",

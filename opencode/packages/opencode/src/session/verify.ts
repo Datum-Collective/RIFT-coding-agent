@@ -271,12 +271,90 @@ export async function fileContents(dir: string, files: string[], max = 100_000) 
   return sections.filter((item): item is string => !!item).join("\n\n")
 }
 
+/**
+ * Diff of `files` for the model to read: tracked changes from `git diff HEAD`, plus untracked
+ * files rendered as additions (git omits those). Read-only — it never touches the index.
+ */
+export async function turnDiff(dir: string, files: string[], max = 100_000) {
+  const inside = files.filter((file) => insideProject(dir, file))
+  if (inside.length === 0) return ""
+  const relative = inside.map((file) => path.relative(dir, path.resolve(dir, file)))
+
+  const tracked = await Process.run(["git", "diff", "HEAD", "--", ...relative], { cwd: dir, nothrow: true })
+  if (tracked.code !== 0) return ""
+
+  const untracked = await Process.run(["git", "ls-files", "--others", "--exclude-standard", "--", ...relative], {
+    cwd: dir,
+    nothrow: true,
+  })
+  const added = untracked.code === 0 ? untracked.stdout.toString().split("\n").filter(Boolean) : []
+
+  const sections = await Promise.all(
+    added.map(async (file) => {
+      const text = await read(path.resolve(dir, file))
+      if (text === undefined) return `--- new file: ${file} (unreadable) ---`
+      const body = text
+        .split("\n")
+        .map((line) => `+${line}`)
+        .join("\n")
+      return `--- new file: ${file} ---\n${body}`
+    }),
+  )
+
+  return truncate([tracked.stdout.toString().trim(), ...sections].filter(Boolean).join("\n\n"), max)
+}
+
 /** Uncommitted changes to `files` relative to HEAD. Empty outside a git repo or when nothing changed. */
 export async function diffOf(dir: string, files: string[], max = 100_000) {
   const inside = files.filter((file) => insideProject(dir, file))
   if (inside.length === 0) return ""
   const result = await Process.run(["git", "diff", "HEAD", "--", ...inside], { cwd: dir, nothrow: true })
   return result.code === 0 ? truncate(result.stdout.toString().trim(), max) : ""
+}
+
+export interface Mismatch {
+  claim: string
+  reality: string
+}
+
+/**
+ * Result of comparing the agent's own summary against the real diff.
+ * "not_run" covers a disabled, failed or unparseable check; it never means "the claims are fine".
+ */
+export type Claims =
+  | { status: "off" }
+  | { status: "pending" }
+  | { status: "ok" }
+  | { status: "mismatch"; items: Mismatch[] }
+  | { status: "not_run"; reason: string }
+
+/**
+ * Reads the claims-check verdict. Returns undefined when the text is not a usable verdict, so the
+ * caller reports "not run" rather than treating a bad reply as agreement.
+ */
+export function parseClaims(text: string): Mismatch[] | undefined {
+  const start = text.indexOf("{")
+  const end = text.lastIndexOf("}")
+  if (start === -1 || end <= start) return undefined
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text.slice(start, end + 1))
+  } catch {
+    return undefined
+  }
+  if (typeof parsed !== "object" || parsed === null || !("mismatches" in parsed)) return undefined
+  const raw = parsed.mismatches
+  if (!Array.isArray(raw)) return undefined
+  const items: Mismatch[] = []
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue
+    const claim = "claim" in item ? item.claim : undefined
+    const reality = "reality" in item ? item.reality : undefined
+    if (typeof claim === "string" && typeof reality === "string" && claim.trim()) {
+      items.push({ claim: claim.trim(), reality: reality.trim() })
+    }
+  }
+  return items
 }
 
 export interface Report {
@@ -286,6 +364,7 @@ export interface Report {
   scopeWarnFiles: number
   /** False while checks are still queued or running. */
   done: boolean
+  claims?: Claims
 }
 
 function describe(result: CheckResult) {
@@ -322,6 +401,16 @@ export function format(report: Report) {
     lines.push("", `${parts.join(", ")}.`)
     if (failed > 0) lines.push("Do not treat this task as done until the failing checks are fixed.")
     else if (count("not_run") > 0) lines.push("Some checks did not run, so this task is not fully verified.")
+  }
+  const claims = report.claims
+  if (claims && claims.status !== "off") {
+    if (claims.status === "pending") lines.push("", "Checking the summary against the diff…")
+    if (claims.status === "ok") lines.push("", "Summary matches the diff.")
+    if (claims.status === "not_run") lines.push("", `Summary vs diff: not run (${claims.reason}).`)
+    if (claims.status === "mismatch") {
+      lines.push("", `⚠ Summary does not match the diff (${claims.items.length}):`)
+      for (const item of claims.items) lines.push(`- Claimed: ${item.claim}`, `  Actually: ${item.reality}`)
+    }
   }
   if (scopeWarnFiles > 0 && scopeFiles.length > scopeWarnFiles) {
     lines.push(
