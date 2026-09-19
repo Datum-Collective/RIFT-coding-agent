@@ -47,18 +47,18 @@
 
 ```bash
 # macOS, Linux, WSL, Git Bash
-curl -fsSL https://raw.githubusercontent.com/shiv207/RIFT-coding-agent/main/opencode/install | bash
+curl -fsSL https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install | bash
 ```
 
 ```powershell
 # Windows
-irm https://raw.githubusercontent.com/shiv207/RIFT-coding-agent/main/opencode/install.ps1 | iex
+irm https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install.ps1 | iex
 ```
 
 Both `rift` and `opencode` start it. Update with `rift upgrade`.
 
 RIFT is not published to npm, Homebrew, scoop or choco — the installers above download a
-prebuilt binary from [Releases](https://github.com/shiv207/RIFT-coding-agent/releases).
+prebuilt binary from [Releases](https://github.com/Datum-Collective/RIFT-coding-agent/releases).
 
 <!-- upstream package managers, kept for reference; these install OpenCode, not RIFT
 npm i -g opencode-ai@latest        # or bun/pnpm/yarn
@@ -100,7 +100,7 @@ The install script puts the binary in `$RIFT_INSTALL_DIR` when it is set, and
 
 ```bash
 # Example
-RIFT_INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/shiv207/RIFT-coding-agent/main/opencode/install | bash
+RIFT_INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install | bash
 ```
 
 On Windows the equivalent is `-InstallDir`, or the `RIFT_INSTALL_DIR` environment variable.

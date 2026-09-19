@@ -5,7 +5,7 @@
 <p align="center"><b>The open-source AI coding agent that runs your tests instead of telling you they passed.</b></p>
 
 <p align="center">
-  <a href="https://github.com/shiv207/RIFT-coding-agent/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/shiv207/RIFT-coding-agent?style=flat-square"></a>
+  <a href="https://github.com/Datum-Collective/RIFT-coding-agent/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Datum-Collective/RIFT-coding-agent?style=flat-square"></a>
   <a href="opencode/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"></a>
   <img alt="Platforms" src="https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-supported-555?style=flat-square">
   <a href="https://github.com/anomalyco/opencode"><img alt="Built on OpenCode" src="https://img.shields.io/badge/built%20on-OpenCode-8b5cf6?style=flat-square"></a>
@@ -42,13 +42,13 @@ macOS, Linux and Windows.
 **macOS, Linux, WSL, Git Bash**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/shiv207/RIFT-coding-agent/main/opencode/install | bash
+curl -fsSL https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install | bash
 ```
 
 **Windows (PowerShell)**
 
 ```powershell
-irm https://raw.githubusercontent.com/shiv207/RIFT-coding-agent/main/opencode/install.ps1 | iex
+irm https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install.ps1 | iex
 ```
 
 Open a new terminal, then point it at a project:
@@ -59,7 +59,7 @@ rift
 ```
 
 No Node, no Python, no build step — the installer drops a single self-contained binary (~34 MB)
-from [Releases](https://github.com/shiv207/RIFT-coding-agent/releases). `opencode` starts it
+from [Releases](https://github.com/Datum-Collective/RIFT-coding-agent/releases). `opencode` starts it
 too, so either command works.
 
 <details>
@@ -67,7 +67,7 @@ too, so either command works.
 
 ```bash
 # a specific release
-curl -fsSL https://raw.githubusercontent.com/shiv207/RIFT-coding-agent/main/opencode/install | bash -s -- --version 0.1.0
+curl -fsSL https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install | bash -s -- --version 0.1.0
 
 # somewhere other than ~/.rift/bin
 RIFT_INSTALL_DIR=/usr/local/bin curl -fsSL .../install | bash
@@ -78,7 +78,7 @@ curl -fsSL .../install | bash -s -- --no-modify-path
 
 ```powershell
 # irm | iex takes no arguments, so pin a version like this
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/shiv207/RIFT-coding-agent/main/opencode/install.ps1))) -Version 0.1.0
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install.ps1))) -Version 0.1.0
 ```
 
 Update with `rift upgrade`, remove with `rift uninstall`.
@@ -244,7 +244,7 @@ OpenCode is MIT licensed, and so is RIFT. If you like what is here, a great deal
 belongs upstream — [give them a star](https://github.com/anomalyco/opencode).
 
 **RIFT is not affiliated with, endorsed by, or supported by the OpenCode team.** Please direct
-issues with RIFT to [this repository](https://github.com/shiv207/RIFT-coding-agent/issues), not
+issues with RIFT to [this repository](https://github.com/Datum-Collective/RIFT-coding-agent/issues), not
 to them.
 
 ## Building from source
@@ -252,7 +252,7 @@ to them.
 You do not need this to use RIFT — the installer downloads a prebuilt binary.
 
 ```bash
-git clone https://github.com/shiv207/RIFT-coding-agent.git
+git clone https://github.com/Datum-Collective/RIFT-coding-agent.git
 cd RIFT-coding-agent/opencode
 bun install          # requires bun 1.3.14
 bun run dev

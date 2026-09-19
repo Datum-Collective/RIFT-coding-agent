@@ -8,11 +8,11 @@
     `opencode` will start it.
 
 .EXAMPLE
-    irm https://raw.githubusercontent.com/shiv207/RIFT-coding-agent/main/opencode/install.ps1 | iex
+    irm https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install.ps1 | iex
 
 .EXAMPLE
     # irm | iex cannot take arguments, so pin a version like this:
-    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/shiv207/RIFT-coding-agent/main/opencode/install.ps1))) -Version 1.0.0
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install.ps1))) -Version 1.0.0
 #>
 [CmdletBinding()]
 param(
@@ -26,7 +26,7 @@ $ErrorActionPreference = 'Stop'
 # Stock PowerShell 5.1 still defaults to TLS 1.0, which github.com refuses.
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$Repo = 'shiv207/RIFT-coding-agent'
+$Repo = 'Datum-Collective/RIFT-coding-agent'
 $App = 'rift'
 
 function Write-Muted([string] $Text) { Write-Host $Text -ForegroundColor DarkGray }

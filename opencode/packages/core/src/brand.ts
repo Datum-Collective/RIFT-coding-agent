@@ -29,7 +29,7 @@ export const LEGACY_ENV_PREFIX = "OPENCODE_"
  * The install scripts are standalone shell and PowerShell files and must repeat these literals,
  * so a repo rename touches this file, `install` and `install.ps1` — and nowhere else.
  */
-export const GITHUB_REPO = "shiv207/RIFT-coding-agent"
+export const GITHUB_REPO = "Datum-Collective/RIFT-coding-agent"
 export const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`
 export const RAW_BASE = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/opencode`
 export const INSTALL_SH_URL = `${RAW_BASE}/install`
