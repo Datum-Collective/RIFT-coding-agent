@@ -375,6 +375,42 @@ function describe(result: CheckResult) {
   return `✗ failed (exit ${result.code}) in ${seconds}`
 }
 
+/** Key under which the structured report rides along on the verification text part. */
+export const METADATA_KEY = "rift_verification"
+
+export interface Summary {
+  done: boolean
+  checks: Array<{ command: string; where?: string; status: Status; reason?: string; ms: number }>
+  passed: number
+  failed: number
+  notRun: number
+  scopeFiles: number
+  scopeWarnFiles: number
+  claims?: Claims
+}
+
+/** Machine-readable twin of `format`. Kept beside it so the two cannot drift apart. */
+export function summarize(report: Report): Summary {
+  const results = report.entries.flatMap((entry) => (entry.result ? [entry.result] : []))
+  const count = (status: Status) => results.filter((item) => item.status === status).length
+  return {
+    done: report.done,
+    checks: report.entries.map((entry) => ({
+      command: entry.check.command,
+      where: entry.check.where,
+      status: entry.result?.status ?? "not_run",
+      reason: entry.result ? entry.result.reason : report.done ? "not run" : "queued",
+      ms: entry.result?.ms ?? 0,
+    })),
+    passed: count("passed"),
+    failed: count("failed") + count("timed_out"),
+    notRun: count("not_run"),
+    scopeFiles: report.scopeFiles.length,
+    scopeWarnFiles: report.scopeWarnFiles,
+    claims: report.claims,
+  }
+}
+
 export function format(report: Report) {
   const { entries, scopeFiles, scopeWarnFiles, done } = report
   const lines = ["Automated verification (real command output, not the agent's claim)"]

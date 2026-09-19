@@ -1,6 +1,8 @@
+// RIFT wordmark. The two halves render in different weights, so "RI" sits back and "FT"
+// leads. Every row in a half must be the same width or the home screen misaligns.
 export const logo = {
-  left: ["                   ", "█▀▀█ █▀▀█ █▀▀█ █▀▀▄", "█__█ █__█ █^^^ █__█", "▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀~~▀"],
-  right: ["             ▄     ", "█▀▀▀ █▀▀█ █▀▀█ █▀▀█", "█___ █__█ █__█ █^^^", "▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀"],
+  left: ["         ", "█▀▀█ ▀██▀", "█▀▀▄  ██ ", "▀  ▀ ▀██▀"],
+  right: ["    ▄    ", "█▀▀▀ ████", "█▀▀   ██ ", "▀     ██ "],
 }
 
 export const go = {

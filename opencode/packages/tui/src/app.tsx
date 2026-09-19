@@ -42,6 +42,7 @@ import { LocalProvider, useLocal } from "./context/local"
 import { PermissionProvider } from "./context/permission"
 import { DialogModel } from "./component/dialog-model"
 import { DialogVibeModels } from "./component/dialog-vibe-models"
+import { MissionControl } from "./component/control/mission-control"
 import { useConnected } from "./component/use-connected"
 import { DialogMcp } from "./component/dialog-mcp"
 import { DialogStatus } from "./component/dialog-status"
@@ -95,6 +96,7 @@ const appGlobalBindingCommands = [
   "session.list",
   "session.new",
   "session.blocked.next",
+  "mission.control",
   "session.quick_switch.1",
   "session.quick_switch.2",
   "session.quick_switch.3",
@@ -457,24 +459,24 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
     if (!terminalTitleEnabled() || Flag.OPENCODE_DISABLE_TERMINAL_TITLE) return
 
     if (route.data.type === "home") {
-      renderer.setTerminalTitle("OpenCode")
+      renderer.setTerminalTitle("RIFT")
       return
     }
 
     if (route.data.type === "session") {
       const session = sync.session.get(route.data.sessionID)
       if (!session || isDefaultTitle(session.title)) {
-        renderer.setTerminalTitle("OpenCode")
+        renderer.setTerminalTitle("RIFT")
         return
       }
 
       const title = session.title.length > 40 ? session.title.slice(0, 37) + "…" : session.title
-      renderer.setTerminalTitle(`OC | ${title}`)
+      renderer.setTerminalTitle(`RIFT | ${title}`)
       return
     }
 
     if (route.data.type === "plugin") {
-      renderer.setTerminalTitle(`OC | ${route.data.id}`)
+      renderer.setTerminalTitle(`RIFT | ${route.data.id}`)
     }
   })
 
@@ -599,6 +601,16 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
             type: "home",
           })
           dialog.clear()
+        },
+      },
+      {
+        name: "mission.control",
+        title: "Mission Control",
+        category: "Session",
+        suggested: sync.data.session.length > 1,
+        slashName: "mission",
+        run: () => {
+          dialog.replace(() => <MissionControl />)
         },
       },
       {

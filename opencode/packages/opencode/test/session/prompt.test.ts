@@ -1036,6 +1036,19 @@ it.instance(
       expect(report).toContain("`echo tests-ran` ✓ passed")
       expect(report).toContain("`exit 4` ✗ failed (exit 4)")
       expect(report).toContain("1 passed, 1 failed, 0 not run.")
+
+      // Clients render verification from structured metadata, not by parsing the prose back.
+      const part = result.parts.find((item) => item.type === "text" && item.text.startsWith("Automated verification"))
+      const summary = (part?.type === "text" ? part.metadata?.["rift_verification"] : undefined) as
+        | { done: boolean; passed: number; failed: number; checks: Array<{ command: string; status: string }> }
+        | undefined
+      expect(summary?.done).toBe(true)
+      expect(summary?.passed).toBe(1)
+      expect(summary?.failed).toBe(1)
+      expect(summary?.checks.map((check) => [check.command, check.status])).toEqual([
+        ["echo tests-ran", "passed"],
+        ["exit 4", "failed"],
+      ])
       // The agent's own claim is still there, but the real result sits next to it.
       expect(result.parts.some((part) => part.type === "text" && part.text === "Done, all tests pass!")).toBe(true)
     }),
