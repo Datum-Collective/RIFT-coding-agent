@@ -7,7 +7,9 @@
 *.out
 
 # Go
-vendor/
+# Anchored to the root, where Go keeps it. Unanchored, this also swallowed
+# opencode/packages/app/vendor/, which holds a tarball the lockfile depends on.
+/vendor/
 
 # Env / secrets
 .env
