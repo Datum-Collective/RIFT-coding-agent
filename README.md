@@ -1,38 +1,43 @@
-<div align="center">
+<p align="center">
+  <img src="assets/banner.svg" alt="RIFT" width="576">
+</p>
 
-```
-         ▄
-█▀▀█ ▀██▀ █▀▀▀ ████
-█▀▀▄  ██  █▀▀   ██
-▀  ▀ ▀██▀ ▀     ██
-```
+<p align="center"><b>The open-source AI coding agent that runs your tests instead of telling you they passed.</b></p>
 
-# RIFT — an open-source AI coding agent for your terminal
+<p align="center">
+  <a href="https://github.com/shiv207/RIFT-coding-agent/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/shiv207/RIFT-coding-agent?style=flat-square"></a>
+  <a href="opencode/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-supported-555?style=flat-square">
+  <a href="https://github.com/anomalyco/opencode"><img alt="Built on OpenCode" src="https://img.shields.io/badge/built%20on-OpenCode-8b5cf6?style=flat-square"></a>
+</p>
 
-**An AI coding agent that runs your tests instead of telling you they passed.**
-
-[![Install](https://img.shields.io/badge/install-one%20command-2563eb)](#install)
-[![Platforms](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-supported-555555)](#install)
-[![License: MIT](https://img.shields.io/badge/license-MIT-555555)](opencode/LICENSE)
-
-[Install](#install) · [Why RIFT](#why-rift-is-different) · [Features](#features) · [Docs](opencode/packages/web/src/content/docs/) · [FAQ](#faq)
-
-</div>
+<p align="center">
+  <a href="#installation">Installation</a> ·
+  <a href="#what-rift-adds">What RIFT adds</a> ·
+  <a href="#configuration">Configuration</a> ·
+  <a href="#faq">FAQ</a> ·
+  <a href="#credits">Credits</a>
+</p>
 
 ---
 
-RIFT is a free, open-source **AI coding agent** that lives in your terminal. It reads your
-codebase, plans a change, edits files, and then — this is the part most coding agents skip —
-**runs your project's own tests, typechecker and linter and shows you the real output**.
+# RIFT — an open-source AI coding agent for your terminal
 
-Most AI code assistants end a task by telling you it worked. RIFT ends a task by proving it, or
-by telling you plainly that it could not. It also compares what it _said_ it did against the
-actual `git diff`, and flags any claim the diff does not support.
+RIFT is a free, MIT-licensed **AI coding agent** that lives in your terminal. It reads your
+codebase, plans a change, edits files, and then — the part most coding agents skip — **runs your
+project's own tests, typechecker and linter, and shows you the real output**.
 
-It works with Claude, GPT, Gemini, Llama, and dozens of other models through a single CLI, runs
-on macOS, Linux and Windows, and is MIT licensed.
+Most AI code assistants finish a task by telling you it worked. RIFT finishes by proving it, or
+by saying plainly that it could not. It also compares what it _said_ it did against the actual
+`git diff` and flags any claim the diff does not support.
 
-## Install
+It works with Claude, GPT, Gemini, Llama and dozens of other models through one CLI, and runs on
+macOS, Linux and Windows.
+
+> **RIFT is a fork of [OpenCode](https://github.com/anomalyco/opencode)**, and most of the code
+> here is theirs. See [Credits](#credits).
+
+## Installation
 
 **macOS, Linux, WSL, Git Bash**
 
@@ -53,18 +58,18 @@ cd your-project
 rift
 ```
 
-No Node, no Python, no build step — the installer downloads a single self-contained binary
-(~34 MB) from [Releases](https://github.com/shiv207/RIFT-coding-agent/releases). `opencode`
-starts it too, so either command works.
+No Node, no Python, no build step — the installer drops a single self-contained binary (~34 MB)
+from [Releases](https://github.com/shiv207/RIFT-coding-agent/releases). `opencode` starts it
+too, so either command works.
 
 <details>
 <summary><b>Pin a version, change the install directory, uninstall</b></summary>
 
 ```bash
-# install a specific release
+# a specific release
 curl -fsSL https://raw.githubusercontent.com/shiv207/RIFT-coding-agent/main/opencode/install | bash -s -- --version 0.1.0
 
-# install somewhere other than ~/.rift/bin
+# somewhere other than ~/.rift/bin
 RIFT_INSTALL_DIR=/usr/local/bin curl -fsSL .../install | bash
 
 # leave shell config files alone
@@ -76,20 +81,17 @@ curl -fsSL .../install | bash -s -- --no-modify-path
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/shiv207/RIFT-coding-agent/main/opencode/install.ps1))) -Version 0.1.0
 ```
 
-Update with `rift upgrade`. Remove with `rift uninstall`.
+Update with `rift upgrade`, remove with `rift uninstall`.
 
-**macOS note:** binaries downloaded through a _browser_ are quarantined by Gatekeeper because
-these builds are not notarized. Clear it with
-`xattr -dr com.apple.quarantine ~/.rift/bin/rift`. Installing with the `curl` command above
-avoids this entirely.
+**macOS:** a binary downloaded through a _browser_ is quarantined by Gatekeeper, because these
+builds are not notarized. Clear it with `xattr -dr com.apple.quarantine ~/.rift/bin/rift`. The
+`curl` command above avoids this entirely.
 
 </details>
 
-## Why RIFT is different
+## What RIFT adds
 
-Coding agents are good at writing code and bad at knowing whether it works. Two failure modes
-show up constantly: an agent that is confidently wrong, and a refactor that quietly breaks
-something it never checked. RIFT is built around closing that gap.
+Everything below is what RIFT builds on top of OpenCode.
 
 ### It verifies its own work
 
@@ -109,8 +111,7 @@ A check that could not run says so. It is never counted as a pass.
 
 ### It checks its own summary against the diff
 
-A second model compares what the agent claimed it did against the actual changes, and flags
-anything the diff does not support:
+A second model compares what the agent claimed against the actual changes:
 
 ```
 ⚠ Summary does not match the diff (1):
@@ -122,12 +123,11 @@ anything the diff does not support:
 
 For UI work, RIFT drives a real browser — navigate, click, type, screenshot — and reports the
 **console errors a screenshot would never show**. A page that renders perfectly while throwing
-on every render is caught, not shipped.
+on every render gets caught.
 
 ### The task is the interface, not the chat log
 
-Instead of an endless transcript, the screen shows the state of the work: the plan, what's
-running, what changed, and whether it held up.
+The screen shows the state of the work rather than an endless transcript:
 
 ```
 TASK ─────────────────────────────────────────────────
@@ -145,33 +145,26 @@ EXECUTION ───────────────────────�
   ● Running tests
 ```
 
-Dozens of tool calls collapse into the handful of states worth reading. The full transcript is
-one keystroke away.
+Dozens of tool calls collapse into the few states worth reading; the full transcript is one
+keystroke away.
 
-## Features
+### Vibe Mode
 
-- **Verification layer** — runs your real tests, typecheck and lint after every change set
-- **Summary vs diff** — a second model flags claims the diff does not support
-- **Vibe Mode** — a strong model plans and reviews each step, a cheaper model does the work, so
-  you get good decisions without paying frontier prices for every edit
-- **Browser control** — navigate, click, type, screenshot, and capture console errors
-- **Mission Control** — every session on one board, ordered so whatever needs you is on top
-- **Any model** — Claude, GPT, Gemini, Llama, Mistral, local models, and more through one CLI
-- **Permissions** — approve or deny shell commands, edits and network access, per project
-- **LSP + MCP** — language-server awareness and Model Context Protocol servers
-- **Subagents, skills and plugins** — extend it without forking it
-- **Terminal-native** — a fast TUI that works over SSH, in tmux, and on a 80-column window
+A strong model plans and reviews each step while a cheaper one does the work, so you get good
+decisions without paying frontier prices for every edit.
+
+### Mission Control
+
+Every session on one board, ordered so whatever needs you is on top.
 
 ## Usage
 
 ```bash
-rift                      # start in the current directory
-rift /path/to/project     # start somewhere else
+rift                              # start in the current directory
+rift /path/to/project             # start somewhere else
 rift run "fix the failing test"   # non-interactive, for scripts and CI
-rift --continue           # resume the last session
+rift --continue                   # resume the last session
 ```
-
-Inside the TUI:
 
 | Key         | Action                                        |
 | ----------- | --------------------------------------------- |
@@ -180,6 +173,16 @@ Inside the TUI:
 | `<leader>d` | Review the diff                               |
 | `ctrl+p`    | Command palette                               |
 | `tab`       | Switch agent                                  |
+
+## Agents
+
+RIFT inherits OpenCode's agents, switchable with `Tab`:
+
+- **build** — full-access agent for development work
+- **plan** — read-only agent for analysis and exploration
+- **vibe** — planner and executor models working together, with a review gate between steps
+
+A **general** subagent handles complex searches and multistep tasks; invoke it with `@general`.
 
 ## Configuration
 
@@ -197,30 +200,27 @@ Config lives in `rift.json` in your project, or `~/.config/rift/rift.json` globa
 ```
 
 Coming from OpenCode? Your existing `opencode.json`, auth and sessions keep working — RIFT reads
-both names and leaves your old directory in place.
+both names and leaves your old directory where it is.
 
-See the [configuration reference](opencode/packages/web/src/content/docs/config.mdx) for every
-option.
+Full reference: [configuration docs](opencode/packages/web/src/content/docs/config.mdx).
 
 ## FAQ
 
 ### Is RIFT free and open source?
 
-Yes. MIT licensed, and the installer pulls prebuilt binaries straight from GitHub Releases.
-Bring your own model API key, or use one of the free models included.
+Yes — MIT licensed, with prebuilt binaries on GitHub Releases. Bring your own model API key, or
+use one of the free models included.
 
 ### How is this different from Claude Code, Cursor or Copilot?
 
-Those are excellent at generating code. RIFT's focus is the step after: proving the change
-actually works by running your project's own checks and showing you the raw output, rather than
-reporting success. It is also terminal-first and open source, so you can read exactly what it
-runs on your machine.
+Those are excellent at generating code. RIFT's focus is the step after: proving the change works
+by running your project's own checks and showing the raw output. It is terminal-first and open
+source, so you can read exactly what it runs on your machine.
 
 ### Which AI models does RIFT support?
 
 Anthropic Claude, OpenAI GPT, Google Gemini, Meta Llama, Mistral, DeepSeek, local models via
-Ollama, and many more — anything reachable through the provider list, configured per project or
-per agent.
+Ollama, and many more — configured per project or per agent.
 
 ### Does it work on Windows?
 
@@ -228,14 +228,24 @@ Yes, natively via the PowerShell installer, and through WSL or Git Bash.
 
 ### Does my code get sent anywhere?
 
-Only to the model provider you configure, the same as any other AI coding tool. RIFT itself has
-no server. Shell commands, file edits and network access go through a permission system you
+Only to the model provider you configure, the same as any other AI coding tool. RIFT has no
+server of its own. Shell commands, edits and network access go through a permission system you
 control.
 
-### What is RIFT built on?
+## Credits
 
-It is a fork of [OpenCode](https://github.com/anomalyco/opencode), rebuilt around a task-centred
-interface and a verification layer.
+**RIFT is a fork of [OpenCode](https://github.com/anomalyco/opencode) by
+[Anomaly](https://github.com/anomalyco), and the overwhelming majority of this codebase is their
+work.** The agent loop, provider layer, tool system, LSP and MCP integration, permissions, config
+system and the TUI foundation are all OpenCode's. RIFT rebuilds the interface around tasks and
+adds the verification layer described above.
+
+OpenCode is MIT licensed, and so is RIFT. If you like what is here, a great deal of the credit
+belongs upstream — [give them a star](https://github.com/anomalyco/opencode).
+
+**RIFT is not affiliated with, endorsed by, or supported by the OpenCode team.** Please direct
+issues with RIFT to [this repository](https://github.com/shiv207/RIFT-coding-agent/issues), not
+to them.
 
 ## Building from source
 
@@ -253,5 +263,5 @@ Cut a release by pushing a tag — `git tag v0.1.0 && git push origin v0.1.0` �
 
 ## License
 
-MIT. See [LICENSE](opencode/LICENSE). RIFT is a fork of
-[OpenCode](https://github.com/anomalyco/opencode), also MIT.
+MIT — see [LICENSE](opencode/LICENSE). Copyright for the inherited code remains with the
+OpenCode authors.
