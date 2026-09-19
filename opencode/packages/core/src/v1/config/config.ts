@@ -87,7 +87,34 @@ export const Info = Schema.Struct({
     description: "Enable Vibe Mode by default for new sessions",
   }),
   vibe_max_attempts: Schema.optional(Schema.Int).annotate({
-    description: "Executor attempts before Vibe Mode asks the planner to revise a step",
+    description: "Executor attempts before Vibe Mode asks the planner to revise a step. Use 0 for unlimited",
+  }),
+  vibe_review: Schema.optional(Schema.Boolean).annotate({
+    description: "Have the Vibe Mode planner review and approve each executor step before moving on. Defaults to true",
+  }),
+  vibe_review_max_rounds: Schema.optional(Schema.Int).annotate({
+    description: "Rejected reviews per step before Vibe Mode asks the planner to revise the step. Use 0 for unlimited",
+  }),
+  verify: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "After the agent edits files, run the project's tests/typecheck/lint and attach the real results to the reply. Defaults to true",
+  }),
+  verify_commands: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+    description: "Commands to run for verification instead of auto-detecting them from the project",
+  }),
+  verify_timeout_ms: Schema.optional(Schema.Int).annotate({
+    description: "Kill a single verification command after this many milliseconds. Use 0 for no timeout",
+  }),
+  verify_scope_warn_files: Schema.optional(Schema.Int).annotate({
+    description: "Warn when more than this many files are changed in the working tree. Use 0 to disable",
+  }),
+  verify_claims: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "After verification, have a model compare the agent's own summary against the real diff and flag mismatches. Costs one extra model call per turn that edits files. Defaults to true",
+  }),
+  verify_claims_model: Schema.optional(Schema.String).annotate({
+    description:
+      "Model used to compare the agent's summary against the diff, in the format of provider/model. Defaults to the Vibe Mode planner, or the session model",
   }),
   default_agent: Schema.optional(Schema.String).annotate({
     description:

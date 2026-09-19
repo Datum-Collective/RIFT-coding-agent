@@ -1676,6 +1676,7 @@ export type PermissionConfig =
       todowrite?: PermissionActionConfig
       question?: PermissionActionConfig
       webfetch?: PermissionActionConfig
+      browser_open?: PermissionActionConfig
       websearch?: PermissionActionConfig
       lsp?: PermissionRuleConfig
       doom_loop?: PermissionActionConfig
@@ -1685,6 +1686,8 @@ export type PermissionConfig =
 
 export type AgentConfig = {
   model?: string
+  plannerModel?: string
+  executorModel?: string
   variant?: string
   temperature?: number
   top_p?: number
@@ -1934,6 +1937,18 @@ export type Config = {
   enabled_providers?: Array<string>
   model?: string
   small_model?: string
+  plannerModel?: string
+  executorModel?: string
+  vibe_mode?: boolean
+  vibe_max_attempts?: number
+  vibe_review?: boolean
+  vibe_review_max_rounds?: number
+  verify?: boolean
+  verify_commands?: Array<string>
+  verify_timeout_ms?: number
+  verify_scope_warn_files?: number
+  verify_claims?: boolean
+  verify_claims_model?: string
   default_agent?: string
   subagent_depth?: number
   username?: string
@@ -2361,6 +2376,14 @@ export type Agent = {
   color?: string
   permission: PermissionRuleset
   model?: {
+    modelID: string
+    providerID: string
+  }
+  plannerModel?: {
+    modelID: string
+    providerID: string
+  }
+  executorModel?: {
     modelID: string
     providerID: string
   }
