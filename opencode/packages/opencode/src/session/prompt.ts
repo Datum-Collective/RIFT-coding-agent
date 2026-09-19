@@ -115,6 +115,11 @@ function parseVibePlan(text: string): VibePlan {
   return parsed.value as unknown as VibePlan
 }
 
+const CLAIMS_SYSTEM_PROMPT = `You are checking whether an agent's summary of its own work matches what it actually changed. You are given the summary and the real diff of the files it edited. Output JSON only with this exact shape:
+{"mismatches":[{"claim":"what the summary asserts","reality":"what the diff actually shows"}]}
+
+Report a mismatch only when the diff contradicts the summary, or when the summary claims a file change that is absent from the diff. Ignore claims about running commands, tests or tools, which are verified separately. Ignore anything the summary simply did not mention, and do not review code quality or style. If every file change the summary describes is supported by the diff, return {"mismatches":[]}. Do not include prose outside the JSON object.`
+
 const VIBE_REVIEW_SYSTEM_PROMPT = `You are the reviewer for Vibe Mode. A cheaper executor model just attempted one step of your plan. Judge only from the transcript whether the step was completed fully and correctly: the described change was actually made, tool calls succeeded, nothing was left half-done, and no obvious bugs or unrelated edits were introduced. Output JSON only with this exact shape:
 {"approved":true,"feedback":"short reason"}
 If not approved, feedback must state exactly what is wrong and what the executor must do to fix it. Do not include prose outside the JSON object.`
@@ -1231,9 +1236,85 @@ const layer = Layer.effect(
     })
 
     // Run the project's own checks once the agent claims it is done, and attach the real results.
+    /**
+     * Second pass of the trust layer: compares the agent's own summary against the real diff.
+     * Any problem resolving the model or reading the verdict is reported as "not run" — never as
+     * agreement, so a broken check cannot read as a clean bill of health.
+     */
+    // Keeps each early return contextually typed; a bare literal would widen `status` to string.
+    const asClaims = (value: Verify.Claims) => value
+
+    const checkClaims = Effect.fn("SessionPrompt.checkClaims")(function* (input: {
+      sessionID: SessionID
+      session: Session.Info
+      agent: Agent.Info | undefined
+      user: SessionV1.WithParts | undefined
+      summary: string
+      files: string[]
+      planner?: Provider.Model
+    }) {
+      if (!input.summary) return asClaims({ status: "off" })
+      const agent = input.agent
+      const user = input.user?.info.role === "user" ? input.user.info : undefined
+      if (!agent || !user) return asClaims({ status: "not_run", reason: "no agent context" })
+
+      const ctx = yield* InstanceState.context
+      const diff = yield* Effect.promise(() => Verify.turnDiff(ctx.directory, input.files)).pipe(
+        Effect.catchCause(() => Effect.succeed("")),
+      )
+      if (!diff) return asClaims({ status: "not_run", reason: "no diff available" })
+
+      const cfg = yield* config.get()
+      const configured = cfg.verify_claims_model ? Provider.parseModel(cfg.verify_claims_model) : undefined
+      const model = yield* (
+        configured
+          ? getModel(configured.providerID, configured.modelID, input.sessionID)
+          : input.planner
+            ? Effect.succeed(input.planner)
+            : getModel(user.model.providerID, user.model.modelID, input.sessionID)
+      ).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+      if (!model) return asClaims({ status: "not_run", reason: "claims model unavailable" })
+
+      yield* Effect.logInfo("verification claims check", {
+        "session.id": input.sessionID,
+        providerID: model.providerID,
+        modelID: model.id,
+      })
+
+      const text = yield* llm
+        .stream({
+          user,
+          sessionID: input.sessionID,
+          model,
+          agent,
+          system: [CLAIMS_SYSTEM_PROMPT],
+          messages: [
+            {
+              role: "user" as const,
+              content: `The agent's summary of what it did:\n${input.summary}\n\nThe actual diff of the files it edited:\n${diff}`,
+            },
+          ],
+          tools: {},
+          toolChoice: "none",
+          retries: 2,
+        })
+        .pipe(
+          Stream.filter(LLMEvent.is.textDelta),
+          Stream.map((event) => event.text),
+          Stream.mkString,
+          Effect.catchCause(() => Effect.succeed("")),
+        )
+
+      const items = Verify.parseClaims(text)
+      if (!items) return asClaims({ status: "not_run", reason: "unreadable verdict" })
+      if (items.length === 0) return asClaims({ status: "ok" })
+      return asClaims({ status: "mismatch", items })
+    })
+
     const runVerification = Effect.fn("SessionPrompt.runVerification")(function* (
       sessionID: SessionID,
       baseline: string[],
+      planner?: Provider.Model,
     ) {
       const cfg = yield* config.get()
       if (cfg.verify === false) return
@@ -1264,13 +1345,21 @@ const layer = Layer.effect(
       )
       const entries: Verify.Entry[] = checks.map((check) => ({ check }))
       const partID = PartID.ascending()
-      const publish = (done: boolean, scopeFiles: string[] = []) =>
+      let scopeFiles: string[] = []
+      let claims: Verify.Claims = { status: "off" }
+      const publish = (done: boolean) =>
         sessions.updatePart({
           id: partID,
           messageID: last.info.id,
           sessionID,
           type: "text",
-          text: Verify.format({ entries, scopeFiles, scopeWarnFiles: cfg.verify_scope_warn_files ?? 15, done }),
+          text: Verify.format({
+            entries,
+            scopeFiles,
+            scopeWarnFiles: cfg.verify_scope_warn_files ?? 15,
+            done,
+            claims,
+          }),
         } satisfies SessionV1.TextPart)
 
       const agent = yield* agents.get(last.info.agent)
@@ -1315,15 +1404,33 @@ const layer = Layer.effect(
           yield* publish(false)
         }
         const before = new Set(baseline)
-        const scopeFiles = (yield* Effect.promise(() => Verify.changedFiles(ctx.directory))).filter(
+        scopeFiles = (yield* Effect.promise(() => Verify.changedFiles(ctx.directory))).filter(
           (file) => !before.has(file),
         )
-        yield* publish(true, scopeFiles)
+
+        if (cfg.verify_claims !== false) {
+          claims = { status: "pending" }
+          yield* publish(false)
+          claims = yield* checkClaims({
+            sessionID,
+            session,
+            agent,
+            user: all[userIndex],
+            summary: last.parts
+              .flatMap((part) => (part.type === "text" ? [part.text] : []))
+              .join("\n")
+              .trim(),
+            files: Verify.editedPaths(tools, ctx.directory),
+            planner,
+          })
+        }
+        yield* publish(true)
       }).pipe(
         // A cancelled session must not leave the report stuck on "queued".
         Effect.onInterrupt(() =>
           Effect.gen(function* () {
             for (const entry of entries) entry.result ??= Verify.notRun(entry.check, "cancelled")
+            if (claims.status === "pending") claims = { status: "not_run", reason: "cancelled" }
             yield* publish(true)
           }).pipe(Effect.ignore),
         ),
@@ -1918,7 +2025,7 @@ const layer = Layer.effect(
           continue
         }
 
-        yield* runVerification(sessionID, verifyBaseline)
+        yield* runVerification(sessionID, verifyBaseline, vibeModels?.planner)
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
         return yield* lastAssistant(sessionID)
       },

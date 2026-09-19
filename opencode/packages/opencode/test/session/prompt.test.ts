@@ -1176,6 +1176,123 @@ it.instance(
   30_000,
 )
 
+const gitRepo = (dir: string) => {
+  const git = (...args: string[]) =>
+    Bun.spawnSync(["git", "-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd: dir })
+  git("init", "-q")
+  git("commit", "-q", "-m", "init", "--allow-empty")
+}
+
+it.instance(
+  "claims check flags a summary the diff does not support",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(verifyProviderCfg({ verify_commands: ["echo ok"] }))
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      gitRepo(dir)
+      const session = yield* sessions.create({
+        title: "Claims",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "add retries" }],
+      })
+      yield* llm.tool("write", {
+        filePath: path.join(dir, "client.ts"),
+        content: "export const go = () => fetch(url)\n",
+      })
+      yield* llm.text("Added retry logic with exponential backoff to the client.")
+      yield* llm.text(
+        '{"mismatches":[{"claim":"added retry logic","reality":"the diff only adds a plain fetch call"}]}',
+      )
+
+      const result = yield* prompt.loop({ sessionID: session.id })
+      const [report] = verificationText(result)
+      expect(report).toContain("Summary does not match the diff (1):")
+      expect(report).toContain("Claimed: added retry logic")
+      expect(report).toContain("Actually: the diff only adds a plain fetch call")
+
+      // The claims model is given the agent's summary and the real diff, and nothing else to trust.
+      const hits = yield* llm.hits
+      const last = JSON.stringify(hits[hits.length - 1]?.body)
+      expect(last).toContain("Added retry logic with exponential backoff")
+      expect(last).toContain("new file: client.ts")
+    }),
+  30_000,
+)
+
+it.instance(
+  "claims check reports agreement, and reports not run when the verdict is unreadable",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(verifyProviderCfg({ verify_commands: ["echo ok"] }))
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      gitRepo(dir)
+      const run = (name: string, verdict: string) =>
+        Effect.gen(function* () {
+          const session = yield* sessions.create({
+            title: "Claims",
+            permission: [{ permission: "*", pattern: "*", action: "allow" }],
+          })
+          yield* prompt.prompt({
+            sessionID: session.id,
+            agent: "build",
+            noReply: true,
+            parts: [{ type: "text", text: "edit" }],
+          })
+          yield* llm.tool("write", { filePath: path.join(dir, name), content: "export const x = 1\n" })
+          yield* llm.text("Added x.")
+          yield* llm.text(verdict)
+          const result = yield* prompt.loop({ sessionID: session.id })
+          return verificationText(result)[0] ?? ""
+        })
+
+      expect(yield* run("agree.ts", '{"mismatches":[]}')).toContain("Summary matches the diff.")
+      // A model that ignores the format must never read as agreement.
+      const broken = yield* run("broken.ts", "Looks good to me!")
+      expect(broken).toContain("Summary vs diff: not run (unreadable verdict).")
+      expect(broken).not.toContain("Summary matches")
+    }),
+  30_000,
+)
+
+it.instance(
+  "claims check is skipped when disabled, costing no extra model call",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(
+        verifyProviderCfg({ verify_commands: ["echo ok"], verify_claims: false }),
+      )
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      gitRepo(dir)
+      const session = yield* sessions.create({
+        title: "Disabled",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "edit" }],
+      })
+      yield* llm.tool("write", { filePath: path.join(dir, "z.ts"), content: "export const z = 1\n" })
+      yield* llm.text("Added z.")
+
+      const result = yield* prompt.loop({ sessionID: session.id })
+      const [report] = verificationText(result)
+      expect(report).toContain("`echo ok` ✓ passed")
+      expect(report).not.toContain("Summary")
+      expect(yield* llm.calls).toBe(2)
+    }),
+  30_000,
+)
+
 it.instance(
   "verification says so when the project has no checks configured",
   () =>

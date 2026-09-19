@@ -236,6 +236,69 @@ describe("verify", () => {
     expect(contents).not.toContain("outside.ts")
   })
 
+  describe("claims check", () => {
+    const gitInit = (dir: string) => {
+      const git = (...args: string[]) =>
+        Bun.spawnSync(["git", "-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd: dir })
+      git("init", "-q")
+      git("add", ".")
+      git("commit", "-q", "-m", "init", "--allow-empty")
+    }
+
+    test("turnDiff shows tracked edits and renders untracked files as additions", async () => {
+      const dir = await project({ "tracked.ts": "const a = 1\n" })
+      gitInit(dir)
+      await Bun.write(path.join(dir, "tracked.ts"), "const a = 2\n")
+      await Bun.write(path.join(dir, "brand-new.ts"), "export const b = 3\n")
+
+      const diff = await Verify.turnDiff(dir, ["tracked.ts", "brand-new.ts"])
+      expect(diff).toContain("-const a = 1")
+      expect(diff).toContain("+const a = 2")
+      expect(diff).toContain("--- new file: brand-new.ts ---")
+      expect(diff).toContain("+export const b = 3")
+    })
+
+    test("turnDiff is empty outside a git repo and ignores paths outside the project", async () => {
+      const bare = await project({ "a.ts": "x" })
+      expect(await Verify.turnDiff(bare, ["a.ts"])).toBe("")
+      const dir = await project({ "a.ts": "x" })
+      gitInit(dir)
+      expect(await Verify.turnDiff(dir, ["../outside.ts"])).toBe("")
+    })
+
+    test("parseClaims reads verdicts and rejects unusable replies", () => {
+      expect(Verify.parseClaims('{"mismatches":[]}')).toEqual([])
+      expect(Verify.parseClaims('noise {"mismatches":[{"claim":" a ","reality":"b"}]} trailing')).toEqual([
+        { claim: "a", reality: "b" },
+      ])
+      // Anything unreadable must be undefined so the caller reports "not run", never agreement.
+      for (const bad of ["", "no json here", "{broken", '{"other":1}', '{"mismatches":"nope"}']) {
+        expect(Verify.parseClaims(bad)).toBeUndefined()
+      }
+      // Malformed entries are dropped rather than failing the whole verdict.
+      expect(Verify.parseClaims('{"mismatches":[{"claim":"a","reality":"b"},{"claim":""},null,{"x":1}]}')).toEqual([
+        { claim: "a", reality: "b" },
+      ])
+    })
+
+    test("format renders each claims state distinctly", () => {
+      const base = { entries: [], scopeFiles: [], scopeWarnFiles: 15, done: true }
+      expect(Verify.format({ ...base, claims: { status: "off" } })).not.toContain("Summary")
+      expect(Verify.format({ ...base, claims: { status: "pending" } })).toContain("Checking the summary")
+      expect(Verify.format({ ...base, claims: { status: "ok" } })).toContain("Summary matches the diff.")
+      expect(Verify.format({ ...base, claims: { status: "not_run", reason: "no diff available" } })).toContain(
+        "Summary vs diff: not run (no diff available).",
+      )
+      const mismatch = Verify.format({
+        ...base,
+        claims: { status: "mismatch", items: [{ claim: "added retries", reality: "no retry code in the diff" }] },
+      })
+      expect(mismatch).toContain("⚠ Summary does not match the diff (1):")
+      expect(mismatch).toContain("Claimed: added retries")
+      expect(mismatch).toContain("Actually: no retry code in the diff")
+    })
+  })
+
   test("only counts completed edit-like tools as edits", () => {
     expect(Verify.editedFiles([{ tool: "read", status: "completed" }])).toBe(false)
     expect(Verify.editedFiles([{ tool: "edit", status: "error" }])).toBe(false)
