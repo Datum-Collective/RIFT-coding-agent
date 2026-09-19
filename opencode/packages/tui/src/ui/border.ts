@@ -19,3 +19,21 @@ export const SplitBorder = {
     vertical: "┃",
   },
 }
+
+/**
+ * Rounded box used for the prompt and other framed surfaces. A full frame reads as an input
+ * field the way a terminal user expects, rather than a bar clinging to the left edge.
+ */
+export const RoundedBorder = {
+  topLeft: "╭",
+  topRight: "╮",
+  bottomLeft: "╰",
+  bottomRight: "╯",
+  horizontal: "─",
+  vertical: "│",
+  bottomT: "┴",
+  topT: "┬",
+  cross: "┼",
+  leftT: "├",
+  rightT: "┤",
+}
