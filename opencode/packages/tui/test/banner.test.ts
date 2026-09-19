@@ -1,11 +1,29 @@
 import { expect, test } from "bun:test"
 import { banner, BANNER_FILL, BANNER_INK, BANNER_WIDTH } from "../src/banner"
 
+function cells(row: (typeof banner)[number]) {
+  return row.flatMap((run) => [...run.text].map((ch) => ({ ch, bg: run.bg })))
+}
+
+function inked(cell: { ch: string; bg?: string }) {
+  return cell.ch !== " " || cell.bg !== undefined
+}
+
 test("every banner row is exactly the declared width", () => {
   for (const row of banner) {
     const width = row.reduce((total, run) => total + [...run.text].length, 0)
     expect(width).toBe(BANNER_WIDTH)
   }
+})
+
+// The declared width has to be the width you can see. Blank columns baked into the data pushed
+// the artwork out of line with the prompt that is sized to match it.
+test("the artwork is cropped to its own ink, with no dead columns at either edge", () => {
+  const rows = banner.map(cells)
+  const left = Math.min(...rows.map((row) => row.findIndex(inked)))
+  const right = Math.max(...rows.map((row) => row.findLastIndex(inked)))
+  expect(left).toBe(0)
+  expect(right).toBe(BANNER_WIDTH - 1)
 })
 
 test("the artwork keeps all five inks and both fills distinct", () => {

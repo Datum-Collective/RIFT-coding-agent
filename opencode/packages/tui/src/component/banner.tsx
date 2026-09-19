@@ -17,9 +17,14 @@ const FILL = Object.fromEntries(Object.entries(BANNER_FILL).map(([name, hex]) =>
   RGBA
 >
 
+/** Whether the full banner fits, leaving room for the screen's side padding. */
+export function bannerFits(terminalWidth: number) {
+  return terminalWidth >= BANNER_WIDTH + 4
+}
+
 export function Banner() {
   const dimensions = useTerminalDimensions()
-  const fits = () => dimensions().width >= BANNER_WIDTH + 4
+  const fits = () => bannerFits(dimensions().width)
 
   return (
     <Show when={fits()} fallback={<Logo />}>
