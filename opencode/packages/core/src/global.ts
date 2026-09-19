@@ -6,13 +6,18 @@ import { Context, Effect, Layer } from "effect"
 import { Flock } from "./util/flock"
 import { Flag } from "./flag/flag"
 import { makeGlobalNode } from "./effect/app-node"
+import { adoptEnv, brandedDir } from "./brand"
 
-const app = "opencode"
-const data = path.join(xdgData!, app)
-const cache = path.join(xdgCache!, app)
-const config = path.join(xdgConfig!, app)
-const state = path.join(xdgState!, app)
-const tmp = path.join(os.tmpdir(), app)
+// RIFT_* variables are adopted before anything reads the environment.
+adoptEnv()
+
+// Each directory prefers the RIFT name but keeps using an existing legacy one, so upgrading
+// from OpenCode does not strand the auth, sessions and config already on disk.
+const data = brandedDir(xdgData!)
+const cache = brandedDir(xdgCache!)
+const config = brandedDir(xdgConfig!)
+const state = brandedDir(xdgState!)
+const tmp = brandedDir(os.tmpdir())
 
 const paths = {
   get home() {
