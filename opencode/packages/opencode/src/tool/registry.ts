@@ -13,6 +13,7 @@ import { TaskTool } from "./task"
 import { Database } from "@opencode-ai/core/database/database"
 import { TodoWriteTool } from "./todo"
 import { WebFetchTool } from "./webfetch"
+import { BrowserTool } from "./browser"
 import { BrowserOpenTool } from "./browser_open"
 import { WriteTool } from "./write"
 import { InvalidTool } from "./invalid"
@@ -108,6 +109,7 @@ const layer = Layer.effect(
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
     const browseropen = yield* BrowserOpenTool
+    const browser = yield* BrowserTool
     const websearch = yield* WebSearchTool
     const shell = yield* ShellTool
     const globtool = yield* GlobTool
@@ -219,6 +221,7 @@ const layer = Layer.effect(
           task: Tool.init(task),
           fetch: Tool.init(webfetch),
           browseropen: Tool.init(browseropen),
+          browser: Tool.init(browser),
           todo: Tool.init(todo),
           search: Tool.init(websearch),
           skill: Tool.init(skilltool),
@@ -243,6 +246,7 @@ const layer = Layer.effect(
             tool.task,
             tool.fetch,
             tool.browseropen,
+            tool.browser,
             tool.todo,
             tool.search,
             tool.skill,
