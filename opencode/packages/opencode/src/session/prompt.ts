@@ -1,4 +1,5 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { fallbackTitle } from "./title"
 import PROMPT_BRAIN_ROT from "./prompt/brain-rot.txt"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import path from "path"
@@ -284,38 +285,56 @@ const layer = Layer.effect(
       const subtasks = firstUser.parts.filter((p): p is SessionV1.SubtaskPart => p.type === "subtask")
       const onlySubtasks = subtasks.length > 0 && firstUser.parts.every((p) => p.type === "subtask")
 
-      const ag = yield* agents.get("title")
-      if (!ag) return
-      const mdl = ag.model
-        ? yield* provider.getModel(ag.model.providerID, ag.model.modelID)
-        : ((yield* provider.getSmallModel(input.providerID)) ??
-          (yield* provider.getModel(input.providerID, input.modelID)))
-      const msgs = onlySubtasks
-        ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
-        : yield* MessageV2.toModelMessagesEffect(context, mdl)
-      const text = yield* llm
-        .stream({
-          agent: ag,
-          user: firstInfo,
-          system: [],
-          small: true,
-          tools: {},
-          model: mdl,
-          sessionID: input.session.id,
-          retries: 2,
-          messages: [{ role: "user", content: "Generate a title for this conversation:\n" }, ...msgs],
-        })
-        .pipe(
-          Stream.filter(LLMEvent.is.textDelta),
-          Stream.map((e) => e.text),
-          Stream.mkString,
-          Effect.orDie,
-        )
-      const cleaned = text
-        .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
-        .split("\n")
-        .map((line) => line.trim())
-        .find((line) => line.length > 0)
+      // Naming the session is a nicety that depends on a second model call, so it fails often: rate
+      // limits, no small model, an empty reply. Every one of those used to leave the session as
+      // "New session - <timestamp>" without a word in the logs, so failures are recorded here and the
+      // user's own first message stands in for the title.
+      const generated = yield* Effect.gen(function* () {
+        const ag = yield* agents.get("title")
+        if (!ag) return undefined
+        const mdl = ag.model
+          ? yield* provider.getModel(ag.model.providerID, ag.model.modelID)
+          : ((yield* provider.getSmallModel(input.providerID)) ??
+            (yield* provider.getModel(input.providerID, input.modelID)))
+        const msgs = onlySubtasks
+          ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
+          : yield* MessageV2.toModelMessagesEffect(context, mdl)
+        const text = yield* llm
+          .stream({
+            agent: ag,
+            user: firstInfo,
+            system: [],
+            small: true,
+            tools: {},
+            model: mdl,
+            sessionID: input.session.id,
+            retries: 2,
+            messages: [{ role: "user", content: "Generate a title for this conversation:\n" }, ...msgs],
+          })
+          .pipe(
+            Stream.filter(LLMEvent.is.textDelta),
+            Stream.map((e) => e.text),
+            Stream.mkString,
+            Effect.orDie,
+          )
+        return text
+          .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
+          .split("\n")
+          .map((line) => line.trim())
+          .find((line) => line.length > 0)
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("session title generation failed; using the first message", {
+            "session.id": input.session.id,
+            error: Cause.squash(cause),
+          }).pipe(Effect.as(undefined)),
+        ),
+      )
+      const typed = firstUser.parts
+        .filter((p): p is SessionV1.TextPart => p.type === "text" && !p.synthetic)
+        .map((p) => p.text)
+        .join("\n")
+      const cleaned = generated || fallbackTitle(onlySubtasks ? subtasks.map((p) => p.prompt).join("\n") : typed)
       if (!cleaned) return
       const t = cleaned.length > 100 ? cleaned.substring(0, 97) + "..." : cleaned
       yield* sessions

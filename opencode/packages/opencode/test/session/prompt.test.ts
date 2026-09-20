@@ -622,6 +622,40 @@ it.instance("brain rot from config applies, and the session can still turn it of
   }),
 )
 
+const titleAfterFirstTurn = Effect.fn("test.titleAfterFirstTurn")(function* (
+  llm: TestLLMServer["Service"],
+  text: string,
+) {
+  const prompt = yield* SessionPrompt.Service
+  const sessions = yield* Session.Service
+  const chat = yield* sessions.create({ permission: [{ permission: "*", pattern: "*", action: "allow" }] })
+  yield* prompt.prompt({ sessionID: chat.id, agent: "build", noReply: true, parts: [{ type: "text", text }] })
+  yield* llm.text("ok")
+  yield* prompt.loop({ sessionID: chat.id })
+  // Naming runs beside the turn and is not waited for, so give it a moment to land.
+  yield* Effect.sleep("1 second")
+  return (yield* sessions.get(chat.id)).title
+})
+
+it.instance("a session the model cannot name is titled from the first message", () =>
+  Effect.gen(function* () {
+    // With no title agent there is nothing to ask, the same outcome as a failed or empty reply.
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      agent: { title: { disable: true } },
+    }))
+    expect(yield* titleAfterFirstTurn(llm, "fix the login redirect loop")).toBe("Fix the login redirect loop")
+  }),
+)
+
+it.instance("a title the model provides wins over the first message", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    // The test server answers title requests itself with "E2E Title".
+    expect(yield* titleAfterFirstTurn(llm, "fix the login redirect loop")).toBe("E2E Title")
+  }),
+)
+
 it.instance("vibe mode uses planner and executor models for separate turns", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(vibeProviderCfg)
