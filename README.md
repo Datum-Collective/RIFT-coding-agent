@@ -58,7 +58,7 @@ cd your-project
 rift
 ```
 
-No Node, no Python, no build step — the installer drops a single self-contained binary (~34 MB)
+No Node, no Python, no build step — the installer drops a single self-contained binary (46–63 MB, depending on your platform)
 from [Releases](https://github.com/Datum-Collective/RIFT-coding-agent/releases). `opencode` starts it
 too, so either command works.
 

@@ -250,7 +250,10 @@ if (Script.release) {
     await $`mv ${compiled} ${branded}`.cwd(bin)
     try {
       if (key.includes("linux")) {
-        await $`tar -czf ../../${asset}.tar.gz ${branded}`.cwd(bin)
+        // macOS tar stores a file's extended attributes as a separate `._rift` entry, which
+        // GNU tar on Linux then extracts as a stray file. The flag is inert on Linux, so a
+        // release cut from either machine is identical.
+        await $`tar -czf ../../${asset}.tar.gz ${branded}`.env({ ...process.env, COPYFILE_DISABLE: "1" }).cwd(bin)
         assets.push(`./dist/${asset}.tar.gz`)
       } else {
         await $`zip -r ../../${asset}.zip ${branded}`.cwd(bin)

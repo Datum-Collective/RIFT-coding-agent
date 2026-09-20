@@ -23,10 +23,24 @@ jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
     defaults:
       run:
         working-directory: opencode
     steps:
+      # A clean build measured about 8.6 GB (3.9 GB of node_modules once every platform's native
+      # packages are installed for cross-compiling, 2.7 GB of binaries and archives), on top of
+      # the package cache. The runner image ships several toolchains this job never touches;
+      # clearing them is the standard way to keep a run from dying of a full disk mid-build.
+      - name: Free disk space
+        working-directory: .
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h / | tail -1
+
       - uses: actions/checkout@v4
 
       # node-gyp runs during postinstall and needs a newer Node than the runner image ships.
@@ -104,8 +118,103 @@ jobs:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
 
+      - name: Report disk use
+        if: always()
+        working-directory: .
+        run: df -h / | tail -1
+
+      - name: Check every platform was uploaded
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          # These are exactly the names opencode/install and opencode/install.ps1 construct.
+          # A release missing any one of them 404s for everyone on that platform, so a partial
+          # release must never go public.
+          expected="
+            rift-linux-x64.tar.gz rift-linux-x64-baseline.tar.gz rift-linux-arm64.tar.gz
+            rift-linux-x64-musl.tar.gz rift-linux-x64-baseline-musl.tar.gz rift-linux-arm64-musl.tar.gz
+            rift-darwin-x64.zip rift-darwin-x64-baseline.zip rift-darwin-arm64.zip
+            rift-windows-x64.zip rift-windows-x64-baseline.zip rift-windows-arm64.zip
+          "
+          have=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          missing=0
+          for name in $expected; do
+            echo "$have" | grep -qx "$name" || { echo "::error::release is missing $name"; missing=1; }
+          done
+          [ "$missing" = 0 ] && echo "all 12 platform archives are present"
+          exit "$missing"
+
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
         run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+
+  # Runs the documented one-line install against the real published release, on the three
+  # platforms users are on. This is the only check that exercises a real download: it answers
+  # whether macOS binaries cross-compiled on Linux actually run, and whether the Windows
+  # installer works against a real archive.
+  verify-install:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Install (macOS, Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/$REPO/main/opencode/install" | bash -s -- --version "$VERSION"
+
+      - name: Both commands run, from a fresh shell
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          # A brand-new interactive shell is what the user's next terminal window is; the current
+          # step's PATH proves nothing about the rc-file edit the installer made.
+          for cmd in rift opencode; do
+            got=$(bash -ic "$cmd --version" 2>/dev/null | tail -1)
+            echo "$cmd --version -> '$got'"
+            [ "$got" = "$VERSION" ] || { echo "::error::$cmd reported '$got', expected '$VERSION'"; exit 1; }
+          done
+
+      - name: macOS signature
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          # Apple Silicon refuses to run a binary with no signature at all. Bun ad-hoc signs
+          # what it compiles; confirm that survived cross-compiling from Linux.
+          codesign -dv "$HOME/.rift/bin/rift" 2>&1 | tee /dev/stderr | grep -q "Signature=adhoc"
+
+      - name: Install and run (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & ([scriptblock]::Create((irm "https://raw.githubusercontent.com/$env:REPO/main/opencode/install.ps1"))) -Version $env:VERSION -NoModifyPath
+          $bin = Join-Path $env:LOCALAPPDATA 'rift\bin'
+          foreach ($cmd in @("$bin\rift.exe", "$bin\opencode.cmd")) {
+            $got = (& $cmd --version | Select-Object -Last 1)
+            Write-Host "$cmd --version -> '$got'"
+            if ($got -ne $env:VERSION) { throw "$cmd reported '$got', expected '$env:VERSION'" }
+          }
+
+  # A published release that fails verification is worse than none: `releases/latest` is what
+  # every installer and `rift upgrade` read. Pull it back to a draft rather than leave it live.
+  withdraw-if-broken:
+    needs: [release, verify-install]
+    if: ${{ always() && needs.verify-install.result == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft
+          echo "::error::$TAG failed install verification and was reverted to a draft"
