@@ -244,9 +244,9 @@ print_message() {
 check_version() {
     if command -v rift >/dev/null 2>&1; then
 
-        # The binary's own --version is the OpenCode runtime it is built on, not the RIFT release, so
-        # the release this script installed is recorded beside it. Older installs predate that file and
-        # still report their release as --version, which is the fallback.
+        # The release this script installed is recorded beside the binary. Builds before 0.1.7 printed
+        # the OpenCode runtime as --version, so the file is the reliable source and --version the
+        # fallback for installs that predate it.
         if [ -r "$INSTALL_DIR/rift.version" ]; then
             installed_version=$(tr -d '[:space:]' <"$INSTALL_DIR/rift.version")
         else
