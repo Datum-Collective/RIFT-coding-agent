@@ -297,7 +297,7 @@ download_with_progress() {
     trap "trap - RETURN; rm -f \"$tracefile\"; printf '\033[?25h' >&4; exec 4>&-" RETURN
 
     (
-        curl --trace-ascii "$tracefile" -s -L -o "$output" "$url"
+        curl --trace-ascii "$tracefile" -f -s -L -o "$output" "$url"
     ) &
     local curl_pid=$!
 
@@ -341,7 +341,16 @@ download_and_install() {
 
     if [[ "$os" == "windows" ]] || ! [ -t 2 ] || ! download_with_progress "$url" "$tmp_dir/$filename"; then
         # Fallback to standard curl on Windows, non-TTY environments, or if custom progress fails
-        curl -# -L -o "$tmp_dir/$filename" "$url"
+        if ! curl -fL# -o "$tmp_dir/$filename" "$url"; then
+            rm -rf "$tmp_dir"
+            # Without -f the error page was saved as the archive and unzip failed with a message
+            # about zip directories, which said nothing about the real problem.
+            print_message error "\nError: could not download RIFT ${specific_version} for ${target}."
+            echo -e "${MUTED}Tried: ${NC}$url"
+            echo -e "${MUTED}That release may not have a build for this platform yet, or the release may still be publishing.${NC}"
+            echo -e "${MUTED}Available releases: ${NC}https://github.com/Datum-Collective/RIFT-coding-agent/releases"
+            exit 1
+        fi
     fi
 
     if [ "$os" = "linux" ]; then
