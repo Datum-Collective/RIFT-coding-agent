@@ -15,6 +15,7 @@ curl() {
 
 os=""             # stays empty on the --binary path, which skips platform detection
 reload_file=""    # shell config that now has rift on PATH, which an already-open terminal has not read
+linked_dir=""     # PATH directory rift was linked into, which makes a shell-config edit unnecessary
 
 MUTED='\033[0;2m'
 RED='\033[0;31m'
@@ -31,7 +32,7 @@ Options:
     -h, --help              Display this help message
     -v, --version <version> Install a specific version (e.g., 1.0.180)
     -b, --binary <path>     Install from a local binary instead of downloading
-        --no-modify-path    Don't modify shell config files (.zshrc, .bashrc, etc.)
+        --no-modify-path    Don't touch your shell config (.zshrc, .bashrc, etc.) or link into your PATH
 
 Examples:
     curl -fsSL https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install | bash
@@ -399,6 +400,57 @@ link_alias() {
     fi
 }
 
+# A script cannot change the PATH of the shell that launched it. Editing a shell config therefore
+# only takes effect in terminals opened afterwards, and the terminal the installer ran in keeps
+# saying "command not found" until it is reloaded. Linking into a directory that is already on PATH
+# works at once, in every terminal, which is why it is tried first.
+#
+# Only conventional user-command directories are used, only when they are already on PATH and
+# writable (so no sudo), and nothing is ever overwritten or shadowed: a command of the same name
+# found anywhere on PATH, such as another tool's `opencode`, is left alone.
+link_into_path() {
+    local dir="" candidate name target link existing
+
+    case ":$PATH:" in
+        *":$INSTALL_DIR:"*) return 0 ;;
+    esac
+
+    for candidate in "$HOME/.local/bin" "$HOME/bin" "/opt/homebrew/bin" "/usr/local/bin"; do
+        case ":$PATH:" in
+            *":$candidate:"*) ;;
+            *) continue ;;
+        esac
+        if [ -d "$candidate" ] && [ -w "$candidate" ]; then
+            dir=$candidate
+            break
+        fi
+    done
+    [ -n "$dir" ] || return 0
+
+    for name in rift opencode; do
+        target="$INSTALL_DIR/$name"
+        link="$dir/$name"
+        [ -e "$target" ] || continue
+
+        if [ -L "$link" ] && [ "$(readlink "$link")" = "$target" ]; then
+            # Already ours, from an earlier install.
+            if [ "$name" = "rift" ]; then linked_dir=$dir; fi
+            continue
+        fi
+
+        existing=$(command -v "$name" 2>/dev/null || true)
+        if [ -n "$existing" ] || [ -e "$link" ] || [ -L "$link" ]; then
+            print_message info "${MUTED}Left ${NC}${name}${MUTED} alone, ${NC}${existing:-$link}${MUTED} already exists.${NC}"
+            continue
+        fi
+
+        if ln -s "$target" "$link" 2>/dev/null; then
+            if [ "$name" = "rift" ]; then linked_dir=$dir; fi
+            print_message info "${MUTED}Linked ${NC}${name}${MUTED} into ${NC}${dir}${MUTED}, already on your PATH.${NC}"
+        fi
+    done
+}
+
 if [ -n "$binary_path" ]; then
     install_from_binary
 else
@@ -450,7 +502,11 @@ case $current_shell in
     ;;
 esac
 
-if [[ "$no_modify_path" != "true" ]]; then
+if [[ "$no_modify_path" != "true" && "$os" != "windows" ]]; then
+    link_into_path
+fi
+
+if [[ "$no_modify_path" != "true" && -z "$linked_dir" ]]; then
     config_file=""
     for file in $config_files; do
         if [[ -f $file ]]; then

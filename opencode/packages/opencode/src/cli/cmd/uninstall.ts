@@ -23,10 +23,40 @@ interface UninstallArgs {
   force: boolean
 }
 
+// The install script links rift (and opencode) into one of these when it is already on PATH, so the
+// command works in the terminal the installer ran in without reloading a shell config.
+const LINK_NAMES = ["rift", "opencode"]
+const linkDirs = () => [
+  path.join(os.homedir(), ".local", "bin"),
+  path.join(os.homedir(), "bin"),
+  "/opt/homebrew/bin",
+  "/usr/local/bin",
+]
+
+/**
+ * Command links that point at `binary`. A link only counts when it resolves to exactly this
+ * binary, so another tool's `opencode` sitting in the same directory is never touched.
+ */
+export async function findCommandLinks(binary: string, dirs: string[] = linkDirs()) {
+  const real = await fs.realpath(binary).catch(() => binary)
+  const found: string[] = []
+  for (const dir of dirs) {
+    for (const name of LINK_NAMES) {
+      const link = path.join(dir, name)
+      const stat = await fs.lstat(link).catch(() => undefined)
+      if (!stat?.isSymbolicLink()) continue
+      const resolved = await fs.realpath(link).catch(() => undefined)
+      if (resolved === real) found.push(link)
+    }
+  }
+  return found
+}
+
 interface RemovalTargets {
   directories: Array<{ path: string; label: string; keep: boolean }>
   shellConfig: string | null
   binary: string | null
+  links: string[]
 }
 
 export const UninstallCommand = {
@@ -104,8 +134,9 @@ async function collectRemovalTargets(args: UninstallArgs, method: Installation.M
 
   const shellConfig = method === "curl" ? await getShellConfigFile() : null
   const binary = method === "curl" ? process.execPath : null
+  const links = binary ? await findCommandLinks(binary) : []
 
-  return { directories, shellConfig, binary }
+  return { directories, shellConfig, binary, links }
 }
 
 async function showRemovalSummary(targets: RemovalTargets, method: Installation.Method) {
@@ -128,6 +159,10 @@ async function showRemovalSummary(targets: RemovalTargets, method: Installation.
 
   if (targets.binary) {
     prompts.log.info(`  ✓ Binary: ${shortenPath(targets.binary)}`)
+  }
+
+  for (const link of targets.links) {
+    prompts.log.info(`  ✓ Command link: ${shortenPath(link)}`)
   }
 
   if (targets.shellConfig) {
@@ -182,6 +217,27 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
       errors.push(`Shell config: ${err.message}`)
     } else {
       spinner.stop("Cleaned shell config")
+    }
+  }
+
+  if (targets.links.length > 0) {
+    spinner.start("Removing command links...")
+    // A symlink can be removed while the binary it points at is running, unlike the binary.
+    const failed = (
+      await Promise.all(
+        targets.links.map((link) =>
+          fs.unlink(link).then(
+            () => undefined,
+            (e: Error) => `${link}: ${e.message}`,
+          ),
+        ),
+      )
+    ).filter((item): item is string => item !== undefined)
+    if (failed.length > 0) {
+      spinner.stop("Failed to remove some command links", 1)
+      for (const item of failed) errors.push(`Command link: ${item}`)
+    } else {
+      spinner.stop("Removed command links")
     }
   }
 

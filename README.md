@@ -51,7 +51,10 @@ curl -fsSL https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/
 irm https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install.ps1 | iex
 ```
 
-Open a new terminal, then point it at a project:
+`rift` works straight away when a directory such as `~/.local/bin` or `/opt/homebrew/bin` is already
+on your `PATH`, because the installer links it there. Otherwise it adds itself to your shell config and
+tells you the one command to run (`source ~/.zshrc`) or to open a new terminal. Then point it at a
+project:
 
 ```bash
 cd your-project
