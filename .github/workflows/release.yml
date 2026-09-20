@@ -26,7 +26,6 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
-      runtime_version: ${{ steps.version.outputs.runtime_version }}
     defaults:
       run:
         working-directory: opencode
@@ -93,7 +92,6 @@ jobs:
           }
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-          echo "runtime_version=$(node -p "require('./packages/opencode/package.json').version")" >> "$GITHUB_OUTPUT"
 
       - run: command -v zip >/dev/null || sudo apt-get install -y zip
 
@@ -167,7 +165,6 @@ jobs:
     timeout-minutes: 20
     env:
       VERSION: ${{ needs.release.outputs.version }}
-      RUNTIME_VERSION: ${{ needs.release.outputs.runtime_version }}
       REPO: ${{ github.repository }}
     steps:
       - name: Install (macOS, Linux)
@@ -185,16 +182,16 @@ jobs:
           for cmd in rift opencode; do
             got=$(bash -ic "$cmd --version" 2>/dev/null | tail -1)
             echo "$cmd --version -> '$got'"
-            [ "$got" = "$RUNTIME_VERSION" ] || { echo "::error::$cmd reported '$got', expected OpenCode runtime '$RUNTIME_VERSION'"; exit 1; }
+            [ "$got" = "$VERSION" ] || { echo "::error::$cmd reported '$got', expected RIFT '$VERSION'"; exit 1; }
           done
 
       - name: The binary knows which RIFT release it is
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          # --version is the OpenCode runtime, so it says nothing about the release. The update check
-          # compares this number with GitHub, and a build that embedded the wrong one would offer an
-          # update to itself on every launch, so the shipped binary is asked directly.
+          # The update check compares the embedded release with GitHub, and a build that embedded the
+          # wrong one would offer an update to itself on every launch. `--version` is checked above;
+          # this asks the same question of `debug info`, which also names the OpenCode runtime.
           got=$(bash -ic "rift debug info" 2>/dev/null | sed -n 's/^rift version: //p' | tail -1)
           echo "rift version (embedded) -> '$got'"
           [ "$got" = "$VERSION" ] || { echo "::error::binary reports RIFT '$got', expected '$VERSION'"; exit 1; }
@@ -220,10 +217,10 @@ jobs:
           foreach ($cmd in @("$bin\rift.exe", "$bin\opencode.cmd")) {
             $got = (& $cmd --version | Select-Object -Last 1)
             Write-Host "$cmd --version -> '$got'"
-            if ($got -ne $env:RUNTIME_VERSION) { throw "$cmd reported '$got', expected OpenCode runtime '$env:RUNTIME_VERSION'" }
+            if ($got -ne $env:VERSION) { throw "$cmd reported '$got', expected RIFT '$env:VERSION'" }
           }
-          # --version is the OpenCode runtime, so ask the binary which RIFT release it is: the update
-          # check compares that with GitHub, and the wrong one would offer an update on every launch.
+          # The update check compares the embedded release with GitHub, and the wrong one would offer
+          # an update on every launch; `debug info` states it next to the OpenCode runtime.
           $line = (& "$bin\rift.exe" debug info | Where-Object { $_ -like 'rift version: *' } | Select-Object -Last 1)
           Write-Host "rift version (embedded) -> '$line'"
           if ($line -ne "rift version: $env:VERSION") { throw "binary reports '$line', expected 'rift version: $env:VERSION'" }
