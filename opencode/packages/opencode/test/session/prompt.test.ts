@@ -580,6 +580,48 @@ it.instance("loop calls LLM and returns assistant message", () =>
   }),
 )
 
+// Sends one turn and returns the system text the model actually received.
+const systemSentFor = Effect.fn("test.systemSentFor")(function* (
+  llm: TestLLMServer["Service"],
+  metadata?: Record<string, unknown>,
+) {
+  const prompt = yield* SessionPrompt.Service
+  const sessions = yield* Session.Service
+  const chat = yield* sessions.create({
+    title: "Pinned",
+    permission: [{ permission: "*", pattern: "*", action: "allow" }],
+  })
+  if (metadata) yield* sessions.setMetadata({ sessionID: chat.id, metadata })
+  yield* prompt.prompt({ sessionID: chat.id, agent: "build", noReply: true, parts: [{ type: "text", text: "hi" }] })
+  yield* llm.text("ok")
+  yield* prompt.loop({ sessionID: chat.id })
+  const input = (yield* llm.inputs).at(-1)
+  return JSON.stringify(input?.messages ?? [])
+})
+
+it.instance("brain rot is off unless asked for", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    expect(yield* systemSentFor(llm)).not.toContain("brain_rot_mode")
+  }),
+)
+
+it.instance("brain rot reaches the model when the session turns it on", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const sent = yield* systemSentFor(llm, { brain_rot: true })
+    expect(sent).toContain("brain_rot_mode")
+  }),
+)
+
+it.instance("brain rot from config applies, and the session can still turn it off", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({ ...providerCfg(url), brain_rot: true }))
+    expect(yield* systemSentFor(llm)).toContain("brain_rot_mode")
+    expect(yield* systemSentFor(llm, { brain_rot: false })).not.toContain("brain_rot_mode")
+  }),
+)
+
 it.instance("vibe mode uses planner and executor models for separate turns", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(vibeProviderCfg)

@@ -69,12 +69,40 @@ export function delay(attempt: number, error?: SessionV1.APIError, random = Math
           return cap(Math.ceil(parsed))
         }
       }
-
-      return cap(exponential(attempt, random))
     }
+
+    const advised = retryInfo(error.data.responseBody)
+    if (advised !== undefined) return advised
+
+    if (headers) return cap(exponential(attempt, random))
   }
 
   return cap(Math.min(exponential(attempt, random), RETRY_MAX_DELAY_NO_HEADERS))
+}
+
+// Google's APIs put the wait in the error body instead of a Retry-After header: a
+// google.rpc.RetryInfo detail carrying a protobuf duration, "26s" or "1.5s". Reading it
+// matters most on the 429 it answers a busy model with. Backing off on our own schedule
+// instead spends attempts on requests the server has already said are too early, so a
+// model that would have answered after one honest wait runs out of retries and fails.
+const RETRY_INFO_TYPE = "type.googleapis.com/google.rpc.RetryInfo"
+
+function retryInfo(responseBody: unknown) {
+  if (typeof responseBody !== "string" || !responseBody.includes("RetryInfo")) return undefined
+  const body = parseJSON(responseBody)
+  const error = isRecord(body) ? body.error : undefined
+  const details = isRecord(error) ? error.details : undefined
+  if (!Array.isArray(details)) return undefined
+
+  for (const detail of details) {
+    if (!isRecord(detail) || detail["@type"] !== RETRY_INFO_TYPE) continue
+    const seconds = /^(\d+(?:\.\d+)?)s$/.exec(str(detail.retryDelay))?.[1]
+    if (seconds === undefined) continue
+    const parsed = Number.parseFloat(seconds)
+    if (Number.isNaN(parsed)) continue
+    return cap(Math.ceil(parsed * 1000))
+  }
+  return undefined
 }
 
 function exponential(attempt: number, random: number) {
