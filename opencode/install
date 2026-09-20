@@ -4,6 +4,7 @@ APP=rift
 BIN=rift          # binary name inside the archive; becomes rift.exe on Windows
 ALIAS=opencode    # second command name, so either one starts it
 os=""             # stays empty on the --binary path, which skips platform detection
+reload_file=""    # shell config that now has rift on PATH, which an already-open terminal has not read
 
 MUTED='\033[0;2m'
 RED='\033[0;31m'
@@ -399,10 +400,12 @@ add_to_path() {
 
     if grep -Fxq "$command" "$config_file"; then
         print_message info "Command already exists in $config_file, skipping write."
+        reload_file=$config_file
     elif [[ -w $config_file ]]; then
         echo -e "\n# rift" >> "$config_file"
         echo "$command" >> "$config_file"
         print_message info "${MUTED}Successfully added ${NC}rift ${MUTED}to \$PATH in ${NC}$config_file"
+        reload_file=$config_file
     else
         print_message warning "Manually add the directory to $config_file (or similar):"
         print_message info "  $command"
@@ -484,6 +487,24 @@ echo -e "${MUTED}█▀▀▄  ██ ${NC} █▀▀   ██ "
 echo -e "${MUTED}▀  ▀ ▀██▀${NC} ▀     ██ "
 echo -e ""
 echo -e ""
+# A running shell only reads its config at startup, so the terminal this was run in cannot see the
+# PATH change until it is reloaded. Without saying so, a working install looks like a broken one:
+# the next thing anyone types is `rift`, and the answer is "command not found".
+if [ -n "$reload_file" ]; then
+    # Show ~/.zshrc rather than the absolute path, so the line reads the way people expect. A case
+    # statement instead of ${var/#$HOME/~}, whose tilde handling differs between bash versions and
+    # macOS still ships 3.2.
+    tilde='~'
+    reload_display=$reload_file
+    case $reload_file in
+        "$HOME"/*) reload_display="${tilde}/${reload_file#"$HOME"/}" ;;
+    esac
+    echo -e "${MUTED}First, load rift into this terminal (or just open a new one):${NC}"
+    echo -e ""
+    echo -e "source ${reload_display}"
+    echo -e ""
+    echo -e ""
+fi
 echo -e "${MUTED}RIFT includes free models, to start:${NC}"
 echo -e ""
 echo -e "cd <project>  ${MUTED}# Open directory${NC}"
