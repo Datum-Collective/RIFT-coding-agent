@@ -1,9 +1,8 @@
 import {
   INSTALL_DIR_NAME,
-  INSTALL_PS1_URL,
-  INSTALL_SH_URL,
   LEGACY_INSTALL_DIR_NAME,
-  RELEASES_API,
+  installScriptUrl,
+  releasesApi,
 } from "@opencode-ai/core/brand"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
@@ -154,7 +153,7 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
         // Windows has no sh, so it re-runs the PowerShell installer instead. Both scripts read
         // VERSION from the environment, which is what makes a pinned upgrade work.
         const windows = process.platform === "win32"
-        const response = yield* httpOk.execute(HttpClientRequest.get(windows ? INSTALL_PS1_URL : INSTALL_SH_URL))
+        const response = yield* httpOk.execute(HttpClientRequest.get(installScriptUrl(windows)))
         const body = yield* response.text
         const bodyBytes = new TextEncoder().encode(body)
         const shell = windows ? "powershell.exe" : yield* upgradeScriptShell()
@@ -267,7 +266,7 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
           return data.version
         }
 
-        const response = yield* httpOk.execute(HttpClientRequest.get(RELEASES_API).pipe(HttpClientRequest.acceptJson))
+        const response = yield* httpOk.execute(HttpClientRequest.get(releasesApi()).pipe(HttpClientRequest.acceptJson))
         const data = yield* HttpClientResponse.schemaBodyJson(GitHubRelease)(response)
         return data.tag_name.replace(/^v/, "")
       }, Effect.orDie),

@@ -42,9 +42,13 @@ function createWorkerFetch(client: RpcClient): typeof fetch {
 function createEventSource(client: RpcClient): EventSource {
   return {
     subscribe: async (handler) => {
-      return client.on<GlobalEvent>("global.event", (e) => {
+      const off = client.on<GlobalEvent>("global.event", (e) => {
         handler(e)
       })
+      // An update announcement made before this point was dropped, so ask for it again now that
+      // something is listening. Harmless when nothing is pending.
+      client.call("replayUpdate", undefined).catch(() => {})
+      return off
     },
   }
 }

@@ -1,5 +1,5 @@
 import { Global } from "@opencode-ai/core/global"
-import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import { InstallationVersion, RiftVersion } from "@opencode-ai/core/installation/version"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import os from "os"
 import { Duration, Effect } from "effect"
@@ -58,7 +58,11 @@ const InfoCommand = effectCmd({
       : undefined
     const terminal = [termProgram, process.env.TERM].filter((item): item is string => Boolean(item)).join(" / ")
 
-    console.log(`opencode version: ${InstallationVersion}`)
+    // Two numbers, because they mean different things: the release is what updates compare, the runtime
+    // is what plugins and provider APIs see. CI reads the first to check each build knows which release
+    // it is.
+    console.log(`rift version: ${RiftVersion}`)
+    console.log(`opencode runtime: ${InstallationVersion}`)
     console.log(`os: ${os.type()} ${os.release()} ${os.arch()}`)
     console.log(`terminal: ${terminal || "unknown"}`)
     console.log("plugins:")

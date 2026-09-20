@@ -35,6 +35,16 @@ export const RAW_BASE = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/o
 export const INSTALL_SH_URL = `${RAW_BASE}/install`
 export const INSTALL_PS1_URL = `${RAW_BASE}/install.ps1`
 
+/**
+ * Where to look for the newest release, and where to fetch the install script from when updating.
+ * Both can be overridden through the environment. That is how the update flow is tested against a
+ * stand-in for GitHub, and it lets an organisation point RIFT at an internal mirror. Anything that can
+ * set these already controls the process, so they widen nothing.
+ */
+export const releasesApi = (env: NodeJS.ProcessEnv = process.env) => env["RIFT_RELEASES_API"] || RELEASES_API
+export const installScriptUrl = (windows: boolean, env: NodeJS.ProcessEnv = process.env) =>
+  env["RIFT_INSTALL_URL"] || (windows ? INSTALL_PS1_URL : INSTALL_SH_URL)
+
 /** Directory the install scripts put the binary in, under the user's home. */
 export const INSTALL_DIR_NAME = `.${BRAND}`
 export const LEGACY_INSTALL_DIR_NAME = `.${LEGACY_BRAND}`

@@ -11,7 +11,10 @@ export type DialogConfirmProps = {
   message: string
   onConfirm?: () => void
   onCancel?: () => void
+  /** Text for the cancel button. Defaults to "Cancel". */
   label?: string
+  /** Text for the confirm button. Defaults to "Confirm". Say what it does when "Confirm" would be vague. */
+  confirmLabel?: string
 }
 
 export type DialogConfirmResult = boolean | undefined
@@ -80,7 +83,7 @@ export function DialogConfirm(props: DialogConfirmProps) {
               }}
             >
               <text fg={key === store.active ? theme.selectedListItemText : theme.textMuted}>
-                {Locale.titlecase(key === "cancel" ? (props.label ?? key) : key)}
+                {Locale.titlecase(key === "cancel" ? (props.label ?? key) : (props.confirmLabel ?? key))}
               </text>
             </box>
           )}
@@ -90,7 +93,7 @@ export function DialogConfirm(props: DialogConfirmProps) {
   )
 }
 
-DialogConfirm.show = (dialog: DialogContext, title: string, message: string, label?: string) => {
+DialogConfirm.show = (dialog: DialogContext, title: string, message: string, label?: string, confirmLabel?: string) => {
   return new Promise<DialogConfirmResult>((resolve) => {
     dialog.replace(
       () => (
@@ -100,6 +103,7 @@ DialogConfirm.show = (dialog: DialogContext, title: string, message: string, lab
           onConfirm={() => resolve(true)}
           onCancel={() => resolve(false)}
           label={label}
+          confirmLabel={confirmLabel}
         />
       ),
       () => resolve(undefined),

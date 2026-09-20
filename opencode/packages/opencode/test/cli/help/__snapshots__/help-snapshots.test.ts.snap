@@ -173,7 +173,7 @@ Options:
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode upgrade --help 1`] = `
 "opencode upgrade [target]
 
-upgrade opencode to the latest or a specific version
+upgrade RIFT to the latest or a specific version
 
 Positionals:
   target  version to upgrade to, for ex '0.1.48' or 'v0.1.48'                               [string]
@@ -532,8 +532,8 @@ Options:
       --description           what the agent should do                                      [string]
       --mode                  agent mode            [string] [choices: "all", "primary", "subagent"]
       --permissions, --tools  comma-separated list of permissions to allow (default: all).
-                              Available: "bash, read, edit, glob, grep, webfetch, task, todowrite,
-                              websearch, lsp, skill"                                        [string]
+                              Available: "bash, read, edit, glob, grep, webfetch, browser_open,
+                              task, todowrite, websearch, lsp, skill"                       [string]
   -m, --model                 model to use in the format of provider/model                  [string]"
 `;
 

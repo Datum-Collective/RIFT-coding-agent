@@ -1,6 +1,6 @@
 import { TextAttributes } from "@opentui/core"
 import { createMemo, createSignal, For } from "solid-js"
-import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
+import { InstallationChannel, InstallationVersion, RiftVersion } from "@opencode-ai/core/installation/version"
 import { useTheme } from "../context/theme"
 import { useDialog } from "../ui/dialog"
 import { useRoute } from "../context/route"
@@ -24,7 +24,8 @@ export function DialogDebug() {
   const entries = createMemo(() => {
     const model = local.model.current()
     return [
-      { label: "Version", value: `${InstallationVersion} (${InstallationChannel})` },
+      { label: "RIFT", value: `${RiftVersion} (${InstallationChannel})` },
+      { label: "Runtime", value: InstallationVersion },
       { label: "Date", value: new Date().toISOString() },
       { label: "OS", value: describeOS() },
       { label: "Terminal", value: describeTerminal() },

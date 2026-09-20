@@ -244,8 +244,14 @@ print_message() {
 check_version() {
     if command -v rift >/dev/null 2>&1; then
 
-        ## Check the installed version
-        installed_version=$(rift --version 2>/dev/null || echo "")
+        # The binary's own --version is the OpenCode runtime it is built on, not the RIFT release, so
+        # the release this script installed is recorded beside it. Older installs predate that file and
+        # still report their release as --version, which is the fallback.
+        if [ -r "$INSTALL_DIR/rift.version" ]; then
+            installed_version=$(tr -d '[:space:]' <"$INSTALL_DIR/rift.version")
+        else
+            installed_version=$(rift --version 2>/dev/null || echo "")
+        fi
 
         if [[ "$installed_version" != "$specific_version" ]]; then
             print_message info "${MUTED}Installed version: ${NC}$installed_version."
@@ -381,6 +387,7 @@ download_and_install() {
     mv "$tmp_dir/$BIN" "$INSTALL_DIR"
     chmod 755 "${INSTALL_DIR}/${BIN}"
     rm -rf "$tmp_dir"
+    printf '%s\n' "$specific_version" >"$INSTALL_DIR/rift.version"
     link_alias
 }
 

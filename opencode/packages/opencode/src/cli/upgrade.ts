@@ -7,6 +7,30 @@ import { GlobalBus } from "@/bus/global"
 import { decideUpdate } from "./update-decision"
 
 /**
+ * The release the user should be asked about, once one has been found. The event announcing it is sent
+ * once and dropped if nobody is listening, and the interface only starts listening when it has finished
+ * loading, which on a slow machine or a first run can be after the check is done. Remembering the result
+ * lets the interface ask for it the moment it subscribes, so the prompt no longer depends on which side
+ * happens to be ready first.
+ */
+let pending: string | undefined
+
+function announce(version: string) {
+  GlobalBus.emit("event", {
+    directory: "global",
+    payload: {
+      type: Installation.Event.UpdateAvailable.type,
+      properties: { version },
+    },
+  })
+}
+
+/** Sends the pending update announcement again, for an interface that subscribed after it was made. */
+export function replayUpdate() {
+  if (pending) announce(pending)
+}
+
+/**
  * Checks GitHub for a newer RIFT release when the app starts, and either tells the interface to ask
  * the user or, for someone who opted in, installs a patch release quietly.
  */
@@ -32,13 +56,8 @@ export async function upgrade() {
   if (action === "none") return
 
   if (action === "ask") {
-    GlobalBus.emit("event", {
-      directory: "global",
-      payload: {
-        type: Installation.Event.UpdateAvailable.type,
-        properties: { version: latest },
-      },
-    })
+    pending = latest
+    announce(latest)
     return
   }
 

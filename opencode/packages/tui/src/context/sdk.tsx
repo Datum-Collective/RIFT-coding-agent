@@ -33,12 +33,24 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     let sdk = createSDK()
 
     const handlers = new Set<(event: GlobalEvent) => void>()
+
+    // Announcements that state a lasting fact rather than report something that just happened. An
+    // emit only reaches the handlers that exist at that instant, and the component that reacts to
+    // "a newer release exists" mounts only after the theme, settings and sync have loaded, which on a
+    // first run can be seconds after the check finished. Without this the announcement went to nobody
+    // and the user was never told. A sticky event is kept and handed to whoever subscribes afterward.
+    const STICKY = new Set(["installation.update-available"])
+    const sticky = new Map<string, GlobalEvent>()
+
     const emitter = {
       emit(_type: "event", event: GlobalEvent) {
+        if (STICKY.has(event.payload.type)) sticky.set(event.payload.type, event)
         for (const handler of handlers) handler(event)
       },
       on(_type: "event", handler: (event: GlobalEvent) => void) {
         handlers.add(handler)
+        // Asynchronously, so a handler is never called before it has finished being set up.
+        for (const event of sticky.values()) queueMicrotask(() => handler(event))
         return () => {
           handlers.delete(handler)
         }
