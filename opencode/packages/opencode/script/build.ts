@@ -193,6 +193,8 @@ for (const item of targets) {
     define: {
       FFF_LIBC: JSON.stringify(item.abi === "musl" ? "musl" : "gnu"),
       OPENCODE_VERSION: `'${pkg.version}'`,
+      // The release tag, kept apart from the runtime version above so updates compare like with like.
+      RIFT_VERSION: `'${Script.version}'`,
       OPENCODE_MODELS_DEV: generated.modelsData,
       OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + treeSitterWorkerPath,
       OPENCODE_WORKER_PATH: workerPath,

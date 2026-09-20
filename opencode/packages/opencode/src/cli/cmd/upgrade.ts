@@ -2,11 +2,11 @@ import type { Argv } from "yargs"
 import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
 import { Installation } from "../../installation"
-import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import { RiftVersion } from "@opencode-ai/core/installation/version"
 
 export const UpgradeCommand = {
   command: "upgrade [target]",
-  describe: "upgrade opencode to the latest or a specific version",
+  describe: "upgrade RIFT to the latest or a specific version",
   builder: (yargs: Argv) => {
     return yargs
       .positional("target", {
@@ -28,7 +28,7 @@ export const UpgradeCommand = {
     const detectedMethod = await Installation.method()
     const method = (args.method as Installation.Method) ?? detectedMethod
     if (method === "unknown") {
-      prompts.log.error(`opencode is installed to ${process.execPath} and may be managed by a package manager`)
+      prompts.log.error(`RIFT is installed to ${process.execPath} and may be managed by a package manager`)
       const install = await prompts.select({
         message: "Install anyways?",
         options: [
@@ -45,13 +45,15 @@ export const UpgradeCommand = {
     prompts.log.info("Using method: " + method)
     const target = args.target ? args.target.replace(/^v/, "") : await Installation.latest()
 
-    if (InstallationVersion === target) {
-      prompts.log.warn(`opencode upgrade skipped: ${target} is already installed`)
+    // Compared against RIFT's own release number. The runtime version the binary is built on is a
+    // different sequence, and comparing the two makes every release look like an upgrade.
+    if (RiftVersion === target) {
+      prompts.log.warn(`RIFT upgrade skipped: ${target} is already installed`)
       prompts.outro("Done")
       return
     }
 
-    prompts.log.info(`From ${InstallationVersion} → ${target}`)
+    prompts.log.info(`From ${RiftVersion} → ${target}`)
     const spinner = prompts.spinner()
     spinner.start("Upgrading...")
     const err = await Installation.upgrade(method, target).catch((err) => err)
