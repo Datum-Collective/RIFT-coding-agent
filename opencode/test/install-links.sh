@@ -62,4 +62,80 @@ echo "F. --no-modify-path -> no links, no shell-config edit"
 newenv F; inst "$T/home/.local/bin:/usr/bin:/bin" --no-modify-path >/dev/null
 [ ! -e "$T/home/.local/bin/rift" ] && [ ! -s "$T/home/.zshrc" ] && ok "environment untouched" || bad "modified the environment"
 
+# ---- the shell the installer opens when it could not link rift into a PATH directory ----------------
+# These need a real terminal, so they drive the installer through a pseudo-terminal, piped in the
+# way `curl | bash` pipes it. Anything that opens a shell where it should not would be worse than
+# the problem it solves, so the cases where it must stay closed matter as much as the one where it opens.
+cat > "$S/drive_installer.py" <<'PYEOF'
+import os, pty, re, select, shutil, shlex, signal, sys, time
+repo, tmp, stub, extra, pathv, keys = sys.argv[1:7]
+shutil.rmtree(tmp, ignore_errors=True)
+home = tmp + "/home"; os.makedirs(home + "/.local/bin")
+for rc in (".zshrc", ".bashrc"): open(home + "/" + rc, "w").close()
+env = {"HOME": home, "SHELL": "/bin/bash", "TERM": "xterm", "PATH": pathv.replace("@HOME", home)}
+for pair in filter(None, extra.split(",")):
+    k, v = pair.split("="); env[k] = v
+pid, fd = pty.fork()
+if pid == 0:
+    # Paths are quoted because a checkout directory can contain spaces.
+    os.execve("/bin/bash", ["bash", "-c", f"cat {shlex.quote(repo + '/install')} | bash -s -- --binary {shlex.quote(stub)}"], env)
+buf = b""; t0 = time.time(); sent = False; timed_out = False
+while time.time() - t0 < 40:
+    r, _, _ = select.select([fd], [], [], 0.3)
+    if r:
+        try: d = os.read(fd, 65536)
+        except OSError: break
+        if not d: break
+        buf += d
+    if keys and not sent and b"Opening a new shell" in buf:
+        time.sleep(1); os.write(fd, keys.encode()); sent = True
+    try:
+        done, _ = os.waitpid(pid, os.WNOHANG)
+        if done: break
+    except ChildProcessError: break
+else:
+    os.kill(pid, signal.SIGKILL); timed_out = True
+out = re.sub(rb"\x1b\[[0-9;?]*[a-zA-Z]", b"", buf).decode("utf8", "ignore").replace("\r", "")
+print("TIMEOUT" if timed_out else "DONE")
+print(out)
+PYEOF
+if command -v python3 >/dev/null 2>&1; then
+  # "It did not open a shell" is also true when the driver crashed and printed nothing, so every
+  # negative case first requires proof that the installer really ran to its final banner.
+  completed() { echo "$1" | head -1 | grep -q DONE && echo "$1" | grep -q "RIFT includes free models"; }
+  ptyrun() { python3 "$S/drive_installer.py" "$REPO" "$S/pty" "$BIN" "$@"; }
+  KEYS=$'command -v rift; rift --version; exit\n'
+
+  echo "G. interactive terminal, nothing to link into -> opens a shell that already has rift"
+  o=$(ptyrun "" "/usr/bin:/bin" "$KEYS")
+  echo "$o" | grep -q "Opening a new shell" && ok "announced it" || bad "did not open a shell"
+  echo "$o" | grep -q "0.0.0-test" && ok "rift runs inside it" || bad "rift not usable in the new shell"
+  echo "$o" | head -1 | grep -q DONE && ok "returns when you exit" || bad "hung"
+  echo "$o" | grep -q "First, load rift" && bad "also told you to source, which is redundant" || ok "no redundant reload instruction"
+
+  echo "H. RIFT_NO_SHELL=1 -> never opens a shell, prints the reload command instead"
+  o=$(ptyrun "RIFT_NO_SHELL=1" "/usr/bin:/bin" "")
+  completed "$o" && ok "installer ran to completion" || bad "installer did not complete: $(echo "$o" | head -3 | tr '\n' ' ')"
+  echo "$o" | grep -q "Opening a new shell" && bad "opened a shell despite the opt-out" || ok "stayed closed"
+  echo "$o" | grep -q "source ~/.bashrc" && ok "printed the reload command" || bad "no reload command"
+
+  echo "I. CI=1 -> never opens a shell"
+  o=$(ptyrun "CI=1" "/usr/bin:/bin" "")
+  completed "$o" && ok "installer ran to completion" || bad "installer did not complete: $(echo "$o" | head -3 | tr '\n' ' ')"
+  echo "$o" | grep -q "Opening a new shell" && bad "opened a shell in CI" || ok "stayed closed"
+
+  echo "J. rift was linked into a PATH directory -> nothing to reload, no shell"
+  o=$(ptyrun "" "@HOME/.local/bin:/usr/bin:/bin" "")
+  completed "$o" && ok "installer ran to completion" || bad "installer did not complete: $(echo "$o" | head -3 | tr '\n' ' ')"
+  echo "$o" | grep -q "Opening a new shell" && bad "opened a shell it did not need" || ok "stayed closed"
+  echo "$o" | grep -q "Linked rift" && ok "linked instead" || bad "did not link"
+
+  echo "K. a shell we do not know how to start -> falls back to the reload command"
+  o=$(ptyrun "SHELL=/bin/sh" "/usr/bin:/bin" "")
+  completed "$o" && ok "installer ran to completion" || bad "installer did not complete: $(echo "$o" | head -3 | tr '\n' ' ')"
+  echo "$o" | grep -q "Opening a new shell" && bad "opened an unrecognised shell" || ok "stayed closed"
+else
+  echo "(python3 not found: skipping the terminal scenarios)"
+fi
+
 echo; echo "RESULT: $pass passed, $fail failed"; [ "$fail" = 0 ]

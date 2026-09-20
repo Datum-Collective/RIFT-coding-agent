@@ -34,6 +34,10 @@ Options:
     -b, --binary <path>     Install from a local binary instead of downloading
         --no-modify-path    Don't touch your shell config (.zshrc, .bashrc, etc.) or link into your PATH
 
+Environment:
+    RIFT_INSTALL_DIR        Where to put the binary (default: ~/.rift/bin)
+    RIFT_NO_SHELL=1         Don't open a new shell at the end; just print how to reload
+
 Examples:
     curl -fsSL https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install | bash
     curl -fsSL https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install | bash -s -- --version 1.0.0
@@ -556,10 +560,34 @@ echo -e "${MUTED}█▀▀▄  ██ ${NC} █▀▀   ██ "
 echo -e "${MUTED}▀  ▀ ▀██▀${NC} ▀     ██ "
 echo -e ""
 echo -e ""
+# Last resort, for when rift could not be linked into a directory already on PATH (typical of a
+# fresh Mac or a Linux box without ~/.local/bin on PATH). Editing the shell config cannot help the
+# terminal the installer is running in, so instead of asking people to reload it, finish by opening
+# a new shell that already has rift on PATH. The same approach oh-my-zsh takes.
+#
+# It is only done when that is clearly safe and expected: an interactive terminal, not CI, a shell
+# we know how to start, and never when the user opted out with RIFT_NO_SHELL.
+open_shell_ok() {
+    [ -n "$reload_file" ] || return 1
+    [ -z "${RIFT_NO_SHELL:-}" ] || return 1
+    [ -z "${CI:-}" ] || return 1
+    [ -t 1 ] || return 1
+    # stdin is the script itself when piped from curl, so the new shell must read the terminal.
+    { : </dev/tty; } 2>/dev/null || return 1
+    [ -x "${SHELL:-}" ] || return 1
+    case $(basename "$SHELL") in
+        zsh | bash | fish) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+open_shell=false
+if open_shell_ok; then open_shell=true; fi
+
 # A running shell only reads its config at startup, so the terminal this was run in cannot see the
 # PATH change until it is reloaded. Without saying so, a working install looks like a broken one:
 # the next thing anyone types is `rift`, and the answer is "command not found".
-if [ -n "$reload_file" ]; then
+if [ -n "$reload_file" ] && [ "$open_shell" = "false" ]; then
     # Show ~/.zshrc rather than the absolute path, so the line reads the way people expect. A case
     # statement instead of ${var/#$HOME/~}, whose tilde handling differs between bash versions and
     # macOS still ships 3.2.
@@ -582,3 +610,11 @@ echo -e ""
 echo -e "${MUTED}For more information visit ${NC}https://github.com/Datum-Collective/RIFT-coding-agent"
 echo -e ""
 echo -e ""
+
+if [ "$open_shell" = "true" ]; then
+    echo -e "${MUTED}Opening a new shell with rift ready. Type ${NC}exit${MUTED} to return to the previous one.${NC}"
+    echo -e ""
+    # PATH is set explicitly rather than relying on the shell config being read, because which
+    # startup file a given shell reads differs between login and non-login shells.
+    PATH="$INSTALL_DIR:$PATH" exec "$SHELL" </dev/tty
+fi
