@@ -271,7 +271,9 @@ export function Session() {
   const [_animationsEnabled, _setAnimationsEnabled] = kv.signal("animations_enabled", true)
   const [showGenericToolOutput, setShowGenericToolOutput] = kv.signal("generic_tool_output_visibility", false)
   // The task panel is the primary view; the transcript is the detail view behind it.
-  const [viewMode, setViewMode] = kv.signal<"task" | "log">("view_mode", "task")
+  // The conversation is what people open a session to read, so it is the default. The task view is a
+  // summary of the same work one keypress away (<leader>v), and the choice is remembered.
+  const [viewMode, setViewMode] = kv.signal<"task" | "log">("view_mode", "log")
   const task = useTask(() => route.sessionID)
 
   const wide = createMemo(() => dimensions().width > 120)
