@@ -3,6 +3,16 @@ set -euo pipefail
 APP=rift
 BIN=rift          # binary name inside the archive; becomes rift.exe on Windows
 ALIAS=opencode    # second command name, so either one starts it
+# GitHub's download host answers from several addresses in rotation, and from some networks one
+# of them accepts no connections. A bare curl waits out its full default connect timeout on that
+# address, about a minute of silence before trying the next, and which address comes first is
+# random, so an install works one day and looks hung the next. Capping the connect phase makes
+# curl split that budget across the addresses, so a dead one costs seconds. Measured with the dead
+# address forced first: 60s bare, 5s with 10. A retry covers the rare case where it still fails.
+curl() {
+    command curl --connect-timeout 10 --retry 2 --retry-delay 1 "$@"
+}
+
 os=""             # stays empty on the --binary path, which skips platform detection
 reload_file=""    # shell config that now has rift on PATH, which an already-open terminal has not read
 
@@ -337,6 +347,9 @@ download_with_progress() {
 
 download_and_install() {
     print_message info "\n${MUTED}Installing ${NC}rift ${MUTED}version: ${NC}$specific_version"
+    # The progress bar cannot draw until the connection is up, so say what is happening first.
+    # Without this the terminal shows one line and then nothing, which reads as a hang.
+    print_message info "${MUTED}Downloading ${NC}${filename}${MUTED} ...${NC}"
     local tmp_dir="${TMPDIR:-/tmp}/rift_install_$$"
     mkdir -p "$tmp_dir"
 
