@@ -9,11 +9,13 @@ on:
     paths:
       - "opencode/install"
       - "opencode/install.ps1"
+      - "opencode/test/install-links.sh"
       - ".github/workflows/installers.yml"
   pull_request:
     paths:
       - "opencode/install"
       - "opencode/install.ps1"
+      - "opencode/test/install-links.sh"
   workflow_dispatch:
 
 jobs:
@@ -30,6 +32,20 @@ jobs:
           shellcheck --severity=warning opencode/install
       - name: Help text renders
         run: bash opencode/install --help
+
+  # Whether `rift` is actually reachable after an install is the thing users notice, and it depends
+  # on the shell and PATH. macOS is included because it still ships bash 3.2, whose parameter
+  # expansion has already caused a bug here that newer bash hides.
+  links:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install links, never overwrites, falls back to the shell config
+        run: bash opencode/test/install-links.sh
 
   powershell:
     runs-on: windows-latest
