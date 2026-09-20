@@ -26,6 +26,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
+      runtime_version: ${{ steps.version.outputs.runtime_version }}
     defaults:
       run:
         working-directory: opencode
@@ -92,6 +93,7 @@ jobs:
           }
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "runtime_version=$(node -p "require('./packages/opencode/package.json').version")" >> "$GITHUB_OUTPUT"
 
       - run: command -v zip >/dev/null || sudo apt-get install -y zip
 
@@ -165,6 +167,7 @@ jobs:
     timeout-minutes: 20
     env:
       VERSION: ${{ needs.release.outputs.version }}
+      RUNTIME_VERSION: ${{ needs.release.outputs.runtime_version }}
       REPO: ${{ github.repository }}
     steps:
       - name: Install (macOS, Linux)
@@ -202,7 +205,7 @@ jobs:
           foreach ($cmd in @("$bin\rift.exe", "$bin\opencode.cmd")) {
             $got = (& $cmd --version | Select-Object -Last 1)
             Write-Host "$cmd --version -> '$got'"
-            if ($got -ne $env:VERSION) { throw "$cmd reported '$got', expected '$env:VERSION'" }
+            if ($got -ne $env:RUNTIME_VERSION) { throw "$cmd reported '$got', expected OpenCode runtime '$env:RUNTIME_VERSION'" }
           }
 
   # A published release that fails verification is worse than none: `releases/latest` is what
