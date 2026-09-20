@@ -10,12 +10,14 @@ on:
       - "opencode/install"
       - "opencode/install.ps1"
       - "opencode/test/install-links.sh"
+      - "opencode/test/datum-art.txt"
       - ".github/workflows/installers.yml"
   pull_request:
     paths:
       - "opencode/install"
       - "opencode/install.ps1"
       - "opencode/test/install-links.sh"
+      - "opencode/test/datum-art.txt"
   workflow_dispatch:
 
 jobs:
@@ -76,3 +78,40 @@ jobs:
           # Re-run to prove replacing an existing install works.
           ./opencode/install.ps1 -BinaryPath $fake -InstallDir $dir -NoModifyPath
           Write-Host "installed and reinstalled cleanly"
+      - name: The banner draws the Datum Software art in every colour mode and layout
+        shell: pwsh
+        run: |
+          # This art is full of backslashes, which PowerShell strings can mangle, and the colour paths
+          # only run on a real terminal, so CI forces each one. It runs the installer in a child process
+          # because Write-Host output captured in-process is split into one record per colour run.
+          $art = Get-Content opencode/test/datum-art.txt | ForEach-Object { $_.TrimEnd() } | Where-Object { $_ }
+          $width = ($art | Measure-Object -Property Length -Maximum).Maximum
+          $left  = $art | ForEach-Object { $_.PadRight($width).Substring(0, 39).TrimEnd() }
+          $right = $art | ForEach-Object { $_.PadRight($width).Substring(43).TrimEnd() }
+          $esc = [char]27
+
+          $fake = Join-Path $env:RUNNER_TEMP 'banner-rift.exe'
+          Copy-Item "$env:SystemRoot\System32\where.exe" $fake
+          $failed = $false
+
+          foreach ($cols in 120, 80) {
+            foreach ($mode in 'none', 'legacy', 'vt') {
+              $dir = Join-Path $env:RUNNER_TEMP "banner-$cols-$mode"
+              $env:RIFT_BANNER_MODE = $mode
+              $env:RIFT_BANNER_COLS = $cols
+              $out = & pwsh -NoProfile -NonInteractive -File ./opencode/install.ps1 `
+                -BinaryPath $fake -InstallDir $dir -NoModifyPath 2>&1 | Out-String
+
+              $lines = ($out -replace "$esc\[[0-9;]*m", '') -split '\r?\n' | ForEach-Object { $_.TrimEnd() }
+              $expected = if ($cols -ge 100) { $art } else { @($left) + @($right) }
+              $missing = $expected | Where-Object { $lines -notcontains $_ }
+              $hasEsc = $out.Contains([string]$esc)
+
+              if ($missing) { Write-Host "::error::[$mode @ $cols] art rows missing or altered: $($missing -join ' | ')"; $failed = $true }
+              elseif ($mode -eq 'vt' -and -not $hasEsc) { Write-Host "::error::[$mode @ $cols] no colour codes emitted"; $failed = $true }
+              elseif ($mode -ne 'vt' -and $hasEsc) { Write-Host "::error::[$mode @ $cols] emitted escape codes it should not have"; $failed = $true }
+              elseif ($out -notmatch 'RIFT includes free models') { Write-Host "::error::[$mode @ $cols] installer did not finish"; $failed = $true }
+              else { Write-Host "ok  [$mode @ $cols] art identical to the reference" }
+            }
+          }
+          if ($failed) { exit 1 }
