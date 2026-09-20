@@ -191,6 +191,7 @@ const Tokens = Schema.Struct({
 
 const EmptyTokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
 export const VIBE_MODE_METADATA_KEY = "vibe_mode"
+export const BRAIN_ROT_METADATA_KEY = "brain_rot"
 export const VIBE_PLANNER_MODEL_METADATA_KEY = "vibe_planner_model"
 export const VIBE_EXECUTOR_MODEL_METADATA_KEY = "vibe_executor_model"
 

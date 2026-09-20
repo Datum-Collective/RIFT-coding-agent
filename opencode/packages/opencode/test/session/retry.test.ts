@@ -18,14 +18,30 @@ const providerID = ProviderV2.ID.make("test")
 const retryProvider = "test"
 const it = testEffect(LayerNode.compile(LayerNode.group([SessionStatus.node, CrossSpawnSpawner.node])))
 
-function apiError(headers?: Record<string, string>): SessionV1.APIError {
+function apiError(headers?: Record<string, string>, responseBody?: string): SessionV1.APIError {
   return Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
     new SessionV1.APIError({
       message: "boom",
       isRetryable: true,
       responseHeaders: headers,
+      responseBody,
     }).toObject(),
   )
+}
+
+// What the Gemini API answers a busy model with. The wait is in the body, not a header.
+function googleQuotaBody(retryDelay: unknown) {
+  return JSON.stringify({
+    error: {
+      code: 429,
+      message: "You exceeded your current quota, please check your plan and billing details.",
+      status: "RESOURCE_EXHAUSTED",
+      details: [
+        { "@type": "type.googleapis.com/google.rpc.QuotaFailure", violations: [{ quotaMetric: "generate_requests" }] },
+        { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay },
+      ],
+    },
+  })
 }
 
 function wrap(message: unknown): ReturnType<NamedError["toObject"]> {
@@ -87,6 +103,34 @@ describe("session.retry.delay", () => {
 
     const longError = apiError({ "retry-after-ms": "700000" })
     expect(SessionRetry.delay(1, longError)).toBe(700000)
+  })
+
+  test("waits as long as google's RetryInfo asks", () => {
+    const error = apiError(undefined, googleQuotaBody("26s"))
+    expect(SessionRetry.delay(1, error, 0)).toBe(26000)
+    // The wait is the server's, so it does not grow with the attempt or get capped at 30s.
+    expect(SessionRetry.delay(5, error, 0)).toBe(26000)
+  })
+
+  test("reads fractional RetryInfo durations", () => {
+    expect(SessionRetry.delay(1, apiError(undefined, googleQuotaBody("1.5s")), 0)).toBe(1500)
+  })
+
+  test("prefers an explicit retry-after header over RetryInfo", () => {
+    const error = apiError({ "retry-after": "5" }, googleQuotaBody("26s"))
+    expect(SessionRetry.delay(1, error, 0)).toBe(5000)
+  })
+
+  test("uses RetryInfo when headers carry no retry hint", () => {
+    const error = apiError({ "content-type": "application/json" }, googleQuotaBody("26s"))
+    expect(SessionRetry.delay(1, error, 0)).toBe(26000)
+  })
+
+  test("backs off on its own when RetryInfo is malformed or absent", () => {
+    expect(SessionRetry.delay(1, apiError(undefined, googleQuotaBody("soon")), 0)).toBe(2000)
+    expect(SessionRetry.delay(1, apiError(undefined, googleQuotaBody(undefined)), 0)).toBe(2000)
+    expect(SessionRetry.delay(1, apiError(undefined, "RetryInfo but not json"), 0)).toBe(2000)
+    expect(SessionRetry.delay(1, apiError(undefined, JSON.stringify({ error: { code: 429 } })), 0)).toBe(2000)
   })
 
   test("caps oversized header delays to the runtime timer limit", () => {

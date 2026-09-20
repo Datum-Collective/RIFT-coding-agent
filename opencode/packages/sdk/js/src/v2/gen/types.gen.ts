@@ -1940,6 +1940,7 @@ export type Config = {
   plannerModel?: string
   executorModel?: string
   vibe_mode?: boolean
+  brain_rot?: boolean
   vibe_max_attempts?: number
   vibe_review?: boolean
   vibe_review_max_rounds?: number

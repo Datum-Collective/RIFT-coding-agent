@@ -481,7 +481,35 @@ export function Session() {
     }
   }
 
+  const brainRot = createMemo(() => {
+    const value = session()?.metadata?.brain_rot
+    return typeof value === "boolean" ? value : sync.data.config.brain_rot === true
+  })
   const sessionCommandList = createMemo(() => [
+    {
+      title: brainRot() ? "Turn off Brain Rot Mode" : "Turn on Brain Rot Mode",
+      value: "session.toggle.brainrot",
+      category: "Session",
+      slash: {
+        name: "brainrot",
+        aliases: ["brain-rot"],
+      },
+      run: () => {
+        const current = session()
+        if (!current) return
+        const next = !brainRot()
+        void sdk.client.session
+          .update({ sessionID: route.sessionID, metadata: { ...(current.metadata ?? {}), brain_rot: next } })
+          .then(() =>
+            toast.show({
+              message: next ? "Brain Rot Mode on. We are so back." : "Brain Rot Mode off. Touching grass.",
+              variant: "success",
+            }),
+          )
+          .catch(toast.error)
+        dialog.clear()
+      },
+    },
     {
       title: session()?.share?.url ? "Copy share link" : "Share session",
       value: "session.share",

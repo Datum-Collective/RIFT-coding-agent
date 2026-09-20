@@ -1,4 +1,5 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import PROMPT_BRAIN_ROT from "./prompt/brain-rot.txt"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import path from "path"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
@@ -737,13 +738,23 @@ const layer = Layer.effect(
       model: Provider.Model,
       session: Session.Info,
     ) {
-      const [skills, env, instructions, mcpInstructions] = yield* Effect.all([
+      const [skills, env, instructions, mcpInstructions, cfg] = yield* Effect.all([
         sys.skills(agent),
         sys.environment(model),
         instruction.system().pipe(Effect.orDie),
         sys.mcp(agent, session.permission),
+        config.get(),
       ])
-      return [...env, ...instructions, ...(mcpInstructions ? [mcpInstructions] : []), ...(skills ? [skills] : [])]
+      // A session's own choice beats the config default, so `/brainrot` can turn it off as well as on.
+      const brainRot = session.metadata?.[Session.BRAIN_ROT_METADATA_KEY]
+      const rot = typeof brainRot === "boolean" ? brainRot : cfg.brain_rot === true
+      return [
+        ...env,
+        ...instructions,
+        ...(mcpInstructions ? [mcpInstructions] : []),
+        ...(skills ? [skills] : []),
+        ...(rot ? [PROMPT_BRAIN_ROT] : []),
+      ]
     })
 
     const vibeStepMessage = (input: {

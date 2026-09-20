@@ -86,6 +86,9 @@ export const Info = Schema.Struct({
   vibe_mode: Schema.optional(Schema.Boolean).annotate({
     description: "Enable Vibe Mode by default for new sessions",
   }),
+  brain_rot: Schema.optional(Schema.Boolean).annotate({
+    description: "Enable Brain Rot Mode by default for new sessions: replies and narration turn into unhinged internet slang, while code, commits and commands stay serious",
+  }),
   vibe_max_attempts: Schema.optional(Schema.Int).annotate({
     description: "Executor attempts before Vibe Mode asks the planner to revise a step. Use 0 for unlimited",
   }),
