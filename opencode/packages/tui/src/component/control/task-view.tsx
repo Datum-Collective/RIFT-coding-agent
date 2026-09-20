@@ -310,9 +310,9 @@ export function TaskView(props: { task: Task; width: number; compact?: boolean }
         </box>
       </Show>
 
-      <Show when={logKey() && task().execution.length > 0}>
+      <Show when={logKey()}>
         <box paddingLeft={2} flexShrink={0}>
-          <text fg={theme.textMuted}>{logKey()} for the full log</text>
+          <text fg={theme.textMuted}>{logKey()} for the full chat</text>
         </box>
       </Show>
     </box>

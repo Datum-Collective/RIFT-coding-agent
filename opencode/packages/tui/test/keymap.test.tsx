@@ -140,7 +140,7 @@ test("mode-less bindings stay active when opencode mode changes", async () => {
   }
 })
 
-test("ctrl+x then v runs the full-log toggle, and other keys after ctrl+x do not", async () => {
+test("ctrl+x v and ctrl+o both switch views, and other keys after ctrl+x do not", async () => {
   const runs: string[] = []
 
   function Harness() {
@@ -179,6 +179,11 @@ test("ctrl+x then v runs the full-log toggle, and other keys after ctrl+x do not
     app.mockInput.pressKey("z") // wrong follow-up: nothing runs
     await app.renderOnce()
     expect(runs).toEqual(["toggle"])
+
+    // The one-key shortcut, for people who do not want a chord.
+    app.mockInput.pressKey("o", { ctrl: true })
+    await app.renderOnce()
+    expect(runs).toEqual(["toggle", "toggle"])
   } finally {
     app.renderer.destroy()
   }

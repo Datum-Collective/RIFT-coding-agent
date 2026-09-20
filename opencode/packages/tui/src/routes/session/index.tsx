@@ -271,9 +271,9 @@ export function Session() {
   const [_animationsEnabled, _setAnimationsEnabled] = kv.signal("animations_enabled", true)
   const [showGenericToolOutput, setShowGenericToolOutput] = kv.signal("generic_tool_output_visibility", false)
   // The task panel is the primary view; the transcript is the detail view behind it.
-  // The conversation is what people open a session to read, so it is the default. The task view is a
-  // summary of the same work one keypress away (<leader>v), and the choice is remembered.
-  const [viewMode, setViewMode] = kv.signal<"task" | "log">("view_mode", "log")
+  // A session opens on the task view: what the agent is doing, what changed, whether it needs you. The
+  // full conversation is one keypress away, and whichever view was chosen is remembered.
+  const [viewMode, setViewMode] = kv.signal<"task" | "log">("view_mode", "task")
   const task = useTask(() => route.sessionID)
 
   const wide = createMemo(() => dimensions().width > 120)
@@ -483,6 +483,7 @@ export function Session() {
     }
   }
 
+  const viewShortcut = useCommandShortcut("session.view.toggle")
   const sessionCommandList = createMemo(() => [
     {
       title: session()?.share?.url ? "Copy share link" : "Share session",
@@ -691,11 +692,19 @@ export function Session() {
       },
     },
     {
-      title: viewMode() === "task" ? "Show full log" : "Show task view",
+      title: viewMode() === "task" ? "Show full chat" : "Show task view",
       value: "session.view.toggle",
       category: "Session",
       run: () => {
-        setViewMode(() => (viewMode() === "task" ? "log" : "task"))
+        const next = viewMode() === "task" ? "log" : "task"
+        setViewMode(() => next)
+        // Say which view this is and how to get back, since the two look nothing alike.
+        const key = viewShortcut()
+        toast.show({
+          message: next === "log" ? `Full chat${key ? ` · ${key} for the task view` : ""}` : `Task view${key ? ` · ${key} for the full chat` : ""}`,
+          variant: "info",
+          duration: 2000,
+        })
         dialog.clear()
       },
     },
