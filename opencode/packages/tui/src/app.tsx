@@ -4,7 +4,7 @@ import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { Deferred, Effect } from "effect"
 import { Global } from "@opencode-ai/core/global"
 import { Flag } from "@opencode-ai/core/flag/flag"
-import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import { InstallationVersion, RiftVersion } from "@opencode-ai/core/installation/version"
 import { ClipboardProvider, useClipboard } from "./context/clipboard"
 import { ExitProvider, useExit } from "./context/exit"
 import { EpilogueProvider } from "./context/epilogue"
@@ -1069,18 +1069,25 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
     })
   })
 
+  // The announcement can arrive more than once: once when found, and again if the interface asked for a
+  // replay after subscribing. A release already put to the user in this session is not put again.
+  let announced: string | undefined
   event.on("installation.update-available", async (evt) => {
-    console.log("installation.update-available", evt)
     const version = evt.properties.version
+    if (announced === version) return
+    announced = version
 
     const skipped = kv.get("skipped_version")
     if (skipped && !isVersionGreater(version, skipped)) return
 
+    // Say what you have and what is available, and name the buttons for what they do. "Confirm" and
+    // "Skip" left people guessing whether skipping meant later or never.
     const choice = await DialogConfirm.show(
       dialog,
-      `Update Available`,
-      `A new release v${version} is available. Would you like to update now?`,
-      "skip",
+      `Update available`,
+      `RIFT v${version} is available (you have v${RiftVersion}).\n\nUpdate now? It takes a few seconds, then RIFT asks you to restart.\nPress esc to decide later.`,
+      "skip this version",
+      "update now",
     )
 
     if (choice === false) {

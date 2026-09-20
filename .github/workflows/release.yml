@@ -185,8 +185,23 @@ jobs:
           for cmd in rift opencode; do
             got=$(bash -ic "$cmd --version" 2>/dev/null | tail -1)
             echo "$cmd --version -> '$got'"
-            [ "$got" = "$VERSION" ] || { echo "::error::$cmd reported '$got', expected '$VERSION'"; exit 1; }
+            [ "$got" = "$RUNTIME_VERSION" ] || { echo "::error::$cmd reported '$got', expected OpenCode runtime '$RUNTIME_VERSION'"; exit 1; }
           done
+
+      - name: The binary knows which RIFT release it is
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          # --version is the OpenCode runtime, so it says nothing about the release. The update check
+          # compares this number with GitHub, and a build that embedded the wrong one would offer an
+          # update to itself on every launch, so the shipped binary is asked directly.
+          got=$(bash -ic "rift debug info" 2>/dev/null | sed -n 's/^rift version: //p' | tail -1)
+          echo "rift version (embedded) -> '$got'"
+          [ "$got" = "$VERSION" ] || { echo "::error::binary reports RIFT '$got', expected '$VERSION'"; exit 1; }
+          # And the installer recorded the same release, which is what it checks before reinstalling.
+          recorded=$(tr -d '[:space:]' < "$HOME/.rift/bin/rift.version")
+          echo "rift.version (recorded) -> '$recorded'"
+          [ "$recorded" = "$VERSION" ] || { echo "::error::installer recorded '$recorded', expected '$VERSION'"; exit 1; }
 
       - name: macOS signature
         if: runner.os == 'macOS'
@@ -207,6 +222,13 @@ jobs:
             Write-Host "$cmd --version -> '$got'"
             if ($got -ne $env:RUNTIME_VERSION) { throw "$cmd reported '$got', expected OpenCode runtime '$env:RUNTIME_VERSION'" }
           }
+          # --version is the OpenCode runtime, so ask the binary which RIFT release it is: the update
+          # check compares that with GitHub, and the wrong one would offer an update on every launch.
+          $line = (& "$bin\rift.exe" debug info | Where-Object { $_ -like 'rift version: *' } | Select-Object -Last 1)
+          Write-Host "rift version (embedded) -> '$line'"
+          if ($line -ne "rift version: $env:VERSION") { throw "binary reports '$line', expected 'rift version: $env:VERSION'" }
+          $recorded = (Get-Content (Join-Path $bin 'rift.version') -Raw).Trim()
+          if ($recorded -ne $env:VERSION) { throw "installer recorded '$recorded', expected '$env:VERSION'" }
 
   # A published release that fails verification is worse than none: `releases/latest` is what
   # every installer and `rift upgrade` read. Pull it back to a draft rather than leave it live.

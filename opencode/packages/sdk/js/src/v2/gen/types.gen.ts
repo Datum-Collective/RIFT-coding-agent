@@ -1930,7 +1930,7 @@ export type Config = {
   share?: "manual" | "auto" | "disabled"
   autoshare?: boolean
   /**
-   * Automatically update to the latest version. Set to true to auto-update, false to disable, or 'notify' to show update notifications
+   * How to handle new RIFT releases. By default RIFT asks before updating. Set to true to install patch releases without asking (a minor or major release still asks), or false to stop checking for updates.
    */
   autoupdate?: boolean | "notify"
   disabled_providers?: Array<string>

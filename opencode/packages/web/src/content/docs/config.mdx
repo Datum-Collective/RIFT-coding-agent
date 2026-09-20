@@ -645,17 +645,28 @@ Note that disabling snapshots means changes made by the agent cannot be rolled b
 
 ### Autoupdate
 
-OpenCode will automatically download any new updates when it starts up. You can disable this with the `autoupdate` option.
+When RIFT starts it checks GitHub for a newer release. If there is one, it tells you which version is
+available and which you have, and asks whether to update. Choose **Update now** and RIFT downloads the
+new version, then asks you to restart. Choose **Skip this version** and you are not asked again about
+that release, only about a later one. Press `esc` to decide later and you are asked again next time.
 
-```json title="opencode.json"
+RIFT never installs an update without asking unless you tell it to.
+
+```json title="rift.json"
 {
   "$schema": "https://opencode.ai/config.json",
-  "autoupdate": false
+  "autoupdate": true
 }
 ```
 
-If you don't want updates but want to be notified when a new version is available, set `autoupdate` to `"notify"`.
-Notice that this only works if it was not installed using a package manager such as Homebrew.
+| Value           | What happens                                                                                         |
+| --------------- | ---------------------------------------------------------------------------------------------------- |
+| unset (default) | Ask before updating.                                                                                 |
+| `true`          | Install **patch** releases (`0.1.1` to `0.1.2`) without asking. A minor or major release still asks. |
+| `false`         | Never check for updates.                                                                             |
+
+Updates come from RIFT's GitHub releases and work for installs made with the install script. To update
+by hand at any time, run `rift upgrade`.
 
 ---
 

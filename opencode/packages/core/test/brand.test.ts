@@ -16,6 +16,8 @@ import {
   LEGACY_INSTALL_DIR_NAME,
   PROJECT_DIRS,
   RELEASES_API,
+  installScriptUrl,
+  releasesApi,
 } from "../src/brand"
 
 const made: string[] = []
@@ -117,5 +119,25 @@ describe("distribution", () => {
   test("install directories are the dotted brand names", () => {
     expect(INSTALL_DIR_NAME).toBe(`.${BRAND}`)
     expect(LEGACY_INSTALL_DIR_NAME).toBe(`.${LEGACY_BRAND}`)
+  })
+})
+
+describe("overrides for the update check", () => {
+  test("default to this repository", () => {
+    expect(releasesApi({})).toBe(RELEASES_API)
+    expect(installScriptUrl(false, {})).toBe(INSTALL_SH_URL)
+    expect(installScriptUrl(true, {})).toBe(INSTALL_PS1_URL)
+  })
+
+  test("can be pointed elsewhere, for a mirror or a stand-in during tests", () => {
+    expect(releasesApi({ RIFT_RELEASES_API: "http://localhost:1234/latest" })).toBe("http://localhost:1234/latest")
+    expect(installScriptUrl(false, { RIFT_INSTALL_URL: "http://localhost:1234/install" })).toBe(
+      "http://localhost:1234/install",
+    )
+  })
+
+  test("an empty value falls back to the default rather than requesting an empty URL", () => {
+    expect(releasesApi({ RIFT_RELEASES_API: "" })).toBe(RELEASES_API)
+    expect(installScriptUrl(false, { RIFT_INSTALL_URL: "" })).toBe(INSTALL_SH_URL)
   })
 })
