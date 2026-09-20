@@ -2,6 +2,15 @@
 
 Release notes for every RIFT version, newest first. Full notes and downloads: https://github.com/Datum-Collective/RIFT-coding-agent/releases
 
+## v0.1.9 — One Key (2026-09-21)
+
+One key to switch views.
+
+### Changed
+- **`ctrl+l` switches between the task view and the full chat.** No chord to time. `ctrl+o` and `ctrl+x` then `v` still work, and the hints and the switch message name `ctrl+l`.
+
+Everything else is unchanged from v0.1.8. To update, run the install one-liner or accept the in-app prompt.
+
 ## v0.1.8 — Two Views (2026-09-20)
 
 The task view is back as the default, and the full chat is one keypress away.
