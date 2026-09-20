@@ -15,6 +15,9 @@ import { decideUpdate } from "./update-decision"
  */
 let pending: string | undefined
 
+/** The newest release already acted on, so a later check does not announce or install it a second time. */
+let handled: string | undefined
+
 function announce(version: string) {
   GlobalBus.emit("event", {
     directory: "global",
@@ -45,7 +48,7 @@ export async function upgrade() {
   if (method !== "curl") return
 
   const latest = await Installation.latest(method).catch(() => {})
-  if (!latest) return
+  if (!latest || latest === handled) return
 
   const action = decideUpdate({
     current: RiftVersion,
@@ -57,19 +60,48 @@ export async function upgrade() {
 
   if (action === "ask") {
     pending = latest
+    handled = latest
     announce(latest)
     return
   }
 
   await Installation.upgrade(method, latest)
-    .then(() =>
+    .then(() => {
+      // The running binary is still the old one until restart, so without this every later check
+      // would find the same "newer" release and install it again.
+      handled = latest
       GlobalBus.emit("event", {
         directory: "global",
         payload: {
           type: Installation.Event.Updated.type,
           properties: { version: latest },
         },
-      }),
-    )
+      })
+    })
     .catch(() => {})
+}
+
+/** How often a running RIFT looks for a new release. Long sessions are common; one check at launch is not enough. */
+export const UPDATE_CHECK_INTERVAL = 30 * 60 * 1000
+
+let watching = false
+
+/**
+ * Checks now, then keeps checking while RIFT stays open, so a release published mid-session still
+ * reaches the user. Safe to call more than once. A check that is still running is never overlapped,
+ * and failures (offline, GitHub down) are silent and simply tried again next time.
+ */
+export function watchForUpdates(interval = UPDATE_CHECK_INTERVAL, run: () => Promise<void> = upgrade) {
+  if (watching) return
+  watching = true
+  let running = false
+  const check = async () => {
+    if (running) return
+    running = true
+    await run().catch(() => {})
+    running = false
+  }
+  void check()
+  // unref: the watcher alone must never keep the process alive.
+  setInterval(check, interval).unref()
 }
