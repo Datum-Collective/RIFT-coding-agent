@@ -122,6 +122,7 @@ function Add-ToUserPath([string] $Dir) {
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 $target = Join-Path $InstallDir 'rift.exe'
+$versionFile = Join-Path $InstallDir 'rift.version'
 
 if ($BinaryPath) {
     if (-not (Test-Path $BinaryPath)) { Write-Fail "Binary not found at $BinaryPath"; exit 1 }
@@ -133,7 +134,10 @@ if ($BinaryPath) {
     if ($Version) { $Version = $Version -replace '^v', '' } else { $Version = Get-LatestVersion }
 
     if (Test-Path $target) {
-        $installed = (& $target --version 2>$null)
+        $installed = if (Test-Path $versionFile) {
+            (Get-Content $versionFile -Raw).Trim()
+        }
+
         if ($installed -eq $Version) {
             Write-Muted "Version $Version already installed"
             exit 0
@@ -177,6 +181,7 @@ if ($BinaryPath) {
     }
 }
 
+if ($Version) { Set-Content -Path $versionFile -Encoding ASCII -Value $Version }
 Add-Alias $InstallDir
 if (-not $NoModifyPath) { Add-ToUserPath $InstallDir }
 
