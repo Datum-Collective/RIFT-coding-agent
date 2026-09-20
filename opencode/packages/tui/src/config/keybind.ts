@@ -79,7 +79,7 @@ export const Definitions = {
   theme_switch_mode: keybind("none", "Switch between light and dark theme mode"),
   theme_mode_lock: keybind("none", "Lock or unlock theme mode"),
   sidebar_toggle: keybind("<leader>b", "Toggle sidebar"),
-  view_toggle: keybind("<leader>v,ctrl+o", "Switch between the task view and the full chat"),
+  view_toggle: keybind("ctrl+l,ctrl+o,<leader>v", "Switch between the task view and the full chat"),
   mission_control: keybind("<leader>o", "Open Mission Control"),
   scrollbar_toggle: keybind("none", "Toggle session scrollbar"),
   status_view: keybind("<leader>s", "View status"),
