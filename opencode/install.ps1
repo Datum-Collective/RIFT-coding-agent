@@ -185,11 +185,148 @@ if ($Version) { Set-Content -Path $versionFile -Encoding ASCII -Value $Version }
 Add-Alias $InstallDir
 if (-not $NoModifyPath) { Add-ToUserPath $InstallDir }
 
+
+# ---- the closing banner -------------------------------------------------------------------------------
+# "Datum Software" in the six stripes of the 1977 Apple logo, blended smoothly. The art is two words with
+# a four-column gap, kept as two blocks so it can sit side by side where there is room and stack where there
+# is not: it is 98 columns wide, and a default console window is narrower than that.
+# Single-quoted here-strings are fully literal, which matters: this art is full of backslashes.
+$DatumLeft = @'
+________       _____
+___  __ \_____ __  /____  ________ ___
+__  / / /  __ `/  __/  / / /_  __ `__ \
+_  /_/ // /_/ // /_ / /_/ /_  / / / / /
+/_____/ \__,_/ \__/ \__,_/ /_/ /_/ /_/
+'@ -split '\r?\n'
+$DatumRight = @'
+             ____________
+________________  __/_  /___      _______ ____________
+__  ___/  __ \_  /_ _  __/_ | /| / /  __ `/_  ___/  _ \
+_(__  )/ /_/ /  __/ / /_ __ |/ |/ // /_/ /_  /   /  __/
+/____/ \____//_/    \__/ ____/|__/ \__,_/ /_/    \___/
+'@ -split '\r?\n'
+
+# Apple, 1977, top to bottom: green, yellow, orange, red, purple, blue.
+$Stops = @(@(97, 187, 70), @(253, 184, 39), @(245, 130, 31), @(224, 58, 62), @(150, 61, 151), @(0, 157, 220))
+# The same six for consoles that only know sixteen colours.
+$LegacyColors = @('Green', 'Yellow', 'DarkYellow', 'Red', 'Magenta', 'Cyan')
+
+function Get-GradientColor([double] $T) {
+    if ($T -gt 1) { $T = 1 }
+    $seg = $T * 5
+    $k = [int][math]::Floor($seg)
+    if ($k -gt 4) { $k = 4 }
+    $f = $seg - $k
+    $a = $Stops[$k]; $b = $Stops[$k + 1]
+    return @(
+        [int][math]::Round($a[0] + ($b[0] - $a[0]) * $f),
+        [int][math]::Round($a[1] + ($b[1] - $a[1]) * $f),
+        [int][math]::Round($a[2] + ($b[2] - $a[2]) * $f)
+    )
+}
+
+# Writes lines with a gradient running left to right and a slight downward drift so rows are not
+# identical. $Width is the widest line, $Row0 the row this block starts on and $Rows the rows in the whole
+# picture, so several blocks written one after another still read as a single gradient.
+function Write-Gradient([string[]] $Lines, [int] $Width, [int] $Row0, [int] $Rows, [string] $Mode) {
+    $esc = [char]27
+    for ($row = 0; $row -lt $Lines.Count; $row++) {
+        $line = $Lines[$row]
+        if ($Mode -eq 'none') { Write-Host $line; continue }
+
+        $sb = New-Object System.Text.StringBuilder
+        for ($i = 0; $i -lt $line.Length; $i++) {
+            $ch = $line[$i]
+            if ($ch -eq ' ') { [void]$sb.Append($ch); continue }
+            $w = [math]::Max($Width - 1, 1)
+            $r = [math]::Max($Rows - 1, 1)
+            $t = 0.85 * $i / $w + 0.15 * ($row + $Row0) / $r
+            if ($Mode -eq 'vt') {
+                $c = Get-GradientColor $t
+                [void]$sb.Append("$esc[38;2;$($c[0]);$($c[1]);$($c[2])m$ch")
+            } else {
+                [void]$sb.Append($ch)
+            }
+        }
+        if ($Mode -eq 'vt') { Write-Host ($sb.ToString() + "$esc[0m") }
+        else {
+            # A console without VT support: one Write-Host per run of same-coloured characters.
+            $cur = $null; $run = ''
+            for ($i = 0; $i -lt $line.Length; $i++) {
+                $ch = $line[$i]
+                $idx = [int][math]::Min(5, [math]::Floor((0.85 * $i / [math]::Max($Width - 1, 1) + 0.15 * ($row + $Row0) / [math]::Max($Rows - 1, 1)) * 6))
+                if ($cur -ne $null -and $idx -ne $cur -and $ch -ne ' ') {
+                    Write-Host $run -NoNewline -ForegroundColor $LegacyColors[$cur]; $run = ''
+                }
+                if ($ch -ne ' ') { $cur = $idx }
+                $run += $ch
+            }
+            if ($run.Length -gt 0) { Write-Host $run -NoNewline -ForegroundColor $LegacyColors[[int]($cur -as [int])] }
+            Write-Host ''
+        }
+    }
+}
+
+function Write-Banner {
+    $cols = 80
+    try { $cols = [int]$Host.UI.RawUI.WindowSize.Width } catch { $cols = 80 }
+    if ($cols -lt 1) { $cols = 80 }
+    if ($env:RIFT_BANNER_COLS -match '^\d+$') { $cols = [int]$env:RIFT_BANNER_COLS }
+
+    # Colour only where it will display properly: not when output is redirected, not when the user asked
+    # for none, and true colour only where the console understands VT sequences.
+    $mode = 'none'
+    $redirected = $false
+    try { $redirected = [Console]::IsOutputRedirected } catch { $redirected = $false }
+    if (-not $redirected -and -not $env:NO_COLOR) {
+        $vt = $false
+        try { $vt = [bool]$Host.UI.SupportsVirtualTerminal } catch { $vt = $false }
+        if ($vt) { $mode = 'vt' } else { $mode = 'legacy' }
+    }
+    # CI captures output, so it would only ever take the plain path. This lets a test force each of the
+    # others and check them for real.
+    if ($env:RIFT_BANNER_MODE -in @('vt', 'legacy', 'none')) { $mode = $env:RIFT_BANNER_MODE }
+
+    $barWidth = 8
+    if ($cols -ge 100) {
+        for ($i = 0; $i -lt $DatumLeft.Count; $i++) {
+            $l = $DatumLeft[$i]; $r = ''
+            if ($i -lt $DatumRight.Count) { $r = $DatumRight[$i] }
+            $joined = '{0,-39}    {1}' -f $l, $r
+            Write-Gradient @($joined.TrimEnd()) 98 $i 5 $mode
+        }
+        $barWidth = 16
+    } elseif ($cols -ge 58) {
+        # Stacked: two words, each fits a narrower console. One gradient runs down both.
+        Write-Gradient $DatumLeft 39 0 10 $mode
+        Write-Gradient $DatumRight 55 5 10 $mode
+        $barWidth = 9
+    } else {
+        Write-Gradient @('Datum Software') 14 0 1 $mode
+    }
+
+    # The six stripes as a rule underneath, the way the old logo was cut.
+    if ($mode -ne 'none' -and $cols -ge 58) {
+        $esc = [char]27
+        $bar = [string][char]0x2501
+        $seg = $bar * $barWidth
+        if ($mode -eq 'vt') {
+            $out = ''
+            foreach ($s in $Stops) { $out += "$esc[38;2;$($s[0]);$($s[1]);$($s[2])m$seg" }
+            Write-Host ($out + "$esc[0m")
+        } else {
+            for ($n = 0; $n -lt 6; $n++) { Write-Host $seg -NoNewline -ForegroundColor $LegacyColors[$n] }
+            Write-Host ''
+        }
+    }
+}
+
 Write-Host ''
-Write-Host '         ' -ForegroundColor DarkGray -NoNewline; Write-Host '    ▄    '
-Write-Host '█▀▀█ ▀██▀' -ForegroundColor DarkGray -NoNewline; Write-Host ' █▀▀▀ ████'
-Write-Host '█▀▀▄  ██ ' -ForegroundColor DarkGray -NoNewline; Write-Host ' █▀▀   ██ '
-Write-Host '▀  ▀ ▀██▀' -ForegroundColor DarkGray -NoNewline; Write-Host ' ▀     ██ '
+# A problem drawing the banner must never spoil an install that has already succeeded.
+try { Write-Banner } catch {
+    foreach ($line in $DatumLeft) { Write-Host $line }
+    foreach ($line in $DatumRight) { Write-Host $line }
+}
 Write-Host ''
 Write-Muted 'RIFT includes free models, to start:'
 Write-Host ''

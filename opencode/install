@@ -553,11 +553,152 @@ if [ -n "${GITHUB_ACTIONS-}" ] && [ "${GITHUB_ACTIONS}" == "true" ]; then
     print_message info "Added $INSTALL_DIR to \$GITHUB_PATH"
 fi
 
+# ---- the closing banner ---------------------------------------------------------------------------
+# "Datum Software" in the six stripes of the 1977 Apple logo, blended smoothly. The art is two words
+# with a four-column gap, kept as two blocks so it can sit side by side where there is room and stack
+# where there is not: it is 98 columns wide, and a default terminal window is 80.
+IFS= read -r -d '' datum_left <<'ART' || true
+________       _____
+___  __ \_____ __  /____  ________ ___
+__  / / /  __ `/  __/  / / /_  __ `__ \
+_  /_/ // /_/ // /_ / /_/ /_  / / / / /
+/_____/ \__,_/ \__/ \__,_/ /_/ /_/ /_/
+ART
+IFS= read -r -d '' datum_right <<'ART' || true
+             ____________
+________________  __/_  /___      _______ ____________
+__  ___/  __ \_  /_ _  __/_ | /| / /  __ `/_  ___/  _ \
+_(__  )/ /_/ /  __/ / /_ __ |/ |/ // /_/ /_  /   /  __/
+/____/ \____//_/    \__/ ____/|__/ \__,_/ /_/    \___/
+ART
+
+# Reads art on stdin and writes it with a gradient running left to right through the palette, with a
+# slight downward drift so rows are not identical. $1 is the colour mode, $2 the width of the widest
+# line, $3 the row this block starts on and $4 the rows in the whole picture, so several blocks
+# printed one after another still read as a single gradient.
+paint_gradient() {
+    awk -v mode="$1" -v width="$2" -v row0="$3" -v rows="$4" '
+    BEGIN {
+        # Apple, 1977, top to bottom: green, yellow, orange, red, purple, blue.
+        split("97 253 245 224 150 0",   R, " ")
+        split("187 184 130 58 61 157",  G, " ")
+        split("70 39 31 62 151 220",    B, " ")
+        # 1-based awk arrays: index 1..6
+    }
+    {
+        n = length($0); out = ""; last = ""
+        for (i = 1; i <= n; i++) {
+            ch = substr($0, i, 1)
+            if (ch == " ") { out = out ch; continue }
+            t = 0.85 * (i - 1) / (width > 1 ? width - 1 : 1) + 0.15 * (NR - 1 + row0) / (rows > 1 ? rows - 1 : 1)
+            if (t > 1) t = 1
+            seg = t * 5; k = int(seg); if (k > 4) k = 4; f = seg - k
+            r = R[k + 1] + (R[k + 2] - R[k + 1]) * f
+            g = G[k + 1] + (G[k + 2] - G[k + 1]) * f
+            b = B[k + 1] + (B[k + 2] - B[k + 1]) * f
+            if (mode == "truecolor") {
+                esc = sprintf("\033[38;2;%d;%d;%dm", r + 0.5, g + 0.5, b + 0.5)
+            } else {
+                # Nearest colour in the 6x6x6 cube of the 256-colour palette.
+                esc = sprintf("\033[38;5;%dm", 16 + 36 * int(r / 255 * 5 + 0.5) + 6 * int(g / 255 * 5 + 0.5) + int(b / 255 * 5 + 0.5))
+            }
+            if (esc != last) { out = out esc; last = esc }
+            out = out ch
+        }
+        print out "\033[0m"
+    }'
+}
+
+# How wide the terminal is. `cols=$(tput cols)` looks right and is wrong: inside a command substitution
+# stdout is a pipe, tput cannot measure a pipe, and it quietly answers 80, so a wide terminal would
+# always get the narrow layout. stty reads the controlling terminal directly and is not fooled.
+# RIFT_BANNER_COLS overrides all of it, which is what makes the layouts testable.
+terminal_columns() {
+    local size cols=""
+    case "${RIFT_BANNER_COLS:-}" in
+        '' | *[!0-9]*) ;;
+        *) cols=$RIFT_BANNER_COLS ;;
+    esac
+    if [ -z "$cols" ]; then
+        size=$(stty size </dev/tty 2>/dev/null || true)
+        cols=${size##* }
+    fi
+    case $cols in
+        '' | *[!0-9]*) cols=$(tput cols 2>/dev/null || true) ;;
+    esac
+    case $cols in
+        '' | *[!0-9]* | 0) cols=80 ;;
+    esac
+    printf '%s' "$cols"
+}
+
+print_banner() {
+    local cols mode
+
+    cols=$(terminal_columns)
+
+    # Colour only where it will display properly. Terminal.app, the macOS default, has no 24-bit
+    # colour and renders such sequences wrongly, so it gets the 256-colour approximation instead.
+    mode=none
+    if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != "dumb" ]; then
+        case "${COLORTERM:-}" in
+            truecolor | 24bit) mode=truecolor ;;
+            *)
+                case "${TERM:-}" in
+                    *256color* | *-direct) mode=256 ;;
+                esac
+                ;;
+        esac
+        if [ "${TERM_PROGRAM:-}" = "Apple_Terminal" ]; then mode=256; fi
+    fi
+
+    local left_rows right_rows
+    left_rows=$(printf '%s\n' "$datum_left")
+    right_rows=$(printf '%s\n' "$datum_right")
+
+    local art width rows bar_width=8
+    if [ "$cols" -ge 100 ]; then
+        # Side by side: pad the left word to its column width, then a four column gap.
+        # The right-hand block goes in through the environment, not `awk -v`: -v interprets backslash
+        # escapes, and this art is full of backslashes.
+        art=$(RIGHT_ROWS="$right_rows" awk 'BEGIN { n = split(ENVIRON["RIGHT_ROWS"], R, "\n") } { printf "%-39s    %s\n", $0, R[NR] }' <<<"$left_rows")
+        width=98
+        rows=5
+        bar_width=16
+        if [ "$mode" = "none" ]; then printf '%s\n' "$art"; else printf '%s\n' "$art" | paint_gradient "$mode" "$width" 0 "$rows"; fi
+    elif [ "$cols" -ge 58 ]; then
+        # Stacked: two words, each fits an 80 column window. One gradient runs down both.
+        rows=10
+        bar_width=9
+        if [ "$mode" = "none" ]; then
+            printf '%s\n' "$left_rows" "" "$right_rows"
+        else
+            printf '%s\n' "$left_rows" | paint_gradient "$mode" 39 0 "$rows"
+            printf '%s\n' "$right_rows" | paint_gradient "$mode" 55 5 "$rows"
+        fi
+    else
+        # Too narrow for the art at all.
+        if [ "$mode" = "none" ]; then printf '%s\n' "Datum Software"; else printf '%s\n' "Datum Software" | paint_gradient "$mode" 14 0 1; fi
+    fi
+
+    # The six stripes as a rule underneath, the way the old logo was cut.
+    if [ "$mode" != "none" ] && [ "$cols" -ge 58 ]; then
+        local stripe bar="" seg stripes
+        if [ "$mode" = "truecolor" ]; then
+            stripes="38;2;97;187;70 38;2;253;184;39 38;2;245;130;31 38;2;224;58;62 38;2;150;61;151 38;2;0;157;220"
+        else
+            stripes="38;5;77 38;5;214 38;5;208 38;5;167 38;5;133 38;5;38"
+        fi
+        for stripe in $stripes; do
+            seg=$(printf '━%.0s' $(seq 1 "$bar_width"))
+            bar="${bar}$(printf '\033[%sm%s' "$stripe" "$seg")"
+        done
+        printf '%s\033[0m\n' "$bar"
+    fi
+}
+
 echo -e ""
-echo -e "${MUTED}         ${NC}    ▄    "
-echo -e "${MUTED}█▀▀█ ▀██▀${NC} █▀▀▀ ████"
-echo -e "${MUTED}█▀▀▄  ██ ${NC} █▀▀   ██ "
-echo -e "${MUTED}▀  ▀ ▀██▀${NC} ▀     ██ "
+print_banner
 echo -e ""
 echo -e ""
 # Last resort, for when rift could not be linked into a directory already on PATH (typical of a
