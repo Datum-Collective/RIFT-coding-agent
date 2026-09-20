@@ -65,3 +65,67 @@ Brain Rot Mode (`/brainrot`), Gemini retry timing, session titles from your firs
 ## v0.1.1 — Bedrock (2026-09-20)
 
 First release with working installers for macOS, Linux and Windows.
+
+## Who built what
+
+43 commits on `main` so far, excluding merges: **41 by shiv** (product direction, design and every feature request in this changelog, plus the commits) and 2 by dan (Windows runtime versioning). Claude wrote code under shiv's direction.
+
+### shiv's commits by release
+
+**unreleased** (1)
+- docs: add a changelog covering v0.1.1 to v0.1.8
+
+**v0.1.8** (1)
+- feat(tui): sessions open on the task view again, with a one-key switch to the full chat
+
+**v0.1.7** (5)
+- fix(build): smoke test expects the RIFT release from --version
+- fix(tui): open sessions on the conversation, not the task summary
+- fix(tui): Brain Rot works from the home screen, and every screen shows the RIFT release
+- fix: `rift --version` reports the RIFT release, not the OpenCode runtime
+- feat(tui): a side panel that shows what the agent is doing
+
+**v0.1.6** (1)
+- feat(session): fallback to first message for title when model cannot name session
+
+**v0.1.5** (1)
+- test(tui): cover ctrl+x v leader for full-log toggle
+
+**v0.1.4** (2)
+- feat: keep checking for updates while running and don't re-offer the same release
+- feat: brain rot mode and respect google RetryInfo on 429
+
+**v0.1.3** (7)
+- feat: ask before updating, and make the update prompt actually reach the user
+- edging
+- feat: finish the installers with a retro Apple gradient "Datum Software"
+- feat: open a shell with rift ready when it cannot be linked into PATH
+- feat: make rift reachable the moment the install finishes
+- fix: stop the installer stalling for a minute on a dead download address
+- fix: tell people to reload their shell after installing
+
+**v0.1.1** (23)
+- ci: prove the release before it ships, and refuse to ship half of it
+- fix: fail loudly when a release has no build to download
+- fix: point every install URL at the repo's new home
+- fix: make a fresh clone installable, and clear the installer lint
+- ci: harden the release workflow before the first tag
+- docs: credit OpenCode properly and show the real banner
+- docs: rewrite the README for people arriving cold from search
+- feat: one-command install for macOS, Linux and Windows
+- fix(tui): align the banner and the prompt on the home screen
+- feat: real browser control, and browser checks in verification
+- feat: rename the app to rift without stranding existing installs
+- fix(tui): render the banner in the artwork's own palette
+- feat(tui): rebuild the shell around a Codex/Claude-style surface
+- fix: address code review findings in the control plane
+- feat(tui): task-centred control plane and Mission Control
+- keep building
+- feat: check the agent's summary against the real diff
+- fix: monorepo-aware verification, richer Vibe review context, portable tests
+- feat: verification layer and Vibe Mode planner review
+- chore: upload RIFT codebase with flattened opencode to RIFT-coding-agent
+- cooking
+- Replace entire codebase with Relay IDE project
+- Initial commit
+
