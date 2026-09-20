@@ -380,6 +380,16 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
   const event = useEvent()
   const sdk = useSDK()
   const toast = useToast()
+  // What Brain Rot Mode is set to here: the open session's own choice, else the remembered choice for
+  // new sessions, else the config default.
+  const brainRotOn = () => {
+    if (route.data.type === "session") {
+      const own = sync.session.get(route.data.sessionID)?.metadata?.brain_rot
+      if (typeof own === "boolean") return own
+    }
+    const chosen = kv.get("brain_rot")
+    return typeof chosen === "boolean" ? chosen : sync.data.config.brain_rot === true
+  }
   const themeState = useTheme()
   const { theme, mode, setMode, locked, lock, unlock } = themeState
   const sync = useSync()
@@ -587,6 +597,31 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         slashAliases: ["resume", "continue"],
         run: () => {
           dialog.replace(() => <DialogSessionList />)
+        },
+      },
+      {
+        // Registered here rather than in the session screen so it also works on the home screen,
+        // where there is no session yet: the choice is remembered and applied to the next one.
+        name: "session.toggle.brainrot",
+        title: brainRotOn() ? "Turn off Brain Rot Mode" : "Turn on Brain Rot Mode",
+        category: "Session",
+        slashName: "brainrot",
+        slashAliases: ["brain-rot"],
+        run: () => {
+          const next = !brainRotOn()
+          kv.set("brain_rot", next)
+          if (route.data.type === "session") {
+            const session = sync.session.get(route.data.sessionID)
+            if (session)
+              void sdk.client.session
+                .update({ sessionID: route.data.sessionID, metadata: { ...(session.metadata ?? {}), brain_rot: next } })
+                .catch(toast.error)
+          }
+          toast.show({
+            message: next ? "Brain Rot Mode on. We are so back." : "Brain Rot Mode off. Touching grass.",
+            variant: "success",
+          })
+          dialog.clear()
         },
       },
       {

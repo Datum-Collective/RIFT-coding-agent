@@ -1,4 +1,5 @@
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
+import { RiftVersion } from "@opencode-ai/core/installation/version"
 import type { BuiltinTuiPlugin } from "../builtins"
 import { createMemo, Match, Show, Switch } from "solid-js"
 import { abbreviateHome } from "../../runtime"
@@ -56,7 +57,7 @@ function Version(props: { api: TuiPluginApi }) {
 
   return (
     <box flexShrink={0}>
-      <text fg={theme().textMuted}>{props.api.app.version}</text>
+      <text fg={theme().textMuted}>{RiftVersion}</text>
     </box>
   )
 }

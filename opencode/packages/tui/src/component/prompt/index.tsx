@@ -1026,7 +1026,12 @@ export function Prompt(props: PromptProps) {
           id: selectedModel.modelID,
           variant,
         },
-        metadata: agent.name === "vibe" ? local.agent.vibe.metadata() : undefined,
+        metadata: (() => {
+          // Brain Rot Mode chosen on the home screen has no session to live on yet, so it rides along.
+          const rot = kv.get("brain_rot")
+          const vibe = agent.name === "vibe" ? local.agent.vibe.metadata() : undefined
+          return typeof rot === "boolean" ? { ...(vibe ?? {}), brain_rot: rot } : vibe
+        })(),
       })
 
       if (res.error) {
