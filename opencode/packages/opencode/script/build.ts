@@ -212,8 +212,9 @@ for (const item of targets) {
       const versionOutput = await $`${binaryPath} --version`.text()
       const reportedVersion = versionOutput.trim()
 
-      if (reportedVersion !== pkg.version) {
-        throw new Error(`OpenCode version mismatch: expected ${pkg.version}, got ${reportedVersion}`)
+      // --version is the RIFT release. The OpenCode runtime (pkg.version) is in `debug info`.
+      if (reportedVersion !== Script.version) {
+        throw new Error(`RIFT version mismatch: expected ${Script.version}, got ${reportedVersion}`)
       }
 
       console.log(`Smoke test passed: ${reportedVersion}`)
