@@ -139,3 +139,47 @@ test("mode-less bindings stay active when opencode mode changes", async () => {
     app.renderer.destroy()
   }
 })
+
+test("ctrl+x then v runs the full-log toggle, and other keys after ctrl+x do not", async () => {
+  const runs: string[] = []
+
+  function Harness() {
+    const renderer = useRenderer()
+    const keymap = createDefaultOpenTuiKeymap(renderer)
+    const config = createResolvedKeymapConfig()
+    const offKeymap = registerOpencodeKeymap(keymap, renderer, config)
+    // The same layer the session screen registers its view toggle in.
+    const offLayer = keymap.registerLayer({
+      commands: [{ name: "session.view.toggle", run: () => void runs.push("toggle") }],
+      bindings: config.keybinds.gather("session", ["session.view.toggle"]),
+    })
+    onCleanup(() => {
+      offLayer()
+      offKeymap()
+    })
+    return (
+      <OpencodeKeymapProvider keymap={keymap}>
+        <box />
+      </OpencodeKeymapProvider>
+    )
+  }
+
+  const app = await testRender(() => <Harness />)
+  try {
+    app.mockInput.pressKey("v") // without the leader it is just a letter
+    await app.renderOnce()
+    expect(runs).toEqual([])
+
+    app.mockInput.pressKey("x", { ctrl: true })
+    app.mockInput.pressKey("v")
+    await app.renderOnce()
+    expect(runs).toEqual(["toggle"])
+
+    app.mockInput.pressKey("x", { ctrl: true })
+    app.mockInput.pressKey("z") // wrong follow-up: nothing runs
+    await app.renderOnce()
+    expect(runs).toEqual(["toggle"])
+  } finally {
+    app.renderer.destroy()
+  }
+})
