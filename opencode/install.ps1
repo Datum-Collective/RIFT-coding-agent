@@ -41,23 +41,79 @@ if (-not $InstallDir) { $InstallDir = Join-Path $env:LOCALAPPDATA 'rift\bin' }
 
 # --- which binary does this machine need -----------------------------------------------------
 
-function Get-Target {
-    # OSArchitecture is correct even when PowerShell itself is running x64-emulated on an ARM64
-    # machine, which PROCESSOR_ARCHITECTURE is not. Normalize it to a stable string before the
-    # switch: switch() compares stringified forms, and matching the raw enum has been seen to fall
-    # through to default even under PowerShell 7.
-    $osArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
-    $arch = switch ($osArch) {
-        'X64'   { 'x64' }
-        'Arm64' { 'arm64' }
-        default { throw "Unsupported architecture: $osArch. RIFT ships x64 and arm64 builds for Windows." }
+# Maps one architecture token to RIFT's naming. Every source feeds this the same way: the Windows
+# PROCESSOR_* variables spell AMD64/ARM64 and RuntimeInformation's enum spells X64/Arm64, and the
+# switch is case-insensitive, so one mapper covers 'AMD64', 'X64', 'ARM64' and 'Arm64'.
+function ConvertTo-RiftArch([string] $Token) {
+    switch ($Token) {
+        'AMD64' { return 'x64' }
+        'X64'   { return 'x64' }
+        'ARM64' { return 'arm64' }
+    }
+    return ''
+}
+
+# Returns 'x64' or 'arm64', or throws when the machine is genuinely unsupported or unreadable.
+#
+# Windows' own environment variables are the primary source of truth: the OS sets them at process
+# start, whereas RuntimeInformation.OSArchitecture has been observed to come back $null on otherwise
+# normal Windows installs. PROCESSOR_ARCHITEW6432 is consulted before PROCESSOR_ARCHITECTURE because
+# it is only set under WOW64 (a 32-bit PowerShell on 64-bit Windows), where PROCESSOR_ARCHITECTURE
+# says x86 but the x64 build is exactly what is wanted.
+function Resolve-InstallArchitecture {
+    param(
+        [string] $ProcessorArchitectureW6432,
+        [string] $ProcessorArchitecture,
+        [object] $OsArch
+    )
+
+    if (-not [string]::IsNullOrEmpty($ProcessorArchitectureW6432)) {
+        $mapped = ConvertTo-RiftArch $ProcessorArchitectureW6432
+        if ($mapped) { return $mapped }
     }
 
-    if ($arch -eq 'x64' -and -not (Test-Avx2)) {
-        # Older CPUs need the baseline build; the normal one would crash on an illegal instruction.
-        return 'windows-x64-baseline'
+    if (-not [string]::IsNullOrEmpty($ProcessorArchitecture)) {
+        $mapped = ConvertTo-RiftArch $ProcessorArchitecture
+        if ($mapped) { return $mapped }
+
+        # x86 with no WOW64 entry is a genuinely 32-bit Windows box, not an unknown one.
+        if ($ProcessorArchitecture -eq 'x86' -and [string]::IsNullOrEmpty($ProcessorArchitectureW6432)) {
+            throw 'Unsupported architecture: 32-bit Windows is not supported. RIFT ships x64 and arm64 builds for Windows.'
+        }
     }
-    return "windows-$arch"
+
+    # Secondary fallback only, and never trusted blindly: calling .ToString() on the $null value some
+    # Windows installs report is exactly what crashed the old installer, so it is null-checked here.
+    if ($null -ne $OsArch) {
+        $token = $OsArch.ToString()
+        $mapped = ConvertTo-RiftArch $token
+        if ($mapped) { return $mapped }
+
+        if ($token -eq 'X86') {
+            throw 'Unsupported architecture: 32-bit Windows is not supported. RIFT ships x64 and arm64 builds for Windows.'
+        }
+    }
+
+    # Every source came up empty or unreadable: the machine cannot be auto-detected, so report what
+    # was actually seen rather than the misleading "Unsupported architecture: ."
+    $osText = if ($null -eq $OsArch) { '(unavailable)' } else { $OsArch.ToString() }
+    throw "Could not determine the CPU architecture. PROCESSOR_ARCHITECTURE=[$ProcessorArchitecture] PROCESSOR_ARCHITEW6432=[$ProcessorArchitectureW6432] RuntimeInformation.OSArchitecture=[$osText]. RIFT ships x64 and arm64 builds for Windows."
+}
+
+function Get-TargetName([string] $Arch, [bool] $HasAvx2) {
+    # Older CPUs need the baseline build; the normal one would crash on an illegal instruction.
+    if ($Arch -eq 'x64' -and -not $HasAvx2) { return 'windows-x64-baseline' }
+    return "windows-$Arch"
+}
+
+function Get-Target {
+    $osArch = $null
+    try { $osArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture } catch { $osArch = $null }
+    $arch = Resolve-InstallArchitecture `
+        -ProcessorArchitectureW6432 $env:PROCESSOR_ARCHITEW6432 `
+        -ProcessorArchitecture $env:PROCESSOR_ARCHITECTURE `
+        -OsArch $osArch
+    return Get-TargetName $arch (Test-Avx2)
 }
 
 function Test-Avx2 {
