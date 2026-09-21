@@ -10,6 +10,7 @@ on:
       - "opencode/install"
       - "opencode/install.ps1"
       - "opencode/test/install-links.sh"
+      - "opencode/test/install-target.ps1"
       - "opencode/test/datum-art.txt"
       - ".github/workflows/installers.yml"
   pull_request:
@@ -17,6 +18,7 @@ on:
       - "opencode/install"
       - "opencode/install.ps1"
       - "opencode/test/install-links.sh"
+      - "opencode/test/install-target.ps1"
       - "opencode/test/datum-art.txt"
   workflow_dispatch:
 
@@ -64,6 +66,16 @@ jobs:
             exit 1
           }
           Write-Host "install.ps1 parsed with no errors"
+      - name: Target selection regression tests (PowerShell 7)
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
+          & ./opencode/test/install-target.ps1
+      - name: Target selection regression tests (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
+          & ./opencode/test/install-target.ps1
       - name: Install from a local binary and check both commands
         shell: pwsh
         run: |

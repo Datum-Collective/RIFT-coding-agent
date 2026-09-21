@@ -43,11 +43,14 @@ if (-not $InstallDir) { $InstallDir = Join-Path $env:LOCALAPPDATA 'rift\bin' }
 
 function Get-Target {
     # OSArchitecture is correct even when PowerShell itself is running x64-emulated on an ARM64
-    # machine, which PROCESSOR_ARCHITECTURE is not.
-    $arch = switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
+    # machine, which PROCESSOR_ARCHITECTURE is not. Normalize it to a stable string before the
+    # switch: switch() compares stringified forms, and matching the raw enum has been seen to fall
+    # through to default even under PowerShell 7.
+    $osArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+    $arch = switch ($osArch) {
         'X64'   { 'x64' }
         'Arm64' { 'arm64' }
-        default { throw "Unsupported architecture: $_. RIFT ships x64 and arm64 builds for Windows." }
+        default { throw "Unsupported architecture: $osArch. RIFT ships x64 and arm64 builds for Windows." }
     }
 
     if ($arch -eq 'x64' -and -not (Test-Avx2)) {
