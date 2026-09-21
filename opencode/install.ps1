@@ -165,15 +165,80 @@ function Add-Alias([string] $Dir) {
     )
 }
 
+# Every install ends by proving it actually happened, and naming where. This is also reachable from
+# the "already installed" path, so a broken or partial install surfaces instead of exiting silently.
+function Assert-Install([string] $Dir) {
+    $exe = Join-Path $Dir 'rift.exe'
+    if (-not (Test-Path -LiteralPath $exe)) { throw "RIFT is missing its executable: $exe" }
+    $shim = Join-Path $Dir 'opencode.cmd'
+    if (-not (Test-Path -LiteralPath $shim)) { throw "RIFT is missing the opencode shim: $shim" }
+    Write-Host "Installed RIFT to: $Dir"
+}
+
+# Windows PATH is case-insensitive and tolerates a trailing separator, so 'c:\rift\bin' and
+# 'C:\rift\bin\' are the same location. Never report a duplicate (or silently skip) over spelling.
+function Test-PathEntry([string] $Entry, [string] $Dir) {
+    if (-not $Entry -or -not $Dir) { return $false }
+    $e = $Entry.TrimEnd('\').TrimEnd('/')
+    $d = $Dir.TrimEnd('\').TrimEnd('/')
+    return $e -eq $d   # -eq on strings is case-insensitive
+}
+
+# Pure PATH merge, separate from registry I/O so tests can drive it with strings. Returns what the
+# persistent user PATH and the current process PATH should become, and whether the directory was
+# already there (in which case nothing needs to be written).
+function Merge-PathEntry {
+    param(
+        [AllowNull()][string] $UserPath,
+        [AllowNull()][string] $ProcessPath,
+        [string] $Dir
+    )
+    $entries  = @($UserPath -split ';' | Where-Object { $_ })
+    $inUser   = @($entries | Where-Object { Test-PathEntry $_ $Dir }).Count -gt 0
+    $inProc   = @($ProcessPath -split ';' | Where-Object { $_ } | Where-Object { Test-PathEntry $_ $Dir }).Count -gt 0
+
+    $persisted = $UserPath
+    $action = 'already-present'
+    if (-not $inUser) {
+        $persisted = (@($Dir) + $entries) -join ';'
+        $action = 'added'
+    }
+
+    $process = $ProcessPath
+    if (-not $inProc) {
+        $process = if ($ProcessPath) { "$Dir;$ProcessPath" } else { $Dir }
+    }
+
+    [pscustomobject]@{
+        Action      = $action      # 'added' or 'already-present'
+        InUserPath  = $inUser
+        InProcPath  = $inProc
+        UserPath    = $persisted
+        ProcessPath = $process
+    }
+}
+
 function Add-ToUserPath([string] $Dir) {
     # Never setx: it truncates PATH at 1024 characters.
     $current = [Environment]::GetEnvironmentVariable('Path', 'User')
-    $entries = @($current -split ';' | Where-Object { $_ })
-    if ($entries -notcontains $Dir) {
-        [Environment]::SetEnvironmentVariable('Path', (@($Dir) + $entries) -join ';', 'User')
+    $merged = Merge-PathEntry -UserPath $current -ProcessPath $env:Path -Dir $Dir
+
+    if ($merged.Action -eq 'added') {
+        [Environment]::SetEnvironmentVariable('Path', $merged.UserPath, 'User')
+        # Re-read what actually landed, so a write that did not stick is a hard error instead of a
+        # silent success. SetEnvironmentVariable is only effective if the value was truly persisted.
+        $now = [Environment]::GetEnvironmentVariable('Path', 'User')
+        if (-not (@($now -split ';' | Where-Object { Test-PathEntry $_ $Dir }))) {
+            throw "Installed RIFT to $Dir but the user PATH could not be updated. Re-run the installer as Administrator or add `"$Dir`" to your PATH manually."
+        }
         Write-Muted "Added $Dir to your PATH."
+    } else {
+        # Already there: still refresh the current process if a stale console lacks it, and say so.
+        Write-Muted "RIFT is already on your PATH: $Dir"
     }
-    if (($env:Path -split ';') -notcontains $Dir) { $env:Path = "$Dir;$env:Path" }
+
+    # Make the current session able to run `rift` immediately, and prepare for CI's GITHUB_PATH.
+    $env:Path = $merged.ProcessPath
     if ($env:GITHUB_PATH) { Add-Content -Path $env:GITHUB_PATH -Value $Dir }
 }
 
@@ -199,6 +264,10 @@ if ($BinaryPath) {
 
         if ($installed -eq $Version) {
             Write-Muted "Version $Version already installed"
+            # A re-run must still confirm the install is intact and self-heal the PATH, which an
+            # earlier install (or an unrelated PATH edit) may have left stale.
+            Assert-Install $InstallDir
+            if (-not $NoModifyPath) { Add-ToUserPath $InstallDir }
             exit 0
         }
     }
@@ -242,6 +311,7 @@ if ($BinaryPath) {
 
 if ($Version) { Set-Content -Path $versionFile -Encoding ASCII -Value $Version }
 Add-Alias $InstallDir
+Assert-Install $InstallDir
 if (-not $NoModifyPath) { Add-ToUserPath $InstallDir }
 
 
@@ -392,6 +462,11 @@ Write-Host ''
 Write-Host 'cd <project>  ' -NoNewline; Write-Muted '# Open directory'
 Write-Host 'rift          ' -NoNewline; Write-Muted '# Run command'
 Write-Host ''
-Write-Muted 'Open a new terminal so the PATH change takes effect.'
+if ($NoModifyPath) {
+    Write-Muted 'PATH was left unchanged (-NoModifyPath). Start RIFT with:'
+    Write-Host "  $target"
+} else {
+    Write-Muted 'Open a new terminal so the PATH change takes effect.'
+}
 Write-Muted "For more information visit https://github.com/$Repo"
 Write-Host ''

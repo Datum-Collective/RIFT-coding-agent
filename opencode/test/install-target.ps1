@@ -1,23 +1,26 @@
 <#
 .SYNOPSIS
-    Regression tests for the Windows architecture detection in opencode/install.ps1.
+    Regression tests for the Windows installer in opencode/install.ps1.
 
 .DESCRIPTION
-    Get-Target picks the release artifact for an x64 or arm64 Windows machine. It used to ask
-    RuntimeInformation.OSArchitecture and switch on the raw enum; a later fix normalized that enum to
-    a string. Neither works on a Windows install where OSArchitecture itself is $null: .ToString()
-    then dies with "You cannot call a method on a null-valued expression" and the installer reports
-    "Unsupported architecture: ." on a perfectly ordinary x64 machine.
+    Two things are tested, independently:
 
-    The installer now reads Windows' own PROCESSOR_ARCHITEW6432 / PROCESSOR_ARCHITECTURE environment
-    variables first - W6432 ahead of PROCESSOR_ARCHITECTURE, so a 32-bit PowerShell running on 64-bit
-    Windows (which reports ARCHITECTURE=x86) still selects the x64 build - and only falls back to
-    RuntimeInformation.OSArchitecture when the environment says nothing usable, with an explicit
-    $null check on that value.
+    Architecture detection. Get-Target picks the release artifact for an x64 or arm64 Windows machine.
+    It used to ask RuntimeInformation.OSArchitecture and switch on the raw enum; a later fix
+    normalized that enum to a string. Neither works on a Windows install where OSArchitecture itself
+    is $null: .ToString() then dies and the installer reports "Unsupported architecture: ." on an
+    ordinary x64 machine. The installer now reads PROCESSOR_ARCHITEW6432 / PROCESSOR_ARCHITECTURE
+    first (W6432 ahead of PROCESSOR_ARCHITECTURE, so 32-bit PowerShell on 64-bit Windows still
+    selects x64) and only falls back to RuntimeInformation.OSArchitecture with an explicit $null
+    check. These tests drive that logic with injected values, so every branch - including the exact
+    broken-machine values - is reproduced regardless of the architecture this runs on.
 
-    These tests pull the detection functions out of install.ps1 and drive them with injected values,
-    so every branch - including a $null OSArchitecture and the exact values observed on the machine
-    that reported the bug - is reproduced regardless of the architecture of the machine this runs on.
+    PATH handling. The installer must verifiably put the install directory on the persistent user
+    PATH and on the current process PATH, and must say explicitly whether it added the directory,
+    found it already present, or could not persist it. The decision logic lives in the pure function
+    Merge-PathEntry (no registry I/O), which these tests drive with injected PATH strings so the real
+    user PATH is never touched. File/self-verification and the -NoModifyPath end-to-end behavior are
+    exercised with throwaway directories under %TEMP%.
 
     Run it from either host:
         pwsh ./opencode/test/install-target.ps1
@@ -63,7 +66,8 @@ foreach ($fn in $ast.FindAll(
     if (-not $byName.ContainsKey($fn.Name)) { $byName.Add($fn.Name, $fn.Extent.Text) }
 }
 
-foreach ($name in 'ConvertTo-RiftArch', 'Resolve-InstallArchitecture', 'Get-TargetName', 'Get-Target', 'Test-Avx2') {
+foreach ($name in 'ConvertTo-RiftArch', 'Resolve-InstallArchitecture', 'Get-TargetName', 'Get-Target', 'Test-Avx2',
+    'Test-PathEntry', 'Merge-PathEntry', 'Add-ToUserPath', 'Assert-Install') {
     if (-not $byName.ContainsKey($name)) {
         Write-Host "   FAIL  $name not found in install.ps1"
         exit 1
@@ -195,6 +199,183 @@ if ($diag -and $diag -notmatch 'Unsupported architecture') {
 } else {
     Write-Host "   FAIL  detection failure came out as [$diag]"
     $script:fail++
+}
+
+# --- PATH merge: the decision logic, driven with injected strings (never the real registry) -------------
+
+function Invoke-Merge([string] $UserPath, [string] $ProcessPath, [string] $Dir) {
+    $block = [scriptblock]::Create(@(
+        'param([AllowNull()][string] $UserPath, [AllowNull()][string] $ProcessPath, [string] $Dir)',
+        $byName['Test-PathEntry'],
+        $byName['Merge-PathEntry'],
+        'Merge-PathEntry -UserPath $UserPath -ProcessPath $ProcessPath -Dir $Dir'
+    ) -join "`n")
+    & $block $UserPath $ProcessPath $Dir
+}
+
+Write-Host ''
+Write-Host 'PATH merge (pure decision logic, injected strings):'
+
+$m = Invoke-Merge 'C:\Windows' 'C:\Windows' 'C:\rift\bin'
+Test-Result $m.Action       'added'           'path absent -> marked added'
+Test-Result $m.UserPath     'C:\rift\bin;C:\Windows' 'path absent -> prepended to persistent user PATH, no duplicate'
+Test-Result $m.ProcessPath  'C:\rift\bin;C:\Windows' 'path absent -> prepended to current process PATH'
+Test-Result $m.InUserPath   $false            'path absent -> not counted as already present'
+
+$m = Invoke-Merge 'C:\rift\bin;C:\Windows' 'C:\rift\bin;C:\Windows' 'C:\rift\bin'
+Test-Result $m.Action       'already-present' 'path already present -> explicitly already-present, no rewrite'
+Test-Result $m.UserPath     'C:\rift\bin;C:\Windows' 'path already present -> persistent PATH untouched (no duplicate)'
+
+$m = Invoke-Merge 'c:\RIFT\BIN\;C:\w' 'C:\Windows' 'C:\rift\bin'
+Test-Result $m.Action       'already-present' 'case + trailing-backslash variants count as the same entry'
+Test-Result $m.InUserPath   $true             'case + trailing-backslash variants recognized present'
+Test-Result $m.ProcessPath  'C:\rift\bin;C:\Windows' 'stale console lacking the entry is refreshed in-process'
+
+$m = Invoke-Merge 'C:\rift\oldbin;C:\w' 'C:\Windows' 'C:\rift\bin'
+Test-Result $m.Action       'added'           'stale/different RIFT directory is not mistaken for the real one'
+Test-Result $m.UserPath     'C:\rift\bin;C:\rift\oldbin;C:\w' 'stale entry survives, real one added, no data loss'
+
+$m = Invoke-Merge '' '' 'C:\rift\bin'
+Test-Result $m.Action       'added'           'empty user PATH -> added'
+Test-Result $m.UserPath     'C:\rift\bin'     'empty user PATH -> the single entry is the install dir'
+
+$m = Invoke-Merge $null '' 'C:\rift\bin'
+Test-Result $m.Action       'added'           'null user PATH -> added without error'
+Test-Result $m.UserPath     'C:\rift\bin'     'null user PATH -> persisted value is just the install dir'
+
+$m = Invoke-Merge 'C:\Windows' 'C:\rift\bin;C:\w' 'C:\rift\bin'
+Test-Result $m.Action       'added'           'present only in current process -> still added to persistent PATH'
+Test-Result $m.InProcPath   $true             'present only in current process -> process PATH already has it'
+
+$m = Invoke-Merge 'C:\Program Files\Go' 'C:\Program Files\Go' 'C:\My Rift\bin'
+Test-Result $m.Action       'added'           'install directory with spaces -> handled'
+Test-Result $m.UserPath     'C:\My Rift\bin;C:\Program Files\Go' 'install directory with spaces -> persisted correctly'
+
+$m = Invoke-Merge 'C:\Windows;C:\rift\bin' '' 'c:\rift\bin\'
+Test-Result $m.Action       'already-present' 'trailing backslash on the install dir still matches an existing entry'
+
+# --- Test-PathEntry directly -----------------------------------------------------------------------------
+
+Write-Host ''
+Write-Host 'Test-PathEntry (membership semantics):'
+
+function Invoke-PathEntry([string] $Entry, [string] $Dir) {
+    $block = [scriptblock]::Create(@(
+        'param([string] $Entry, [string] $Dir)',
+        $byName['Test-PathEntry'],
+        'Test-PathEntry $Entry $Dir'
+    ) -join "`n")
+    & $block $Entry $Dir
+}
+
+Test-Result (Invoke-PathEntry 'C:\rift\bin'   'C:\rift\bin')   $true  'exact match -> true'
+Test-Result (Invoke-PathEntry 'c:\rift\bin'   'C:\RIFT\BIN')   $true  'case differs -> true (Windows PATH is case-insensitive)'
+Test-Result (Invoke-PathEntry 'C:\rift\bin\'  'C:\rift\bin')   $true  'trailing backslash ignored -> true'
+Test-Result (Invoke-PathEntry 'C:\rift\bin2'  'C:\rift\bin')   $false 'different directory -> false'
+Test-Result (Invoke-PathEntry ''              'C:\rift\bin')   $false 'empty entry -> false'
+Test-Result (Invoke-PathEntry 'C:\rift\bin'   '')              $false 'empty dir -> false'
+
+# --- Assert-Install: self-verification against the filesystem ---------------------------------------------
+
+function Invoke-Assert([string] $Dir) {
+    $block = [scriptblock]::Create(@(
+        'param([string] $Dir)',
+        $byName['Assert-Install'],
+        'Assert-Install $Dir'
+    ) -join "`n")
+    & $block $Dir
+}
+
+Write-Host ''
+Write-Host 'Assert-Install (self-verification of what was written):'
+
+$probeDir = Join-Path ([System.IO.Path]::GetTempPath()) "rift-assert-$(Get-Random)"
+New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+try {
+    $missing = $false
+    try { $null = Invoke-Assert $probeDir } catch { $missing = $true }
+    if ($missing) {
+        Write-Host '   PASS  Assert-Install fails when the directory is empty'
+        $script:pass++
+    } else {
+        Write-Host '   FAIL  Assert-Install passed on an empty directory'
+        $script:fail++
+    }
+
+    Set-Content -Path (Join-Path $probeDir 'rift.exe') -Encoding ASCII -Value 'x'
+    $missingExe = $false
+    try { $null = Invoke-Assert $probeDir } catch { $missingExe = $true }
+    if ($missingExe) {
+        Write-Host '   PASS  Assert-Install fails when opencode.cmd is missing'
+        $script:pass++
+    } else {
+        Write-Host '   FAIL  Assert-Install passed with only rift.exe present'
+        $script:fail++
+    }
+
+    Set-Content -Path (Join-Path $probeDir 'opencode.cmd') -Encoding ASCII -Value '@echo off'
+    try {
+        $null = Invoke-Assert $probeDir
+        Write-Host '   PASS  Assert-Install verifies both rift.exe and opencode.cmd exist'
+        $script:pass++
+    } catch {
+        Write-Host "   FAIL  Assert-Install rejected a complete install: [$($_.Exception.Message)]"
+        $script:fail++
+    }
+} finally {
+    Remove-Item $probeDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# --- end to end: -NoModifyPath must leave the real user PATH untouched but still install -------------------
+
+Write-Host ''
+Write-Host 'End to end (-NoModifyPath installs binaries, leaves the real user PATH alone):'
+
+$fake = Join-Path ([System.IO.Path]::GetTempPath()) "rift-fake-$(Get-Random).exe"
+$CopyProbe = Join-Path $env:SystemRoot 'System32\where.exe'
+if (Test-Path $CopyProbe) { Copy-Item $CopyProbe $fake -Force }
+$e2eDir = Join-Path ([System.IO.Path]::GetTempPath()) "rift-e2e-$(Get-Random)"
+New-Item -ItemType Directory -Force -Path $e2eDir | Out-Null
+$userPathBefore = [Environment]::GetEnvironmentVariable('Path', 'User')
+try {
+    if (-not (Test-Path $fake)) {
+        Write-Host '   SKIP  (where.exe unavailable; end-to-end install not run)'
+    } else {
+        $inst = & $installer -BinaryPath $fake -InstallDir $e2eDir -NoModifyPath 6>&1 2>&1 | Out-String
+        if ((Test-Path -LiteralPath (Join-Path $e2eDir 'rift.exe')) -and
+            (Test-Path -LiteralPath (Join-Path $e2eDir 'opencode.cmd'))) {
+            Write-Host '   PASS  -NoModifyPath still produces rift.exe and opencode.cmd'
+            $script:pass++
+        } else {
+            Write-Host '   FAIL  -NoModifyPath install did not produce rift.exe and opencode.cmd'
+            $script:fail++
+        }
+        if ($inst -match 'Installed RIFT to:') {
+            Write-Host '   PASS  installer states the install location'
+            $script:pass++
+        } else {
+            Write-Host '   FAIL  installer output has no explicit install location'
+            $script:fail++
+        }
+        if ($inst -match 'PATH was left unchanged') {
+            Write-Host '   PASS  -NoModifyPath says the PATH was left unchanged'
+            $script:pass++
+        } else {
+            Write-Host '   FAIL  -NoModifyPath does not state PATH handling'
+            $script:fail++
+        }
+        $after = [Environment]::GetEnvironmentVariable('Path', 'User')
+        if ($after -eq $userPathBefore) {
+            Write-Host '   PASS  -NoModifyPath left the persistent user PATH untouched'
+            $script:pass++
+        } else {
+            Write-Host '   FAIL  -NoModifyPath modified the persistent user PATH'
+            $script:fail++
+        }
+    }
+} finally {
+    Remove-Item $fake -Force -ErrorAction SilentlyContinue
+    Remove-Item $e2eDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 # --- mechanism guards: the two previous bugs must not come back --------------------------------------
