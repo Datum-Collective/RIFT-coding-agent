@@ -492,6 +492,108 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   return tools
 })
 
+// Definitions-only catalogue for internal sub-agent calls (Vibe planner,
+// reviewer, claims). These calls must present the same tool definitions a
+// normal turn sends to the provider, but must never invoke tools (callers
+// keep `toolChoice: "none"`), so no execute handlers are attached.
+export const definitions = Effect.fn("SessionTools.definitions")(function* (input: {
+  agent: Agent.Info
+  model: Provider.Model
+  session: Session.Info
+}) {
+  const tools: Record<string, AITool> = {}
+  const registry = yield* ToolRegistry.Service
+  const mcp = yield* MCP.Service
+  const flags = yield* RuntimeFlags.Service
+
+  for (const item of yield* registry.tools({
+    modelID: ModelV2.ID.make(input.model.api.id),
+    providerID: input.model.providerID,
+    agent: input.agent,
+    permission: input.session.permission,
+  })) {
+    const schema = ProviderTransform.schema(input.model, ToolJsonSchema.fromTool(item))
+    tools[item.id] = tool({
+      description: item.description,
+      inputSchema: jsonSchema(schema),
+    })
+  }
+
+  const hasMcpResourceServer = Object.values(yield* mcp.clients()).some(
+    (client) => !!client.getServerCapabilities()?.resources,
+  )
+  if (hasMcpResourceServer) {
+    tools[MCP_RESOURCE_TOOLS.list] = tool({
+      description:
+        "Lists resources provided by connected MCP servers. Resources provide context such as files, database schemas, or application-specific information.",
+      inputSchema: jsonSchema(
+        ProviderTransform.schema(input.model, {
+          type: "object",
+          properties: {
+            server: {
+              type: "string",
+              description: "Optional MCP server name. When omitted, lists resources from every connected server.",
+            },
+          },
+          additionalProperties: false,
+        }),
+      ),
+    })
+    tools[MCP_RESOURCE_TOOLS.listTemplates] = tool({
+      description:
+        "Lists resource templates provided by connected MCP servers. Resource templates are parameterized resources that can be read after filling in their URI template.",
+      inputSchema: jsonSchema(
+        ProviderTransform.schema(input.model, {
+          type: "object",
+          properties: {
+            server: {
+              type: "string",
+              description:
+                "Optional MCP server name. When omitted, lists resource templates from every connected server.",
+            },
+          },
+          additionalProperties: false,
+        }),
+      ),
+    })
+    tools[MCP_RESOURCE_TOOLS.read] = tool({
+      description:
+        "Read a specific resource from an MCP server using the server name and resource URI. The URI is an MCP identifier and does not need to be a file URL.",
+      inputSchema: jsonSchema(
+        ProviderTransform.schema(input.model, {
+          type: "object",
+          properties: {
+            server: {
+              type: "string",
+              description: "MCP server name exactly as returned by list_mcp_resources.",
+            },
+            uri: {
+              type: "string",
+              description: "Resource URI to read. Use the exact URI string returned by list_mcp_resources.",
+            },
+          },
+          required: ["server", "uri"],
+          additionalProperties: false,
+        }),
+      ),
+    })
+  }
+
+  if (!flags.experimentalCodeMode) {
+    for (const [key, entry] of Object.entries(yield* mcp.tools())) {
+      const converted = McpCatalog.convertTool(entry.def, entry.client, entry.timeout)
+      const schema = yield* Effect.promise(() => Promise.resolve(asSchema(converted.inputSchema).jsonSchema))
+      const transformed = ProviderTransform.schema(input.model, { ...schema, properties: schema.properties ?? {} })
+      tools[key] = tool({
+        description: converted.description,
+        inputSchema: jsonSchema(transformed),
+      })
+    }
+  }
+
+  return tools
+})
+
 function toRecord(value: unknown) {
   if (isRecord(value)) return value
   return {}

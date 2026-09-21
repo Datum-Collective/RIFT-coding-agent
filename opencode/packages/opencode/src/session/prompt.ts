@@ -106,15 +106,21 @@ type VibePlan = {
   }>
 }
 
+const VibePlanFromJson = Schema.fromJsonString(VibePlanSchema)
+
 function parseVibePlan(text: string): VibePlan {
   const start = text.indexOf("{")
   const end = text.lastIndexOf("}")
-  if (start === -1 || end <= start) throw new Error("Vibe Mode planner returned no JSON plan")
-  const parsed = Schema.decodeUnknownOption(VibePlanSchema)(JSON.parse(text.slice(start, end + 1)))
-  if (Option.isNone(parsed) || parsed.value.steps.length === 0) {
-    throw new Error("Vibe Mode planner returned an empty or invalid plan")
+  const parsed =
+    start !== -1 && end > start
+      ? Schema.decodeUnknownOption(VibePlanFromJson)(text.slice(start, end + 1))
+      : Option.none()
+  if (Option.isSome(parsed) && parsed.value.steps.length > 0) {
+    return parsed.value as unknown as VibePlan
   }
-  return parsed.value as unknown as VibePlan
+  const fallback = text.trim()
+  if (!fallback) throw new Error("Vibe Mode planner returned no JSON plan")
+  return { steps: [{ files: [], functions: [], description: fallback }] }
 }
 
 const CLAIMS_SYSTEM_PROMPT = `You are checking whether an agent's summary of its own work matches what it actually changed. You are given the summary and the real diff of the files it edited. Output JSON only with this exact shape:
@@ -752,6 +758,21 @@ const layer = Layer.effect(
       }
     })
 
+    const resolveVibeTools = Effect.fn("SessionPrompt.resolveVibeTools")(function* (input: {
+      agent: Agent.Info
+      model: Provider.Model
+      session: Session.Info
+    }) {
+      return yield* SessionTools.definitions(input).pipe(
+        Effect.provideService(Plugin.Service, plugin),
+        Effect.provideService(Permission.Service, permission),
+        Effect.provideService(ToolRegistry.Service, registry),
+        Effect.provideService(MCP.Service, mcp),
+        Effect.provideService(Truncate.Service, truncate),
+        Effect.provideService(RuntimeFlags.Service, flags),
+      )
+    })
+
     const loadSystemContext = Effect.fn("SessionPrompt.loadSystemContext")(function* (
       agent: Agent.Info,
       model: Provider.Model,
@@ -1328,7 +1349,7 @@ const layer = Layer.effect(
               content: `The agent's summary of what it did:\n${input.summary}\n\nThe actual diff of the files it edited:\n${diff}`,
             },
           ],
-          tools: {},
+          tools: yield* resolveVibeTools({ agent, model, session: input.session }),
           toolChoice: "none",
           retries: 2,
         })
@@ -1531,7 +1552,7 @@ const layer = Layer.effect(
                   content: `The current Vibe step failed after an executor attempt. Revise only this step and return a one-step plan.\nCurrent step: ${JSON.stringify(input.step)}\nFailure: ${input.failure}`,
                 },
               ],
-              tools: {},
+              tools: yield* resolveVibeTools({ agent: input.agent, model: input.model, session }),
               toolChoice: "none",
               retries: 2,
             })
@@ -1613,7 +1634,7 @@ const layer = Layer.effect(
                   content: `Review the executor's work on this step now.\nStep: ${JSON.stringify(input.step)}`,
                 },
               ],
-              tools: {},
+              tools: yield* resolveVibeTools({ agent: input.agent, model: input.model, session }),
               toolChoice: "none",
               retries: 2,
             })
@@ -1756,7 +1777,7 @@ const layer = Layer.effect(
                   ...plannerMessages,
                   { role: "user", content: "Create the implementation plan for the user's request now." },
                 ],
-                tools: {},
+                tools: yield* resolveVibeTools({ agent, model: vibeModels.planner, session }),
                 toolChoice: "none",
                 retries: 2,
               })
