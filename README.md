@@ -39,6 +39,10 @@ macOS, Linux and Windows.
 
 ## Installation
 
+<a href="https://yatko.app/dl/Datum-Collective/RIFT-coding-agent">
+  <img alt="Get it on Yatko" src="https://yatko.app/badge.svg" height="54">
+</a>
+
 **macOS, Linux, WSL, Git Bash**
 
 ```bash
