@@ -14,6 +14,7 @@ import { Timestamps } from "../database/schema.sql"
 import type { SystemContext } from "../system-context/index"
 import { AgentV2 } from "../agent"
 import type { Revert } from "@opencode-ai/schema/revert"
+import type { EngineeringGraph } from "@opencode-ai/schema/engineering-graph"
 
 type SessionMessageData = Omit<(typeof SessionMessage.Message)["Encoded"], "type" | "id">
 type V1MessageData = Omit<SessionV1.Info, "id" | "sessionID">
@@ -113,6 +114,32 @@ export const TodoTable = sqliteTable(
   (table) => [
     primaryKey({ columns: [table.session_id, table.position] }),
     index("todo_session_idx").on(table.session_id),
+  ],
+)
+
+export const EngineeringGraphTable = sqliteTable(
+  "engineering_graph",
+  {
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    node_id: text().notNull(),
+    parent_id: text(),
+    title: text().notNull(),
+    status: text().notNull().$type<EngineeringGraph.Info["status"]>(),
+    owner: text().notNull(),
+    dependencies: text({ mode: "json" }).notNull().$type<string[]>(),
+    files: text({ mode: "json" }).notNull().$type<string[]>(),
+    tests: text({ mode: "json" }).notNull().$type<string[]>(),
+    decisions: text({ mode: "json" }).notNull().$type<string[]>(),
+    evidence: text({ mode: "json" }).notNull().$type<string[]>(),
+    position: integer().notNull(),
+    ...Timestamps,
+  },
+  (table) => [
+    primaryKey({ columns: [table.session_id, table.node_id] }),
+    index("engineering_graph_session_idx").on(table.session_id),
   ],
 )
 

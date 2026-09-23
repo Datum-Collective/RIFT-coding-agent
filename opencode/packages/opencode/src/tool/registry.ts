@@ -12,6 +12,7 @@ import { ReadTool } from "./read"
 import { TaskTool } from "./task"
 import { Database } from "@opencode-ai/core/database/database"
 import { TodoWriteTool } from "./todo"
+import { GraphWriteTool } from "./graph"
 import { WebFetchTool } from "./webfetch"
 import { BrowserTool } from "./browser"
 import { BrowserOpenTool } from "./browser_open"
@@ -42,6 +43,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { EffectBridge } from "@/effect/bridge"
 import { Question } from "../question"
 import { Todo } from "../session/todo"
+import { EngineeringGraph } from "../session/engineering-graph"
 import { LSP } from "@/lsp/lsp"
 import { Instruction } from "../session/instruction"
 import { FSUtil } from "@opencode-ai/core/fs-util"
@@ -105,6 +107,7 @@ const layer = Layer.effect(
     const read = yield* ReadTool
     const question = yield* QuestionTool
     const todo = yield* TodoWriteTool
+    const graph = yield* GraphWriteTool
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
@@ -223,6 +226,7 @@ const layer = Layer.effect(
           browseropen: Tool.init(browseropen),
           browser: Tool.init(browser),
           todo: Tool.init(todo),
+          graph: Tool.init(graph),
           search: Tool.init(websearch),
           skill: Tool.init(skilltool),
           patch: Tool.init(patchtool),
@@ -248,6 +252,7 @@ const layer = Layer.effect(
             tool.browseropen,
             tool.browser,
             tool.todo,
+            tool.graph,
             tool.search,
             tool.skill,
             tool.patch,
@@ -440,6 +445,7 @@ export const node = LayerNode.make({
     Plugin.node,
     Question.node,
     Todo.node,
+    EngineeringGraph.node,
     Agent.node,
     Skill.node,
     Session.node,

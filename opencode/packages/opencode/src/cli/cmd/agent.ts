@@ -26,6 +26,7 @@ const AVAILABLE_PERMISSIONS = [
   "browser_open",
   "task",
   "todowrite",
+  "graphwrite",
   "websearch",
   "lsp",
   "skill",

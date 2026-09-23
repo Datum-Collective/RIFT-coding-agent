@@ -533,7 +533,7 @@ Options:
       --mode                  agent mode            [string] [choices: "all", "primary", "subagent"]
       --permissions, --tools  comma-separated list of permissions to allow (default: all).
                               Available: "bash, read, edit, glob, grep, webfetch, browser_open,
-                              task, todowrite, websearch, lsp, skill"                       [string]
+                              task, todowrite, graphwrite, websearch, lsp, skill"           [string]
   -m, --model                 model to use in the format of provider/model                  [string]"
 `;
 

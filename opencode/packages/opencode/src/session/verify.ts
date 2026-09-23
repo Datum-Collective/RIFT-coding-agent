@@ -1,3 +1,4 @@
+import os from "os"
 import path from "path"
 import { spawn } from "child_process"
 import { Shell } from "@opencode-ai/core/shell"
@@ -146,7 +147,9 @@ function tail(text: string, lines = 40) {
 /**
  * Picks the checks to run. Explicit commands win. Otherwise each edited file uses the nearest
  * directory (walking up to the project root) that has checks of its own, so a change in one
- * monorepo package runs that package's scripts. With no usable files it falls back to the root.
+ * monorepo package runs that package's scripts. Files outside the project are checked in their
+ * own directory only. With no usable files it falls back to the root, but never when every edit
+ * landed outside the project: that would run the wrong project's checks.
  */
 export async function resolve(dir: string, options: Options = {}): Promise<Check[]> {
   if (options.commands?.length) return options.commands.map((command) => ({ name: command, command }))
@@ -155,14 +158,26 @@ export async function resolve(dir: string, options: Options = {}): Promise<Check
   const detectIn = async (target: string) => {
     const hit = cache.get(target)
     if (hit) return hit
-    const found = await detect(target, dir)
+    const found = await detect(target, insideProject(dir, target) ? dir : target)
     cache.set(target, found)
     return found
   }
 
+  const files = options.files ?? []
   const targets = new Set<string>()
-  for (const file of options.files ?? []) {
+  for (const file of files) {
     let current = path.dirname(file)
+    if (!insideProject(dir, current)) {
+      const home = os.homedir()
+      while (current !== home && current !== path.dirname(current)) {
+        if ((await detectIn(current)).length > 0) {
+          targets.add(current)
+          break
+        }
+        current = path.dirname(current)
+      }
+      continue
+    }
     while (!path.relative(dir, current).startsWith("..")) {
       if ((await detectIn(current)).length > 0) {
         targets.add(current)
@@ -172,11 +187,11 @@ export async function resolve(dir: string, options: Options = {}): Promise<Check
       current = path.dirname(current)
     }
   }
-  if (targets.size === 0) return detectIn(dir)
+  if (targets.size === 0) return files.some((file) => insideProject(dir, file)) || files.length === 0 ? detectIn(dir) : []
 
   const checks: Check[] = []
   for (const target of [...targets].sort()) {
-    const where = path.relative(dir, target)
+    const where = insideProject(dir, target) ? path.relative(dir, target) : target
     for (const check of await detectIn(target)) checks.push({ ...check, dir: target, where })
   }
   return checks
@@ -275,35 +290,50 @@ export async function fileContents(dir: string, files: string[], max = 100_000) 
 
 /**
  * Diff of `files` for the model to read: tracked changes from `git diff HEAD`, plus untracked
- * files rendered as additions (git omits those). Read-only — it never touches the index.
+ * files rendered as additions (git omits those). Files with no git history to diff against,
+ * because they sit outside the project or the project isn't a repo, are shown as their current
+ * contents, so a site built in ~/Desktop can still be checked. Read-only: it never touches the index.
  */
 export async function turnDiff(dir: string, files: string[], max = 100_000) {
   const inside = files.filter((file) => insideProject(dir, file))
-  if (inside.length === 0) return ""
+  const outside = files.filter((file) => !insideProject(dir, file)).map((file) => path.resolve(dir, file))
   const relative = inside.map((file) => path.relative(dir, path.resolve(dir, file)))
 
-  const tracked = await Process.run(["git", "diff", "HEAD", "--", ...relative], { cwd: dir, nothrow: true })
-  if (tracked.code !== 0) return ""
+  const tracked =
+    relative.length > 0 ? await Process.run(["git", "diff", "HEAD", "--", ...relative], { cwd: dir, nothrow: true }) : undefined
+  const repo = tracked?.code === 0
 
-  const untracked = await Process.run(["git", "ls-files", "--others", "--exclude-standard", "--", ...relative], {
-    cwd: dir,
-    nothrow: true,
-  })
-  const added = untracked.code === 0 ? untracked.stdout.toString().split("\n").filter(Boolean) : []
+  const untracked = repo
+    ? await Process.run(["git", "ls-files", "--others", "--exclude-standard", "--", ...relative], {
+        cwd: dir,
+        nothrow: true,
+      })
+    : undefined
+  const added = untracked?.code === 0 ? untracked.stdout.toString().split("\n").filter(Boolean) : []
 
-  const sections = await Promise.all(
-    added.map(async (file) => {
-      const text = await read(path.resolve(dir, file))
-      if (text === undefined) return `--- new file: ${file} (unreadable) ---`
-      const body = text
-        .split("\n")
-        .map((line) => `+${line}`)
-        .join("\n")
-      return `--- new file: ${file} ---\n${body}`
-    }),
+  const sections = await Promise.all([
+    ...added.map(async (file) => (await asAddition(path.resolve(dir, file), `new file: ${file}`)) ?? `--- new file: ${file} (unreadable) ---`),
+    ...[...(repo ? [] : relative), ...outside].map((file) =>
+      asAddition(path.resolve(dir, file), `current contents, no git history: ${file}`),
+    ),
+  ])
+
+  return truncate(
+    [tracked?.code === 0 ? tracked.stdout.toString().trim() : "", ...sections]
+      .filter((item): item is string => !!item)
+      .join("\n\n"),
+    max,
   )
+}
 
-  return truncate([tracked.stdout.toString().trim(), ...sections].filter(Boolean).join("\n\n"), max)
+async function asAddition(file: string, label: string) {
+  const text = await read(file)
+  if (text === undefined) return undefined
+  const body = text
+    .split("\n")
+    .map((line) => `+${line}`)
+    .join("\n")
+  return `--- ${label} ---\n${body}`
 }
 
 /** Uncommitted changes to `files` relative to HEAD. Empty outside a git repo or when nothing changed. */

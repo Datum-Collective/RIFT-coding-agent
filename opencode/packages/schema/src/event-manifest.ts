@@ -2,6 +2,7 @@ export * as EventManifest from "./event-manifest"
 
 import { Catalog } from "./catalog"
 import { Durable } from "./durable-event-manifest"
+import { EngineeringGraph } from "./engineering-graph"
 import { Event } from "./event"
 import { FileSystem } from "./filesystem"
 import { FileSystemWatcher } from "./filesystem-watcher"
@@ -58,6 +59,7 @@ export const ServerDefinitions = Event.inventory(
   ...foundationDefinitions,
   ...featureDefinitions,
   ...SessionTodo.Event.Definitions,
+  ...EngineeringGraph.Event.Definitions,
 )
 
 export const Definitions = Event.inventory(
@@ -66,6 +68,7 @@ export const Definitions = Event.inventory(
   ...InstallationEvent.Definitions,
   ...featureDefinitions,
   ...SessionTodo.Event.Definitions,
+  ...EngineeringGraph.Event.Definitions,
   ...LspEvent.Definitions,
   ...PermissionV1.Event.Definitions,
   ...TuiEvent.Definitions,

@@ -1,4 +1,8 @@
+import path from "path"
+import { fileURLToPath } from "url"
 import { Effect, Schema } from "effect"
+import { InstanceState } from "@/effect/instance-state"
+import { assertExternalDirectoryEffect } from "./external-directory"
 import * as Tool from "./tool"
 import DESCRIPTION from "./browser.txt"
 import { BrowserSession, type ConsoleEntry, type PageState } from "../browser/session"
@@ -8,7 +12,9 @@ export const Parameters = Schema.Struct({
   action: Schema.Literals(["open", "read", "text", "click", "type", "screenshot"]).annotate({
     description: "What to do with the page",
   }),
-  url: Schema.optional(Schema.String).annotate({ description: "URL to load. Required for `open`" }),
+  url: Schema.optional(Schema.String).annotate({
+    description: "URL to load: http(s)://, or file:// for a local page. Required for `open`",
+  }),
   selector: Schema.optional(Schema.String).annotate({
     description: "CSS selector. Required for `click` and `type`, optional for `text`",
   }),
@@ -95,8 +101,20 @@ export const BrowserTool = Tool.define(
           // Driving a browser can reach anything on the network, so it asks the same way the
           // URL-opening tool does rather than quietly acquiring a new capability.
           const target = params.action === "open" ? required(params.url, "url", "open") : undefined
-          if (target) {
-            if (!/^https?:\/\//.test(target)) throw new Error("url must start with http:// or https://")
+          if (target?.startsWith("file://")) {
+            // A local page is a file read, so it asks exactly like the read tool does.
+            const file = fileURLToPath(target)
+            yield* assertExternalDirectoryEffect(ctx, file)
+            const instance = yield* InstanceState.context
+            yield* ctx.ask({
+              permission: "read",
+              patterns: [path.relative(instance.worktree, file)],
+              always: ["*"],
+              metadata: {},
+            })
+          }
+          if (target && !target.startsWith("file://")) {
+            if (!/^https?:\/\//.test(target)) throw new Error("url must start with http://, https:// or file://")
             yield* ctx.ask({
               permission: "browser_open",
               patterns: [target],

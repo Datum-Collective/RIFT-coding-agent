@@ -108,16 +108,25 @@ describe("verify", () => {
       expect(checks.map((c) => c.command)).toEqual(["bun run test"])
     })
 
-    test("falls back to the root for root files, unknown files and files outside the project", async () => {
+    test("falls back to the root for root files and unknown files inside the project", async () => {
       const dir = await project({ "package.json": pkg({ test: "root-test" }) })
-      for (const file of [
-        path.join(dir, "index.ts"),
-        path.join(dir, "nope/deep/file.ts"),
-        path.join(os.tmpdir(), "elsewhere.ts"),
-      ]) {
+      for (const file of [path.join(dir, "index.ts"), path.join(dir, "nope/deep/file.ts")]) {
         expect((await Verify.resolve(dir, { files: [file] })).map((c) => c.command)).toEqual(["npm run test"])
       }
       expect((await Verify.resolve(dir)).map((c) => c.command)).toEqual(["npm run test"])
+    })
+
+    test("never runs the project's checks for edits that all landed outside it", async () => {
+      const dir = await project({ "package.json": pkg({ test: "root-test" }) })
+      const bare = await project({ "index.html": "" })
+      expect(await Verify.resolve(dir, { files: [path.join(bare, "index.html")] })).toEqual([])
+    })
+
+    test("checks an outside folder in place when it has checks of its own", async () => {
+      const dir = await project({ "package.json": pkg({ test: "root-test" }) })
+      const site = await project({ "package.json": pkg({ typecheck: "tsc" }), "src/app.ts": "" })
+      const checks = await Verify.resolve(dir, { files: [path.join(site, "src/app.ts")] })
+      expect(checks.map((c) => [c.where, c.dir, c.command])).toEqual([[site, site, "npm run typecheck"]])
     })
 
     test("explicit commands ignore edited files and always run at the root", async () => {
@@ -277,12 +286,18 @@ describe("verify", () => {
       expect(diff).toContain("+export const b = 3")
     })
 
-    test("turnDiff is empty outside a git repo and ignores paths outside the project", async () => {
+    test("turnDiff shows current contents for files with no git history to diff against", async () => {
       const bare = await project({ "a.ts": "x" })
-      expect(await Verify.turnDiff(bare, ["a.ts"])).toBe("")
+      expect(await Verify.turnDiff(bare, ["a.ts"])).toBe("--- current contents, no git history: a.ts ---\n+x")
+
       const dir = await project({ "a.ts": "x" })
       gitInit(dir)
-      expect(await Verify.turnDiff(dir, ["../outside.ts"])).toBe("")
+      const site = await project({ "index.html": "<h1>hi</h1>" })
+      const file = path.join(site, "index.html")
+      expect(await Verify.turnDiff(dir, [file])).toBe(
+        `--- current contents, no git history: ${file} ---\n+<h1>hi</h1>`,
+      )
+      expect(await Verify.turnDiff(dir, [path.join(site, "missing.html")])).toBe("")
     })
 
     test("parseClaims reads verdicts and rejects unusable replies", () => {
