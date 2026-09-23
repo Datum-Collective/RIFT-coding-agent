@@ -125,6 +125,26 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`engineering_graph\` (
+          \`session_id\` text NOT NULL,
+          \`node_id\` text NOT NULL,
+          \`parent_id\` text,
+          \`title\` text NOT NULL,
+          \`status\` text NOT NULL,
+          \`owner\` text NOT NULL,
+          \`dependencies\` text NOT NULL,
+          \`files\` text NOT NULL,
+          \`tests\` text NOT NULL,
+          \`decisions\` text NOT NULL,
+          \`evidence\` text NOT NULL,
+          \`position\` integer NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL,
+          CONSTRAINT \`engineering_graph_pk\` PRIMARY KEY(\`session_id\`, \`node_id\`),
+          CONSTRAINT \`fk_engineering_graph_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`message\` (
           \`id\` text PRIMARY KEY,
           \`session_id\` text NOT NULL,
@@ -241,6 +261,7 @@ export default {
       yield* tx.run(
         `CREATE UNIQUE INDEX \`permission_project_action_resource_idx\` ON \`permission\` (\`project_id\`,\`action\`,\`resource\`);`,
       )
+      yield* tx.run(`CREATE INDEX \`engineering_graph_session_idx\` ON \`engineering_graph\` (\`session_id\`);`)
       yield* tx.run(
         `CREATE INDEX \`message_session_time_created_id_idx\` ON \`message\` (\`session_id\`,\`time_created\`,\`id\`);`,
       )

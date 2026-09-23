@@ -6,6 +6,7 @@ import type {
   Part,
   Config,
   Todo,
+  EngineeringGraphNode,
   Command,
   PermissionRequest,
   QuestionRequest,
@@ -96,6 +97,9 @@ export const {
       todo: {
         [sessionID: string]: Todo[]
       }
+      graph: {
+        [sessionID: string]: EngineeringGraphNode[]
+      }
       message: {
         [sessionID: string]: Message[]
       }
@@ -134,6 +138,7 @@ export const {
       session_status: {},
       session_diff: {},
       todo: {},
+      graph: {},
       message: {},
       part: {},
       lsp: [],
@@ -264,6 +269,10 @@ export const {
 
         case "todo.updated":
           setStore("todo", event.properties.sessionID, event.properties.todos)
+          break
+
+        case "graph.updated":
+          setStore("graph", event.properties.sessionID, event.properties.nodes)
           break
 
         case "session.diff":
@@ -598,10 +607,11 @@ export const {
           const tracker = { messages: new Set<string>(), parts: new Set<string>() }
           hydratingSessions.set(sessionID, tracker)
           const task = (async () => {
-            const [session, messages, todo, diff] = await Promise.all([
+            const [session, messages, todo, graph, diff] = await Promise.all([
               sdk.client.session.get({ sessionID }, { throwOnError: true }),
               sdk.client.session.messages({ sessionID, limit: 100 }),
               sdk.client.session.todo({ sessionID }),
+              sdk.client.session.graph({ sessionID }),
               sdk.client.session.diff({ sessionID }),
             ])
             setStore(
@@ -610,6 +620,7 @@ export const {
                 if (match.found) draft.session[match.index] = session.data!
                 if (!match.found) draft.session.splice(match.index, 0, session.data!)
                 draft.todo[sessionID] = todo.data ?? []
+                draft.graph[sessionID] = graph.data ?? []
                 const currentMessages = draft.message[sessionID] ?? []
                 const infos = (messages.data ?? []).flatMap((message) => {
                   if (!tracker.messages.has(message.info.id)) return [message.info]

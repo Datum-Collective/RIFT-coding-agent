@@ -81,6 +81,7 @@ const layer = Layer.effect(
             `  Today's date: ${new Date().toDateString()}`,
             `</env>`,
           ].join("\n"),
+          "The user watches a live engineering graph of what you are building. On any multi-step build, call `graphwrite` early with the product as the root, features beneath it and their parts (API, database, frontend, tests) beneath those, then update it as each part's status, files, tests, decisions and evidence change.",
           references.length === 0
             ? undefined
             : [

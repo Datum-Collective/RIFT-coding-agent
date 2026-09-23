@@ -1,3 +1,5 @@
+import pkg from "../../package.json"
+
 declare global {
   const OPENCODE_VERSION: string
   const OPENCODE_CHANNEL: string
@@ -7,8 +9,9 @@ declare global {
 /**
  * The version of the OpenCode runtime this build is based on. Provider APIs, plugins and telemetry
  * care about this one, so it stays the upstream number even though RIFT ships its own releases.
+ * Source runs report the same number as a release: OpenCode's free tier rejects "local".
  */
-export const InstallationVersion = typeof OPENCODE_VERSION === "string" ? OPENCODE_VERSION : "local"
+export const InstallationVersion = typeof OPENCODE_VERSION === "string" ? OPENCODE_VERSION : pkg.version
 export const InstallationChannel = typeof OPENCODE_CHANNEL === "string" ? OPENCODE_CHANNEL : "local"
 export const InstallationLocal = InstallationChannel === "local"
 

@@ -1465,9 +1465,13 @@ const layer = Layer.effect(
               })
           yield* publish(false)
         }
-        // A UI change can typecheck and pass its tests while throwing on every render.
-        if (cfg.verify_browser_url) {
-          browser = yield* Effect.promise(() => Verify.checkBrowser(cfg.verify_browser_url!)).pipe(
+        // A UI change can typecheck and pass its tests while throwing on every render. With no
+        // URL configured, a page the turn built is opened directly, so static sites get checked too.
+        const page =
+          cfg.verify_browser_url ??
+          (yield* Effect.promise(() => Verify.editedPage(Verify.editedPaths(tools, ctx.directory))))
+        if (page) {
+          browser = yield* Effect.promise(() => Verify.checkBrowser(page)).pipe(
             Effect.catchCause(() => Effect.succeed(undefined)),
           )
           yield* publish(false)

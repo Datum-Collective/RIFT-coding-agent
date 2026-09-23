@@ -1,4 +1,6 @@
+import os from "os"
 import path from "path"
+import { pathToFileURL } from "url"
 import { spawn } from "child_process"
 import { Shell } from "@opencode-ai/core/shell"
 import { Process } from "@/util/process"
@@ -146,7 +148,9 @@ function tail(text: string, lines = 40) {
 /**
  * Picks the checks to run. Explicit commands win. Otherwise each edited file uses the nearest
  * directory (walking up to the project root) that has checks of its own, so a change in one
- * monorepo package runs that package's scripts. With no usable files it falls back to the root.
+ * monorepo package runs that package's scripts. Files outside the project are checked in their
+ * own directory only. With no usable files it falls back to the root, but never when every edit
+ * landed outside the project: that would run the wrong project's checks.
  */
 export async function resolve(dir: string, options: Options = {}): Promise<Check[]> {
   if (options.commands?.length) return options.commands.map((command) => ({ name: command, command }))
@@ -155,14 +159,26 @@ export async function resolve(dir: string, options: Options = {}): Promise<Check
   const detectIn = async (target: string) => {
     const hit = cache.get(target)
     if (hit) return hit
-    const found = await detect(target, dir)
+    const found = await detect(target, insideProject(dir, target) ? dir : target)
     cache.set(target, found)
     return found
   }
 
+  const files = options.files ?? []
   const targets = new Set<string>()
-  for (const file of options.files ?? []) {
+  for (const file of files) {
     let current = path.dirname(file)
+    if (!insideProject(dir, current)) {
+      const home = os.homedir()
+      while (current !== home && current !== path.dirname(current)) {
+        if ((await detectIn(current)).length > 0) {
+          targets.add(current)
+          break
+        }
+        current = path.dirname(current)
+      }
+      continue
+    }
     while (!path.relative(dir, current).startsWith("..")) {
       if ((await detectIn(current)).length > 0) {
         targets.add(current)
@@ -172,11 +188,11 @@ export async function resolve(dir: string, options: Options = {}): Promise<Check
       current = path.dirname(current)
     }
   }
-  if (targets.size === 0) return detectIn(dir)
+  if (targets.size === 0) return files.some((file) => insideProject(dir, file)) || files.length === 0 ? detectIn(dir) : []
 
   const checks: Check[] = []
   for (const target of [...targets].sort()) {
-    const where = path.relative(dir, target)
+    const where = insideProject(dir, target) ? path.relative(dir, target) : target
     for (const check of await detectIn(target)) checks.push({ ...check, dir: target, where })
   }
   return checks
@@ -275,35 +291,50 @@ export async function fileContents(dir: string, files: string[], max = 100_000) 
 
 /**
  * Diff of `files` for the model to read: tracked changes from `git diff HEAD`, plus untracked
- * files rendered as additions (git omits those). Read-only — it never touches the index.
+ * files rendered as additions (git omits those). Files with no git history to diff against,
+ * because they sit outside the project or the project isn't a repo, are shown as their current
+ * contents, so a site built in ~/Desktop can still be checked. Read-only: it never touches the index.
  */
 export async function turnDiff(dir: string, files: string[], max = 100_000) {
   const inside = files.filter((file) => insideProject(dir, file))
-  if (inside.length === 0) return ""
+  const outside = files.filter((file) => !insideProject(dir, file)).map((file) => path.resolve(dir, file))
   const relative = inside.map((file) => path.relative(dir, path.resolve(dir, file)))
 
-  const tracked = await Process.run(["git", "diff", "HEAD", "--", ...relative], { cwd: dir, nothrow: true })
-  if (tracked.code !== 0) return ""
+  const tracked =
+    relative.length > 0 ? await Process.run(["git", "diff", "HEAD", "--", ...relative], { cwd: dir, nothrow: true }) : undefined
+  const repo = tracked?.code === 0
 
-  const untracked = await Process.run(["git", "ls-files", "--others", "--exclude-standard", "--", ...relative], {
-    cwd: dir,
-    nothrow: true,
-  })
-  const added = untracked.code === 0 ? untracked.stdout.toString().split("\n").filter(Boolean) : []
+  const untracked = repo
+    ? await Process.run(["git", "ls-files", "--others", "--exclude-standard", "--", ...relative], {
+        cwd: dir,
+        nothrow: true,
+      })
+    : undefined
+  const added = untracked?.code === 0 ? untracked.stdout.toString().split("\n").filter(Boolean) : []
 
-  const sections = await Promise.all(
-    added.map(async (file) => {
-      const text = await read(path.resolve(dir, file))
-      if (text === undefined) return `--- new file: ${file} (unreadable) ---`
-      const body = text
-        .split("\n")
-        .map((line) => `+${line}`)
-        .join("\n")
-      return `--- new file: ${file} ---\n${body}`
-    }),
+  const sections = await Promise.all([
+    ...added.map(async (file) => (await asAddition(path.resolve(dir, file), `new file: ${file}`)) ?? `--- new file: ${file} (unreadable) ---`),
+    ...[...(repo ? [] : relative), ...outside].map((file) =>
+      asAddition(path.resolve(dir, file), `current contents, no git history: ${file}`),
+    ),
+  ])
+
+  return truncate(
+    [tracked?.code === 0 ? tracked.stdout.toString().trim() : "", ...sections]
+      .filter((item): item is string => !!item)
+      .join("\n\n"),
+    max,
   )
+}
 
-  return truncate([tracked.stdout.toString().trim(), ...sections].filter(Boolean).join("\n\n"), max)
+async function asAddition(file: string, label: string) {
+  const text = await read(file)
+  if (text === undefined) return undefined
+  const body = text
+    .split("\n")
+    .map((line) => `+${line}`)
+    .join("\n")
+  return `--- ${label} ---\n${body}`
 }
 
 /** Uncommitted changes to `files` relative to HEAD. Empty outside a git repo or when nothing changed. */
@@ -392,6 +423,17 @@ function describe(result: CheckResult) {
  * Loads a page and reports what actually rendered. A UI change that typechecks and passes its
  * tests can still throw on every render, and only the console says so.
  */
+/**
+ * A page this turn built, for the browser check when no URL is configured: `index.html` first,
+ * else the first edited HTML file. Lets a plain static site be verified with nothing set up.
+ */
+export async function editedPage(files: string[]) {
+  const pages = files.filter((file) => /\.html?$/i.test(file))
+  const page = pages.find((file) => path.basename(file).toLowerCase() === "index.html") ?? pages[0]
+  if (!page || !(await exists(page))) return undefined
+  return pathToFileURL(page).href
+}
+
 export async function checkBrowser(url: string, timeoutMs = 30_000): Promise<BrowserCheck> {
   if (!find()) return { url, status: "not_run", reason: "no browser found", errors: [] }
   let session: BrowserSession | undefined
@@ -400,13 +442,14 @@ export async function checkBrowser(url: string, timeoutMs = 30_000): Promise<Bro
     const state = await session.navigate(url, timeoutMs)
     const errors = state.console.filter((entry) => entry.level === "error").map((entry) => entry.text)
     // No response at all means the request never reached a server — the browser is showing its
-    // own error page. A clean console there must not read as a page that works.
-    if (state.status === undefined) {
+    // own error page. A clean console there must not read as a page that works. Local files
+    // never get an HTTP response, and editedPage only offers files that exist.
+    if (state.status === undefined && !url.startsWith("file://")) {
       return { url, status: "failed", reason: "the page did not load (no HTTP response)", title: state.title, errors }
     }
     return {
       url,
-      status: errors.length > 0 || state.status >= 400 ? "failed" : "passed",
+      status: errors.length > 0 || (state.status ?? 0) >= 400 ? "failed" : "passed",
       httpStatus: state.status,
       title: state.title,
       errors,

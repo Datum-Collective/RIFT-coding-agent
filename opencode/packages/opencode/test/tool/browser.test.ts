@@ -1,4 +1,8 @@
 import { afterAll, beforeAll, describe, expect } from "bun:test"
+import fs from "fs/promises"
+import os from "os"
+import path from "path"
+import { pathToFileURL } from "url"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Effect } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -67,11 +71,12 @@ describe("tool.browser", () => {
     ),
   )
 
-  it.effect("rejects a url that is not http or https", () =>
+  it.effect("rejects a url that is not http, https or file", () =>
     provideTmpdirInstance(() =>
       Effect.gen(function* () {
-        const exit = yield* Effect.exit(exec({ action: "open", url: "file:///etc/passwd" }))
-        expect(exit._tag).toBe("Failure")
+        for (const url of ["ftp://example.com", "javascript:alert(1)", "example.com"]) {
+          expect((yield* Effect.exit(exec({ action: "open", url })))._tag).toBe("Failure")
+        }
       }),
     ),
   )
@@ -98,6 +103,29 @@ describe("tool.browser", () => {
           // Driving a page reaches the network, so it goes through the same permission as
           // opening a URL rather than quietly acquiring a new capability.
           expect(asked).toEqual([{ permission: "browser_open", patterns: [`${base}/`] }])
+        }),
+      ),
+    )
+
+    it.effect("opens a local file page, asking the same permissions as reading that file", () =>
+      provideTmpdirInstance((dir) =>
+        Effect.gen(function* () {
+          const inside = path.join(dir, "index.html")
+          yield* Effect.promise(() => Bun.write(inside, "<!doctype html><title>Local site</title><p>hi</p>"))
+          asked.length = 0
+          const result = yield* exec({ action: "open", url: pathToFileURL(inside).href })
+          expect(result.output).toContain("Title: Local site")
+          expect(asked.map((item) => item.permission)).toEqual(["read"])
+          expect(asked[0].patterns[0].endsWith("index.html")).toBe(true)
+
+          const site = yield* Effect.promise(() => fs.mkdtemp(path.join(os.tmpdir(), "browser-site-")))
+          const outside = path.join(site, "index.html")
+          yield* Effect.promise(() => Bun.write(outside, "<!doctype html><title>Desktop site</title>"))
+          asked.length = 0
+          expect((yield* exec({ action: "open", url: pathToFileURL(outside).href })).output).toContain(
+            "Title: Desktop site",
+          )
+          expect(asked.map((item) => item.permission)).toEqual(["external_directory", "read"])
         }),
       ),
     )

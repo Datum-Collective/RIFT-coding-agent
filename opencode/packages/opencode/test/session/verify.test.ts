@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
+import { pathToFileURL } from "url"
 import { Verify } from "../../src/session/verify"
 
 async function project(files: Record<string, string>) {
@@ -108,16 +109,25 @@ describe("verify", () => {
       expect(checks.map((c) => c.command)).toEqual(["bun run test"])
     })
 
-    test("falls back to the root for root files, unknown files and files outside the project", async () => {
+    test("falls back to the root for root files and unknown files inside the project", async () => {
       const dir = await project({ "package.json": pkg({ test: "root-test" }) })
-      for (const file of [
-        path.join(dir, "index.ts"),
-        path.join(dir, "nope/deep/file.ts"),
-        path.join(os.tmpdir(), "elsewhere.ts"),
-      ]) {
+      for (const file of [path.join(dir, "index.ts"), path.join(dir, "nope/deep/file.ts")]) {
         expect((await Verify.resolve(dir, { files: [file] })).map((c) => c.command)).toEqual(["npm run test"])
       }
       expect((await Verify.resolve(dir)).map((c) => c.command)).toEqual(["npm run test"])
+    })
+
+    test("never runs the project's checks for edits that all landed outside it", async () => {
+      const dir = await project({ "package.json": pkg({ test: "root-test" }) })
+      const bare = await project({ "index.html": "" })
+      expect(await Verify.resolve(dir, { files: [path.join(bare, "index.html")] })).toEqual([])
+    })
+
+    test("checks an outside folder in place when it has checks of its own", async () => {
+      const dir = await project({ "package.json": pkg({ test: "root-test" }) })
+      const site = await project({ "package.json": pkg({ typecheck: "tsc" }), "src/app.ts": "" })
+      const checks = await Verify.resolve(dir, { files: [path.join(site, "src/app.ts")] })
+      expect(checks.map((c) => [c.where, c.dir, c.command])).toEqual([[site, site, "npm run typecheck"]])
     })
 
     test("explicit commands ignore edited files and always run at the root", async () => {
@@ -277,12 +287,18 @@ describe("verify", () => {
       expect(diff).toContain("+export const b = 3")
     })
 
-    test("turnDiff is empty outside a git repo and ignores paths outside the project", async () => {
+    test("turnDiff shows current contents for files with no git history to diff against", async () => {
       const bare = await project({ "a.ts": "x" })
-      expect(await Verify.turnDiff(bare, ["a.ts"])).toBe("")
+      expect(await Verify.turnDiff(bare, ["a.ts"])).toBe("--- current contents, no git history: a.ts ---\n+x")
+
       const dir = await project({ "a.ts": "x" })
       gitInit(dir)
-      expect(await Verify.turnDiff(dir, ["../outside.ts"])).toBe("")
+      const site = await project({ "index.html": "<h1>hi</h1>" })
+      const file = path.join(site, "index.html")
+      expect(await Verify.turnDiff(dir, [file])).toBe(
+        `--- current contents, no git history: ${file} ---\n+<h1>hi</h1>`,
+      )
+      expect(await Verify.turnDiff(dir, [path.join(site, "missing.html")])).toBe("")
     })
 
     test("parseClaims reads verdicts and rejects unusable replies", () => {
@@ -378,6 +394,31 @@ describe("browser check", () => {
     } finally {
       server.stop(true)
     }
+  }, 60_000)
+
+  test("picks a page the turn built, index.html first, and only if it exists", async () => {
+    const site = await project({ "about.html": "", "index.html": "", "app.js": "" })
+    const url = (file: string) => pathToFileURL(path.join(site, file)).href
+    expect(await Verify.editedPage([path.join(site, "about.html"), path.join(site, "index.html")])).toBe(
+      url("index.html"),
+    )
+    expect(await Verify.editedPage([path.join(site, "about.html"), path.join(site, "app.js")])).toBe(url("about.html"))
+    expect(await Verify.editedPage([path.join(site, "app.js")])).toBeUndefined()
+    expect(await Verify.editedPage([path.join(site, "gone.html")])).toBeUndefined()
+  })
+
+  test("checks a local page with no server, and still catches console errors", async () => {
+    const site = await project({
+      "index.html": "<!doctype html><title>Static site</title><p>hi</p>",
+      "broken.html": "<!doctype html><title>Broken</title><script>boom()</script>",
+    })
+    const clean = await Verify.checkBrowser(pathToFileURL(path.join(site, "index.html")).href)
+    if (clean.status === "not_run") return
+    expect(clean.status).toBe("passed")
+    expect(clean.title).toBe("Static site")
+    const broken = await Verify.checkBrowser(pathToFileURL(path.join(site, "broken.html")).href)
+    expect(broken.status).toBe("failed")
+    expect(broken.errors.join(" ")).toMatch(/boom|not defined/)
   }, 60_000)
 
   test("an unreachable page never passes, even though its console is clean", async () => {

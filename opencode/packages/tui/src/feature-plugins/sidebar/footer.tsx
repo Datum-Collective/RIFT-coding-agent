@@ -1,3 +1,4 @@
+import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
 import { createMemo, Show } from "solid-js"
@@ -6,6 +7,11 @@ import { useTuiPaths } from "../../context/runtime"
 import { RiftVersion } from "@opencode-ai/core/installation/version"
 
 const id = "internal:sidebar-footer"
+
+const money = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+})
 
 function View(props: { api: TuiPluginApi; sessionID: string }) {
   const paths = useTuiPaths()
@@ -17,6 +23,15 @@ function View(props: { api: TuiPluginApi; sessionID: string }) {
   )
   const done = createMemo(() => props.api.kv.get("dismissed_getting_started", false))
   const show = createMemo(() => !has() && !done())
+  const cost = createMemo(() => props.api.state.session.get(props.sessionID)?.cost ?? 0)
+  const tokens = createMemo(() => {
+    const messages = props.api.state.session.messages(props.sessionID)
+    const last = messages.findLast(
+      (item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0,
+    )
+    if (!last) return 0
+    return last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
+  })
   const path = createMemo(() => {
     const session = props.api.state.session.get(props.sessionID)
     const dir = session?.directory || props.api.state.path.directory || paths.cwd
@@ -69,6 +84,11 @@ function View(props: { api: TuiPluginApi; sessionID: string }) {
         <span style={{ fg: theme().textMuted }}>{path().parent}/</span>
         <span style={{ fg: theme().text }}>{path().name}</span>
       </text>
+      <Show when={tokens() > 0}>
+        <text fg={theme().textMuted}>
+          {tokens().toLocaleString()} tokens · {money.format(cost())}
+        </text>
+      </Show>
       <text fg={theme().textMuted}>
         <span style={{ fg: theme().success }}>•</span>{" "}
         <span style={{ fg: theme().text }}>

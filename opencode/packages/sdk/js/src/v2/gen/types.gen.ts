@@ -68,6 +68,7 @@ export type Event =
   | EventQuestionV2Replied
   | EventQuestionV2Rejected
   | EventTodoUpdated
+  | EventGraphUpdated
   | EventLspUpdated
   | EventPermissionAsked
   | EventPermissionReplied
@@ -668,6 +669,43 @@ export type Todo = {
    * Priority level of the task: high, medium, low
    */
   priority: string
+}
+
+export type EngineeringGraphNode = {
+  /**
+   * Stable id for this node, e.g. 'auth.api'
+   */
+  id: string
+  parent_id?: string
+  /**
+   * Short human-readable name for this node
+   */
+  title: string
+  status: "not_started" | "in_progress" | "blocked" | "testing" | "done" | "failed"
+  /**
+   * Agent that owns this node
+   */
+  owner: string
+  /**
+   * Ids of nodes this node depends on
+   */
+  dependencies: Array<string>
+  /**
+   * Files relevant to this node
+   */
+  files: Array<string>
+  /**
+   * Tests relevant to this node
+   */
+  tests: Array<string>
+  /**
+   * Key decisions made for this node
+   */
+  decisions: Array<string>
+  /**
+   * Evidence this node's work is correct
+   */
+  evidence: Array<string>
 }
 
 export type SessionStatus =
@@ -1364,6 +1402,14 @@ export type GlobalEvent = {
         properties: {
           sessionID: string
           todos: Array<Todo>
+        }
+      }
+    | {
+        id: string
+        type: "graph.updated"
+        properties: {
+          sessionID: string
+          nodes: Array<EngineeringGraphNode>
         }
       }
     | {
@@ -2944,6 +2990,7 @@ export type V2Event =
   | QuestionV2Replied
   | QuestionV2Rejected
   | TodoUpdated
+  | GraphUpdated
   | LspUpdated
   | PermissionAsked
   | PermissionReplied
@@ -5704,6 +5751,24 @@ export type TodoUpdated = {
   }
 }
 
+export type GraphUpdated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "graph.updated"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    nodes: Array<EngineeringGraphNode>
+  }
+}
+
 export type LspUpdated = {
   id: string
   metadata?: {
@@ -6873,6 +6938,15 @@ export type EventTodoUpdated = {
   properties: {
     sessionID: string
     todos: Array<Todo>
+  }
+}
+
+export type EventGraphUpdated = {
+  id: string
+  type: "graph.updated"
+  properties: {
+    sessionID: string
+    nodes: Array<EngineeringGraphNode>
   }
 }
 
@@ -9748,6 +9822,40 @@ export type SessionTodoResponses = {
 }
 
 export type SessionTodoResponse = SessionTodoResponses[keyof SessionTodoResponses]
+
+export type SessionGraphData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/graph"
+}
+
+export type SessionGraphErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionGraphError = SessionGraphErrors[keyof SessionGraphErrors]
+
+export type SessionGraphResponses = {
+  /**
+   * Engineering graph nodes
+   */
+  200: Array<EngineeringGraphNode>
+}
+
+export type SessionGraphResponse = SessionGraphResponses[keyof SessionGraphResponses]
 
 export type SessionDiffData = {
   body?: never

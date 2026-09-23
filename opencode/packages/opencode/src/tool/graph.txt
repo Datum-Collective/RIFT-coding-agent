@@ -1,0 +1,22 @@
+Model the software being built as a live engineering graph, shown to the user in place of a token-usage panel.
+
+## Shape
+- Exactly one root node with no `parent_id` — the product itself.
+- Feature nodes as children of the root (e.g. "Authentication", "Dashboard", "Deployment").
+- Subtask nodes as children of each feature (e.g. "API", "Database", "Frontend", "Tests").
+- Deeper nesting is fine when it reflects real structure.
+
+## When to use
+Use proactively on any multi-step engineering task, alongside (not instead of) todos:
+- Create the initial tree as soon as the shape of the work is known.
+- Update a node's `status` as work on it starts, blocks, or finishes.
+- Keep `files`, `tests`, `decisions`, and `evidence` current on the node they belong to as you go.
+- Always pass the full current node list — this call replaces the whole graph.
+
+## Fields per node
+- `status`: not_started, in_progress, blocked, testing, done, failed
+- `dependencies`: ids of other nodes this node is blocked on
+- `files`: files relevant to this node
+- `tests`: tests relevant to this node
+- `decisions`: key decisions made while working on this node
+- `evidence`: evidence the node's work is correct (test output, verification notes, etc.)
