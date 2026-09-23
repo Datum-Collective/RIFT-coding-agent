@@ -1,10 +1,13 @@
 /**
- * The engineering graph shown when the agent hasn't declared one with `graphwrite`: the task itself
- * as the root, its plan steps as children, with the files, checks and results RIFT already tracks.
- * The panel should never sit empty just because a model didn't call a tool.
+ * Engineering graph data for the side panel.
+ *
+ * `deriveGraph` builds a graph when the agent hasn't declared one with `graphwrite`: the task as
+ * the root and its plan steps beneath it, so the panel never sits empty just because a model
+ * didn't call a tool. `evidenceFor` attaches what RIFT itself verified to each node. Evidence only
+ * ever comes from RIFT's verification record, never from anything the agent wrote.
  */
 import type { EngineeringGraphNode } from "@opencode-ai/sdk/v2"
-import type { Signal, Task, TaskState, VerifyCheck } from "./task"
+import type { Evidence, Signal, Task, TaskState, Verification } from "./task"
 
 const ROOT = "task"
 
@@ -28,7 +31,6 @@ const FROM_STATE: Record<TaskState, EngineeringGraphNode["status"]> = {
 
 export function deriveGraph(task: Task, owner: string): EngineeringGraphNode[] {
   if (task.plan.steps.length === 0 && task.changes.files.length === 0 && task.verification.checks.length === 0) return []
-  const checks = task.verification.checks
   const root: EngineeringGraphNode = {
     id: ROOT,
     title: task.title || "This task",
@@ -36,9 +38,8 @@ export function deriveGraph(task: Task, owner: string): EngineeringGraphNode[] {
     owner,
     dependencies: [],
     files: task.changes.files.map((item) => item.file),
-    tests: checks.map((check) => check.command),
+    checks: [],
     decisions: [],
-    evidence: checks.filter((check) => check.status !== "queued").map(evidence),
   }
   const steps = task.plan.steps.map(
     (step): EngineeringGraphNode => ({
@@ -49,15 +50,64 @@ export function deriveGraph(task: Task, owner: string): EngineeringGraphNode[] {
       owner,
       dependencies: [],
       files: step.files,
-      tests: [],
+      checks: [],
       decisions: [],
-      evidence: [],
     }),
   )
   return [root, ...steps]
 }
 
-function evidence(check: VerifyCheck) {
-  const where = check.where ? ` (${check.where})` : ""
-  return `${check.command}${where}: ${check.status.replace("_", " ")}`
+/**
+ * The evidence rows to show under each node: RIFT's records for that node, then any check the
+ * node declared that hasn't been run yet. Root nodes also carry the project-wide checks.
+ */
+export function evidenceFor(nodes: readonly EngineeringGraphNode[], verification: Verification) {
+  const rows = new Map<string, Evidence[]>()
+  for (const node of nodes) {
+    const recorded = (verification.evidence ?? []).filter((item) => item.node === node.id)
+    const declared = node.checks
+      .filter((check) => !recorded.some((item) => item.label === (check.label ?? LABEL[check.kind])))
+      .map(
+        (check): Evidence => ({
+          node: node.id,
+          label: check.label ?? LABEL[check.kind],
+          status: "not_run",
+          detail: "not run yet",
+        }),
+      )
+    rows.set(node.id, [...(node.parent_id ? [] : project(node.id, verification)), ...recorded, ...declared])
+  }
+  return rows
+}
+
+function project(node: string, verification: Verification): Evidence[] {
+  const checks = verification.checks.map(
+    (check): Evidence => ({
+      node,
+      label: check.command,
+      status: check.status === "timed_out" ? "failed" : check.status,
+      detail: [check.where, check.status === "timed_out" ? "timed out" : check.reason].filter(Boolean).join(" · "),
+    }),
+  )
+  const browser = verification.browser
+  if (!browser) return checks
+  const detail =
+    browser.status === "passed"
+      ? `${browser.url} rendered`
+      : (browser.reason ?? `${browser.url}: ${browser.errors[0] ?? `HTTP ${browser.httpStatus}`}`)
+  return [...checks, { node, label: "Browser test", status: browser.status, detail }]
+}
+
+// Mirrors the server's labels so a declared check lines up with its recorded result.
+const LABEL: Record<EngineeringGraphNode["checks"][number]["kind"], string> = {
+  typecheck: "Type check",
+  unit: "Unit tests",
+  integration: "Integration tests",
+  browser: "Browser test",
+  http: "HTTP check",
+  screenshot: "Screenshot",
+  static: "Static analysis",
+  security: "Security check",
+  load: "Load test",
+  production: "Production check",
 }

@@ -44,9 +44,8 @@ const node = (id: string, overrides: Partial<Omit<EngineeringGraph.Info, "owner"
   status: "not_started" as const,
   dependencies: [],
   files: [],
-  tests: [],
+  checks: [],
   decisions: [],
-  evidence: [],
   ...overrides,
 })
 
@@ -68,11 +67,18 @@ describe("EngineeringGraph", () => {
       yield* graph.update({
         sessionID,
         owner: "build",
-        nodes: [node("product"), node("auth", { parent_id: "product", status: "in_progress", dependencies: [] })],
+        nodes: [node("product"), node("auth", {
+            parent_id: "product",
+            status: "in_progress",
+            checks: [{ kind: "unit", command: "bun test auth" }],
+          })],
       })
       expect(yield* graph.get(sessionID)).toEqual([
         { ...node("product"), owner: "build" },
-        { ...node("auth", { parent_id: "product", status: "in_progress" }), owner: "build" },
+        {
+          ...node("auth", { parent_id: "product", status: "in_progress", checks: [{ kind: "unit", command: "bun test auth" }] }),
+          owner: "build",
+        },
       ])
       expect(
         (
@@ -102,7 +108,10 @@ describe("EngineeringGraph", () => {
           sessionID,
           nodes: [
             { ...node("product"), owner: "build" },
-            { ...node("auth", { parent_id: "product", status: "in_progress" }), owner: "build" },
+            {
+          ...node("auth", { parent_id: "product", status: "in_progress", checks: [{ kind: "unit", command: "bun test auth" }] }),
+          owner: "build",
+        },
           ],
         },
         { sessionID, nodes: [{ ...node("product", { status: "done" }), owner: "subagent-auth" }] },

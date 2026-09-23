@@ -2,9 +2,9 @@
  * The side panel: a live graph of the software being built, not the conversation about it.
  *
  * Every node the agent declares via `graphwrite` (product → features → subtasks) shows up here
- * with its status, owning agent, and a compact readout of what backs it up: dependencies, files,
- * tests, decisions, evidence. This replaces the old token/cost readout, which now lives as a
- * single line in the sidebar footer.
+ * with its status and owning agent, and under it the evidence RIFT gathered itself: every check
+ * shown as passed, failed or not run, with the reason. The agent never writes evidence. This
+ * replaces the old token/cost readout, which now lives as a single line in the sidebar footer.
  */
 import type { TuiPlugin, TuiPluginApi, TuiSidebarGraphItem } from "@opencode-ai/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
@@ -12,8 +12,8 @@ import { createMemo, For, Show } from "solid-js"
 import { useTheme } from "../../context/theme"
 import { Row, shortenPath } from "../../component/control/primitives"
 import { useTask } from "../../component/control/use-task"
-import { deriveGraph } from "../../util/engineering-graph"
-import type { Signal } from "../../util/task"
+import { deriveGraph, evidenceFor } from "../../util/engineering-graph"
+import type { Evidence, Signal } from "../../util/task"
 
 const id = "internal:sidebar-engineering-graph"
 
@@ -73,7 +73,29 @@ function List(props: { label: string; items: readonly string[] }) {
   )
 }
 
-function NodeRow(props: { node: TreeNode; byID: Map<string, TuiSidebarGraphItem> }) {
+const EVIDENCE_SIGNAL: Record<Evidence["status"], Signal> = {
+  passed: "done",
+  failed: "failed",
+  not_run: "pending",
+  queued: "active",
+}
+
+/** One line of evidence: ✓ passed, ✗ failed, ○ not run, ● running. The detail says why. */
+function EvidenceRow(props: { item: Evidence; indent: number }) {
+  const { theme } = useTheme()
+  return (
+    <Row signal={EVIDENCE_SIGNAL[props.item.status]} indent={props.indent}>
+      <text fg={props.item.status === "failed" ? theme.text : theme.textMuted} wrapMode="none">
+        {props.item.label}
+        <Show when={props.item.detail}>
+          <span style={{ fg: theme.textMuted }}> · {props.item.detail}</span>
+        </Show>
+      </text>
+    </Row>
+  )
+}
+
+function NodeRow(props: { node: TreeNode; byID: Map<string, TuiSidebarGraphItem>; evidence: readonly Evidence[] }) {
   const { theme } = useTheme()
   const node = () => props.node
   const unmetDeps = createMemo(() =>
@@ -96,9 +118,8 @@ function NodeRow(props: { node: TreeNode; byID: Map<string, TuiSidebarGraphItem>
           <text fg={theme.warning}>waiting on: {unmetDeps().map((dep) => dep.title).join(", ")}</text>
         </Show>
         <List label="files" items={node().files.map((file) => shortenPath(file, 30))} />
-        <List label="tests" items={node().tests} />
         <List label="decisions" items={node().decisions} />
-        <List label="evidence" items={node().evidence} />
+        <For each={props.evidence}>{(item) => <EvidenceRow item={item} indent={0} />}</For>
       </box>
     </Row>
   )
@@ -111,11 +132,18 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     return last && "agent" in last && typeof last.agent === "string" ? last.agent : "agent"
   })
   const declared = createMemo(() => props.api.state.session.graph(props.session_id))
-  return <GraphPanel nodes={declared().length > 0 ? declared() : deriveGraph(task(), owner())} />
+  const nodes = createMemo(() => (declared().length > 0 ? declared() : deriveGraph(task(), owner())))
+  return <GraphPanel nodes={nodes()} evidence={evidenceFor(nodes(), task().verification)} />
 }
 
-/** The graph for a list of nodes. Takes the nodes as data so it can be rendered without a live session. */
-export function GraphPanel(props: { nodes: readonly TuiSidebarGraphItem[] }) {
+/**
+ * The graph for a list of nodes, with the evidence RIFT gathered under each one. Takes both as
+ * data so it can be rendered without a live session.
+ */
+export function GraphPanel(props: {
+  nodes: readonly TuiSidebarGraphItem[]
+  evidence?: ReadonlyMap<string, readonly Evidence[]>
+}) {
   const { theme } = useTheme()
   const tree = createMemo(() => buildTree(props.nodes))
   const rows = createMemo(() => flatten(tree()))
@@ -137,7 +165,9 @@ export function GraphPanel(props: { nodes: readonly TuiSidebarGraphItem[] }) {
         <text fg={theme.text}>
           <b>Engineering graph</b>
         </text>
-        <For each={rows()}>{(node) => <NodeRow node={node} byID={byID()} />}</For>
+        <For each={rows()}>
+          {(node) => <NodeRow node={node} byID={byID()} evidence={props.evidence?.get(node.id) ?? []} />}
+        </For>
       </box>
     </Show>
   )
