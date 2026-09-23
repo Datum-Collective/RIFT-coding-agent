@@ -774,11 +774,13 @@ it.instance(
 
       yield* prompt.loop({ sessionID: chat.id })
 
-      // planner plan, executor tool turn, executor text turn, planner review.
+      // planner plan, executor tool turn, executor text turn, planner review, then the planner
+      // comparing the summary with the files (this project isn't a git repo, so it reads them).
       expect((yield* llm.hits).map((hit) => hit.body.model)).toEqual([
         "planner-model",
         "executor-model",
         "executor-model",
+        "planner-model",
         "planner-model",
       ])
 

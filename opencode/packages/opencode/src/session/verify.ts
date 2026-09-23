@@ -1,5 +1,6 @@
 import os from "os"
 import path from "path"
+import { pathToFileURL } from "url"
 import { spawn } from "child_process"
 import { Shell } from "@opencode-ai/core/shell"
 import { Process } from "@/util/process"
@@ -422,6 +423,17 @@ function describe(result: CheckResult) {
  * Loads a page and reports what actually rendered. A UI change that typechecks and passes its
  * tests can still throw on every render, and only the console says so.
  */
+/**
+ * A page this turn built, for the browser check when no URL is configured: `index.html` first,
+ * else the first edited HTML file. Lets a plain static site be verified with nothing set up.
+ */
+export async function editedPage(files: string[]) {
+  const pages = files.filter((file) => /\.html?$/i.test(file))
+  const page = pages.find((file) => path.basename(file).toLowerCase() === "index.html") ?? pages[0]
+  if (!page || !(await exists(page))) return undefined
+  return pathToFileURL(page).href
+}
+
 export async function checkBrowser(url: string, timeoutMs = 30_000): Promise<BrowserCheck> {
   if (!find()) return { url, status: "not_run", reason: "no browser found", errors: [] }
   let session: BrowserSession | undefined
@@ -430,13 +442,14 @@ export async function checkBrowser(url: string, timeoutMs = 30_000): Promise<Bro
     const state = await session.navigate(url, timeoutMs)
     const errors = state.console.filter((entry) => entry.level === "error").map((entry) => entry.text)
     // No response at all means the request never reached a server — the browser is showing its
-    // own error page. A clean console there must not read as a page that works.
-    if (state.status === undefined) {
+    // own error page. A clean console there must not read as a page that works. Local files
+    // never get an HTTP response, and editedPage only offers files that exist.
+    if (state.status === undefined && !url.startsWith("file://")) {
       return { url, status: "failed", reason: "the page did not load (no HTTP response)", title: state.title, errors }
     }
     return {
       url,
-      status: errors.length > 0 || state.status >= 400 ? "failed" : "passed",
+      status: errors.length > 0 || (state.status ?? 0) >= 400 ? "failed" : "passed",
       httpStatus: state.status,
       title: state.title,
       errors,

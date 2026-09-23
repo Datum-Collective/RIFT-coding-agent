@@ -5,7 +5,7 @@ Use this to check your own work on anything with a UI. A page that "looks fine" 
 throwing on every render, and only the console says so.
 
 Actions:
-- open:       load a url. Returns the title, the HTTP status and any console errors.
+- open:       load a url (http(s)://, or file:// for a local page). Returns the title, the HTTP status and any console errors.
 - read:       the current url, title and console errors, without reloading.
 - text:       the visible text of the page, or of one CSS selector.
 - click:      click the first element matching a CSS selector.

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
+import { pathToFileURL } from "url"
 import { Verify } from "../../src/session/verify"
 
 async function project(files: Record<string, string>) {
@@ -393,6 +394,31 @@ describe("browser check", () => {
     } finally {
       server.stop(true)
     }
+  }, 60_000)
+
+  test("picks a page the turn built, index.html first, and only if it exists", async () => {
+    const site = await project({ "about.html": "", "index.html": "", "app.js": "" })
+    const url = (file: string) => pathToFileURL(path.join(site, file)).href
+    expect(await Verify.editedPage([path.join(site, "about.html"), path.join(site, "index.html")])).toBe(
+      url("index.html"),
+    )
+    expect(await Verify.editedPage([path.join(site, "about.html"), path.join(site, "app.js")])).toBe(url("about.html"))
+    expect(await Verify.editedPage([path.join(site, "app.js")])).toBeUndefined()
+    expect(await Verify.editedPage([path.join(site, "gone.html")])).toBeUndefined()
+  })
+
+  test("checks a local page with no server, and still catches console errors", async () => {
+    const site = await project({
+      "index.html": "<!doctype html><title>Static site</title><p>hi</p>",
+      "broken.html": "<!doctype html><title>Broken</title><script>boom()</script>",
+    })
+    const clean = await Verify.checkBrowser(pathToFileURL(path.join(site, "index.html")).href)
+    if (clean.status === "not_run") return
+    expect(clean.status).toBe("passed")
+    expect(clean.title).toBe("Static site")
+    const broken = await Verify.checkBrowser(pathToFileURL(path.join(site, "broken.html")).href)
+    expect(broken.status).toBe("failed")
+    expect(broken.errors.join(" ")).toMatch(/boom|not defined/)
   }, 60_000)
 
   test("an unreachable page never passes, even though its console is clean", async () => {

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { SessionEvent } from "@opencode-ai/core/session/event"
 import { EventManifest as SchemaEventManifest } from "@opencode-ai/schema/event-manifest"
 import { Todo } from "@/session/todo"
+import { EngineeringGraph } from "@/session/engineering-graph"
 import { EventManifest } from "@/event-manifest"
 
 describe("public event manifest", () => {
@@ -12,6 +13,7 @@ describe("public event manifest", () => {
     expect(EventManifest.Latest.size).toBe(89)
     expect(EventManifest.Latest.get("session.next.step.ended")).toBe(SessionEvent.Step.Ended)
     expect(EventManifest.Latest.get("todo.updated")).toBe(Todo.Event.Updated)
+    expect(EventManifest.Latest.get("graph.updated")).toBe(EngineeringGraph.Event.Updated)
     expect(EventManifest.Latest.has("ide.installed")).toBe(false)
     expect(EventManifest.Latest.has("server.connected")).toBe(true)
     expect(EventManifest.Latest.has("global.disposed")).toBe(true)
