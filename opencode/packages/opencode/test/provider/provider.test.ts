@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { mkdir, unlink } from "fs/promises"
 import path from "path"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
@@ -23,6 +23,7 @@ import { InstanceStore } from "@/project/instance-store"
 import { testEffect } from "../lib/effect"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
+import { ProviderTest } from "../fake/provider"
 
 const originalEnv = new Map<string, string | undefined>()
 
@@ -345,6 +346,56 @@ test("parseModel handles model IDs with slashes", () => {
   const result = Provider.parseModel("openrouter/anthropic/claude-3-opus")
   expect(String(result.providerID)).toBe("openrouter")
   expect(String(result.modelID)).toBe("anthropic/claude-3-opus")
+})
+
+describe("Provider.supportsStaticToolChoice", () => {
+  test("is false for zen Responses models so Vibe Mode omits tool_choice", () => {
+    const model = ProviderTest.model({
+      providerID: ProviderV2.ID.make("opencode"),
+      api: {
+        id: ModelV2.ID.make("muse-spark-1.3-contributor-free"),
+        url: "https://opencode.ai/zen/v1",
+        npm: "@ai-sdk/openai",
+      },
+    })
+    expect(Provider.supportsStaticToolChoice(model)).toBe(false)
+  })
+
+  test("is true for zen Chat Completions models", () => {
+    const model = ProviderTest.model({
+      providerID: ProviderV2.ID.make("opencode"),
+      api: {
+        id: ModelV2.ID.make("big-pickle"),
+        url: "https://opencode.ai/zen/v1",
+        npm: "@ai-sdk/openai-compatible",
+      },
+    })
+    expect(Provider.supportsStaticToolChoice(model)).toBe(true)
+  })
+
+  test("is true for native OpenAI Responses models", () => {
+    const model = ProviderTest.model({
+      providerID: ProviderV2.ID.make("openai"),
+      api: {
+        id: ModelV2.ID.make("gpt-5.2"),
+        url: "https://api.openai.com/v1",
+        npm: "@ai-sdk/openai",
+      },
+    })
+    expect(Provider.supportsStaticToolChoice(model)).toBe(true)
+  })
+
+  test("is true for other SDKs", () => {
+    const model = ProviderTest.model({
+      providerID: ProviderV2.ID.make("anthropic"),
+      api: {
+        id: ModelV2.ID.make("claude-sonnet-4"),
+        url: "https://api.anthropic.com/v1",
+        npm: "@ai-sdk/anthropic",
+      },
+    })
+    expect(Provider.supportsStaticToolChoice(model)).toBe(true)
+  })
 })
 
 it.instance("defaultModel returns first available model when no config set", () =>

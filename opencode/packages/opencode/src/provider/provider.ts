@@ -1342,6 +1342,18 @@ export function fromModelsDevProvider(provider: ModelsDev.Provider): Info {
   }
 }
 
+// Whether the model's API transport accepts static `tool_choice` modes
+// ("none"/"required" or a named function). The opencode zen gateway serves
+// some models through the OpenAI Responses transport (npm "@ai-sdk/openai"),
+// which currently accepts only `tool_choice: "auto"` and rejects everything
+// else. The Chat Completions transport used by the same gateway, and native
+// OpenAI Responses, accept the full set. Callers that intend to forbid tool
+// calls must pass no tool choice (the gateway's default) on the restricted
+// transport instead.
+export function supportsStaticToolChoice(model: Model): boolean {
+  return !(model.providerID === "opencode" && model.api.npm === "@ai-sdk/openai")
+}
+
 function modeOptions(model: Model, body: Record<string, unknown> | undefined) {
   if (!body) return model.options
   const options = Object.fromEntries(

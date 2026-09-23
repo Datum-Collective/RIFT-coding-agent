@@ -1350,7 +1350,7 @@ const layer = Layer.effect(
             },
           ],
           tools: yield* resolveVibeTools({ agent, model, session: input.session }),
-          toolChoice: "none",
+          toolChoice: Provider.supportsStaticToolChoice(model) ? "none" : undefined,
           retries: 2,
         })
         .pipe(
@@ -1553,7 +1553,7 @@ const layer = Layer.effect(
                 },
               ],
               tools: yield* resolveVibeTools({ agent: input.agent, model: input.model, session }),
-              toolChoice: "none",
+              toolChoice: Provider.supportsStaticToolChoice(input.model) ? "none" : undefined,
               retries: 2,
             })
             .pipe(
@@ -1635,7 +1635,7 @@ const layer = Layer.effect(
                 },
               ],
               tools: yield* resolveVibeTools({ agent: input.agent, model: input.model, session }),
-              toolChoice: "none",
+              toolChoice: Provider.supportsStaticToolChoice(input.model) ? "none" : undefined,
               retries: 2,
             })
             .pipe(
@@ -1778,7 +1778,7 @@ const layer = Layer.effect(
                   { role: "user", content: "Create the implementation plan for the user's request now." },
                 ],
                 tools: yield* resolveVibeTools({ agent, model: vibeModels.planner, session }),
-                toolChoice: "none",
+                toolChoice: Provider.supportsStaticToolChoice(vibeModels.planner) ? "none" : undefined,
                 retries: 2,
               })
               .pipe(
