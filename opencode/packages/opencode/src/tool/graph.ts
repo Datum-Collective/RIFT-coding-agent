@@ -13,9 +13,8 @@ const Node = Schema.Struct({
   status: EngineeringGraph.Info.fields.status,
   dependencies: EngineeringGraph.Info.fields.dependencies,
   files: EngineeringGraph.Info.fields.files,
-  tests: EngineeringGraph.Info.fields.tests,
+  checks: EngineeringGraph.Info.fields.checks,
   decisions: EngineeringGraph.Info.fields.decisions,
-  evidence: EngineeringGraph.Info.fields.evidence,
 })
 
 export const Parameters = Schema.Struct({

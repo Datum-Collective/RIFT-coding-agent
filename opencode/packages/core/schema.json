@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "b1f950cc-15d4-4730-bf7b-52341b5ab059",
+  "id": "41c7de9e-59e8-4a18-91cb-55fa40e7b272",
   "prevIds": [
-    "f14a9b18-8207-487e-a3d3-227e629ba9ad"
+    "bc32fb24-d28c-414e-81fe-c0cecafe13fd"
   ],
   "ddl": [
     {
@@ -860,9 +860,9 @@
       "type": "text",
       "notNull": true,
       "autoincrement": false,
-      "default": null,
+      "default": "'[]'",
       "generated": null,
-      "name": "tests",
+      "name": "checks",
       "entityType": "columns",
       "table": "engineering_graph"
     },
@@ -873,16 +873,6 @@
       "default": null,
       "generated": null,
       "name": "decisions",
-      "entityType": "columns",
-      "table": "engineering_graph"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "evidence",
       "entityType": "columns",
       "table": "engineering_graph"
     },

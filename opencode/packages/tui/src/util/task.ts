@@ -60,6 +60,16 @@ export type BrowserCheck = {
   errors: string[]
 }
 
+/** One piece of evidence RIFT gathered for an engineering-graph node. Never written by the agent. */
+export type Evidence = {
+  node: string
+  label: string
+  status: "passed" | "failed" | "not_run" | "queued"
+  /** Why RIFT believes this: exit code, HTTP status, console errors, missing files. */
+  detail: string
+  artifact?: string
+}
+
 export type Verification = {
   /** "none" means no verification ran for this task, not that it passed. */
   state: "none" | "running" | "passed" | "failed" | "incomplete"
@@ -67,6 +77,8 @@ export type Verification = {
   claims?: Claims
   browser?: BrowserCheck
   scope?: { files: number; threshold: number }
+  /** Absent when no engineering-graph evidence was gathered. */
+  evidence?: Evidence[]
 }
 
 export type TaskState = "idle" | "planning" | "executing" | "verifying" | "blocked" | "failed" | "done"
@@ -386,6 +398,28 @@ function parseBrowser(value: unknown): BrowserCheck | undefined {
   }
 }
 
+const EVIDENCE_STATUS = new Set<string>(["passed", "failed", "not_run", "queued"])
+
+/** Validates each evidence record; anything malformed is dropped, never shown as proof. */
+function parseEvidence(value: unknown): Evidence[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    const entry = record(item)
+    if (typeof entry?.node !== "string" || typeof entry.label !== "string") return []
+    const status = typeof entry.status === "string" && EVIDENCE_STATUS.has(entry.status) ? entry.status : undefined
+    if (!status) return []
+    return [
+      {
+        node: entry.node,
+        label: entry.label,
+        status: status as Evidence["status"],
+        detail: typeof entry.detail === "string" ? entry.detail : "",
+        artifact: typeof entry.artifact === "string" ? entry.artifact : undefined,
+      },
+    ]
+  })
+}
+
 const CLAIM_STATUS = new Set<string>(["off", "pending", "ok", "mismatch", "not_run"])
 
 /** Validates the claims verdict rather than trusting the shape of the metadata. */
@@ -446,8 +480,13 @@ export function verification(input: TaskInput): Verification {
   // A report left at done:false by a crash or restart must not pin the session in "verifying"
   // forever; without a live run there is nothing left to wait for.
   const done = summary.done === true || (!input.busy && summary.done !== true)
-  const failed = checks.filter((check) => check.status === "failed" || check.status === "timed_out").length
-  const notRun = checks.filter((check) => check.status === "not_run" || check.status === "queued").length
+  const evidence = parseEvidence(summary.evidence)
+  const failed =
+    checks.filter((check) => check.status === "failed" || check.status === "timed_out").length +
+    evidence.filter((item) => item.status === "failed").length
+  const notRun =
+    checks.filter((check) => check.status === "not_run" || check.status === "queued").length +
+    evidence.filter((item) => item.status === "not_run" || item.status === "queued").length
   const claims = parseClaims(summary.claims)
   const browser = parseBrowser(summary.browser)
 
@@ -456,7 +495,7 @@ export function verification(input: TaskInput): Verification {
     ? "running"
     : failed > 0 || browserFailed
       ? "failed"
-      : checks.length === 0 || notRun > 0
+      : (checks.length === 0 && evidence.length === 0 && !browser) || notRun > 0
         ? "incomplete"
         : claims?.status === "mismatch"
           ? "failed"
@@ -471,6 +510,7 @@ export function verification(input: TaskInput): Verification {
     claims,
     browser,
     scope: threshold > 0 && scopeFiles > threshold ? { files: scopeFiles, threshold } : undefined,
+    evidence,
   }
 }
 

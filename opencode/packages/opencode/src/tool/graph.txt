@@ -1,22 +1,26 @@
-Model the software being built as a live engineering graph, shown to the user in place of a token-usage panel.
+Model the software being built as a live engineering graph, shown to the user beside the conversation. Every node is a requirement, and RIFT proves each one itself.
 
 ## Shape
-- Exactly one root node with no `parent_id` — the product itself.
+- Exactly one root node with no `parent_id` (the product).
 - Feature nodes as children of the root (e.g. "Authentication", "Dashboard", "Deployment").
-- Subtask nodes as children of each feature (e.g. "API", "Database", "Frontend", "Tests").
-- Deeper nesting is fine when it reflects real structure.
+- Requirement nodes beneath features, stated as something that can be proven (e.g. "Users can upload a 500MB video", "API", "Tests").
+- Always pass the full current node list: this call replaces the whole graph.
+
+## Evidence: you declare, RIFT proves
+You cannot mark anything as proven. For each node, declare in `checks` how it should be proven. After your turn RIFT runs every check and records the real result (exit code, HTTP status, console errors, screenshot) as evidence under that node. RIFT also records an Implementation result from the node's `files`.
+
+Each check has a `kind` and either a `command` or a `url`:
+- `command` (exits 0 when the check passes): typecheck, unit, integration, static, security, load. Set `cwd` to an absolute path when the project is not the working directory.
+- `url`: browser (loads the page and fails on console errors), screenshot (loads and captures it), http and production (fail on a 4xx/5xx response). `file://` works for local pages.
+
+Prefer narrow checks that prove this node: `bun test src/upload.test.ts` over the whole suite.
 
 ## When to use
-Use proactively on any multi-step engineering task, alongside (not instead of) todos:
-- Create the initial tree as soon as the shape of the work is known.
-- Update a node's `status` as work on it starts, blocks, or finishes.
-- Keep `files`, `tests`, `decisions`, and `evidence` current on the node they belong to as you go.
-- Always pass the full current node list — this call replaces the whole graph.
+On any multi-step build, create the tree as soon as its shape is known, then keep `status`, `files`, `checks` and `decisions` current as you work.
 
 ## Fields per node
 - `status`: not_started, in_progress, blocked, testing, done, failed
 - `dependencies`: ids of other nodes this node is blocked on
-- `files`: files relevant to this node
-- `tests`: tests relevant to this node
+- `files`: files that implement this node
+- `checks`: how RIFT should prove this node works
 - `decisions`: key decisions made while working on this node
-- `evidence`: evidence the node's work is correct (test output, verification notes, etc.)

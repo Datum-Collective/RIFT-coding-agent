@@ -21,9 +21,8 @@ const Node = Schema.Struct({
   status: EngineeringGraph.Info.fields.status,
   dependencies: EngineeringGraph.Info.fields.dependencies,
   files: EngineeringGraph.Info.fields.files,
-  tests: EngineeringGraph.Info.fields.tests,
+  checks: EngineeringGraph.Info.fields.checks,
   decisions: EngineeringGraph.Info.fields.decisions,
-  evidence: EngineeringGraph.Info.fields.evidence,
 })
 
 export const Input = Schema.Struct({
@@ -49,8 +48,10 @@ const layer = Layer.effectDiscard(
           description:
             "Model the software being built as a live graph: a single root node (the product), " +
             "feature nodes as its children, and subtask nodes (e.g. API, Database, Frontend, Tests) as " +
-            "children of each feature. Keep status, dependencies, files, tests, decisions, and evidence " +
-            "current for every node as work proceeds. Always pass the full current node list.",
+            "children of each feature. Keep status, dependencies, files, checks, and decisions current " +
+            "for every node as work proceeds. You cannot mark a node proven: declare in `checks` how it " +
+            "should be proven (a command, or a url) and RIFT runs them and records the evidence. " +
+            "Always pass the full current node list.",
           input: Input,
           output: Output,
           toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],

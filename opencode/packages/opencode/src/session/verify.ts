@@ -6,6 +6,7 @@ import { Shell } from "@opencode-ai/core/shell"
 import { Process } from "@/util/process"
 import { BrowserSession } from "@/browser/session"
 import { find } from "@/browser/discover"
+import type { Evidence } from "./evidence"
 
 // Verification / trust layer: after an agent claims it is done, actually run the repo's own
 // checks and report the real output instead of trusting the agent's "tests pass".
@@ -409,6 +410,8 @@ export interface Report {
   done: boolean
   claims?: Claims
   browser?: BrowserCheck
+  /** Per-node evidence RIFT gathered for the engineering graph. */
+  evidence?: Evidence.Record[]
 }
 
 function describe(result: CheckResult) {
@@ -482,6 +485,8 @@ export interface Summary {
   scopeWarnFiles: number
   claims?: Claims
   browser?: BrowserCheck
+  /** Evidence without command output: the transcript text carries that for failures. */
+  evidence?: Array<Omit<Evidence.Record, "output">>
 }
 
 /** Machine-readable twin of `format`. Kept beside it so the two cannot drift apart. */
@@ -505,13 +510,14 @@ export function summarize(report: Report): Summary {
     scopeWarnFiles: report.scopeWarnFiles,
     claims: report.claims,
     browser: report.browser,
+    evidence: report.evidence?.map(({ output: _, ...record }) => record),
   }
 }
 
 export function format(report: Report) {
   const { entries, scopeFiles, scopeWarnFiles, done } = report
   const lines = ["Automated verification (real command output, not the agent's claim)"]
-  if (entries.length === 0) {
+  if (entries.length === 0 && !report.browser && !report.evidence?.length) {
     lines.push(
       "Not configured: no test, typecheck or lint commands were found for this project, so nothing was verified.",
       "Set `verify_commands` in your config to choose the commands to run.",
@@ -547,6 +553,27 @@ export function format(report: Report) {
         `${label} ✗ ${browser.httpStatus && browser.httpStatus >= 400 ? `HTTP ${browser.httpStatus}` : `${browser.errors.length} console ${browser.errors.length === 1 ? "error" : "errors"}`}`,
       )
       for (const error of browser.errors.slice(0, 5)) lines.push(`    ${error}`)
+    }
+  }
+
+  const evidence = report.evidence ?? []
+  if (evidence.length > 0) {
+    lines.push("", "Evidence per requirement (gathered by RIFT, not claimed by the agent):")
+    for (const node of [...new Set(evidence.map((record) => record.node))]) {
+      const records = evidence.filter((record) => record.node === node)
+      lines.push(`- ${records[0].title}`)
+      for (const record of records) {
+        const mark = record.status === "passed" ? "✓" : record.status === "failed" ? "✗" : record.status === "queued" ? "…" : "○"
+        lines.push(`  ${mark} ${record.label}${record.detail ? `: ${record.detail}` : ""}${record.artifact ? ` (${record.artifact})` : ""}`)
+      }
+    }
+    for (const record of evidence) {
+      if (record.status !== "failed" || !record.output) continue
+      lines.push("", `Output of ${record.label} for ${record.title}:`, "```", record.output, "```")
+    }
+    const unproven = evidence.filter((record) => record.status !== "passed" && record.status !== "queued")
+    if (done && unproven.length > 0) {
+      lines.push("", `${unproven.length} ${unproven.length === 1 ? "requirement check is" : "requirement checks are"} not proven. Do not call those requirements done.`)
     }
   }
 

@@ -53,9 +53,8 @@ const layer = Layer.effect(
                   owner: node.owner,
                   dependencies: [...node.dependencies],
                   files: [...node.files],
-                  tests: [...node.tests],
+                  checks: [...node.checks],
                   decisions: [...node.decisions],
-                  evidence: [...node.evidence],
                   position,
                 })),
               )
@@ -82,9 +81,8 @@ const layer = Layer.effect(
         owner: row.owner,
         dependencies: row.dependencies,
         files: row.files,
-        tests: row.tests,
+        checks: row.checks,
         decisions: row.decisions,
-        evidence: row.evidence,
       }))
     })
 

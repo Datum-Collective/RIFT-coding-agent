@@ -44,6 +44,8 @@ import { Image } from "@/image/image"
 import { decodeDataUrl } from "@/util/data-url"
 import { Process } from "@/util/process"
 import { Verify } from "./verify"
+import { Evidence } from "./evidence"
+import { EngineeringGraph } from "./engineering-graph"
 import { ShellID } from "@/tool/shell/id"
 import { Cause, Effect, Exit, Latch, Layer, Option, Scope, Context, Schema, Types } from "effect"
 import { InstanceState } from "@/effect/instance-state"
@@ -213,6 +215,7 @@ const layer = Layer.effect(
     const state = yield* SessionRunState.Service
     const revert = yield* SessionRevert.Service
     const summary = yield* SessionSummary.Service
+    const graph = yield* EngineeringGraph.Service
     const sys = yield* SystemPrompt.Service
     const llm = yield* LLM.Service
     const events = yield* EventV2Bridge.Service
@@ -1403,6 +1406,8 @@ const layer = Layer.effect(
       let scopeFiles: string[] = []
       let claims: Verify.Claims = { status: "off" }
       let browser: Verify.BrowserCheck | undefined
+      const planned = Evidence.plan(yield* graph.get(sessionID))
+      const evidence = planned.map(Evidence.queued)
       const publish = (done: boolean) => {
         const report: Verify.Report = {
           entries,
@@ -1411,6 +1416,7 @@ const layer = Layer.effect(
           done,
           claims,
           browser,
+          evidence,
         }
         return sessions.updatePart({
           id: partID,
@@ -1474,6 +1480,33 @@ const layer = Layer.effect(
           browser = yield* Effect.promise(() => Verify.checkBrowser(page)).pipe(
             Effect.catchCause(() => Effect.succeed(undefined)),
           )
+          yield* publish(false)
+        }
+
+        // Evidence per graph node. The agent chose these commands and URLs, so each one clears the
+        // permission it would need as a tool call before RIFT runs it.
+        for (const [index, item] of planned.entries()) {
+          const request = Evidence.permission(item, ctx.worktree)
+          const denied = request
+            ? yield* permission
+                .ask({ ...request, always: request.patterns, sessionID, metadata: { source: "evidence" }, ruleset })
+                .pipe(
+                  Effect.as(false),
+                  Effect.catch(() => Effect.succeed(true)),
+                )
+            : false
+          evidence[index] = denied
+            ? Evidence.notRun(item, "permission denied")
+            : yield* Effect.promise((signal) =>
+                Evidence.run(item, {
+                  directory: ctx.directory,
+                  timeoutMs,
+                  cancel: signal,
+                  shell: Shell.acceptable(cfg.shell),
+                }).catch((error: unknown) =>
+                  Evidence.notRun(item, `could not run: ${error instanceof Error ? error.message : String(error)}`),
+                ),
+              )
           yield* publish(false)
         }
 
@@ -2397,6 +2430,7 @@ export const node = LayerNode.make({
     SessionRevert.node,
     SessionSummary.node,
     SystemPrompt.node,
+    EngineeringGraph.node,
     LLM.node,
     EventV2Bridge.node,
     RuntimeFlags.node,

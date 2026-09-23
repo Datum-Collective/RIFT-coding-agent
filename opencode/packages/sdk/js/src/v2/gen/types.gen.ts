@@ -671,6 +671,24 @@ export type Todo = {
   priority: string
 }
 
+export type EngineeringGraphCheck = {
+  kind:
+    | "typecheck"
+    | "unit"
+    | "integration"
+    | "browser"
+    | "http"
+    | "screenshot"
+    | "static"
+    | "security"
+    | "load"
+    | "production"
+  label?: string
+  command?: string
+  cwd?: string
+  url?: string
+}
+
 export type EngineeringGraphNode = {
   /**
    * Stable id for this node, e.g. 'auth.api'
@@ -691,21 +709,17 @@ export type EngineeringGraphNode = {
    */
   dependencies: Array<string>
   /**
-   * Files relevant to this node
+   * Files that implement this node
    */
   files: Array<string>
   /**
-   * Tests relevant to this node
+   * How RIFT should prove this node works
    */
-  tests: Array<string>
+  checks: Array<EngineeringGraphCheck>
   /**
    * Key decisions made for this node
    */
   decisions: Array<string>
-  /**
-   * Evidence this node's work is correct
-   */
-  evidence: Array<string>
 }
 
 export type SessionStatus =
