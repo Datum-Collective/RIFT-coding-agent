@@ -156,6 +156,51 @@ keystroke away.
 A strong model plans and reviews each step while a cheaper one does the work, so you get good
 decisions without paying frontier prices for every edit.
 
+### RIFT Forge
+
+Give Forge a product goal and it runs the whole engineering loop, not just the edit:
+
+```
+FORGE ────────────────────────────────────────────────
+  URL shortener with click analytics
+  ● forging · stage 5/11 Parallel Agents · ↺ 1 steer
+
+  ■━━■━━■━━■━━◉┄┄○┄┄○┄┄○┄┄○┄┄○┄┄○
+
+PIPELINE ─────────────────────────────────────────────
+  ✓ Goal                 URL shortener with click analytics
+  ✓ Requirements         7 requirements, 1 assumed
+  ✓ Architecture         Hono + SQLite, 4 modules
+  ✓ Engineering Graph    6 work items in 2 lanes
+  ● Parallel Agents      lane 2 of 2        ████████░░ 3/4
+  │ ✓ W1 schema — db/schema.ts
+  │ ● W3 redirect handler — src/redirect.ts
+  ○ Verification
+  ○ Adversarial Testing
+  ○ Repair
+  ○ Evidence
+  ○ Human Gate
+  ○ Ship
+```
+
+Goal → requirements → architecture → an engineering graph of work items → parallel subagents,
+one per item → verification with your real checks → an adversarial agent that tries to break it →
+repair → evidence → a human gate → ship.
+
+- **Steer any stage without taking over.** Type "architecture: use Postgres instead" mid-run.
+  Forge re-opens that stage, and every stage downstream of it turns stale (`◌`) and rebuilds,
+  the way a build system invalidates targets. Everything upstream is kept.
+- **Evidence is observed, not claimed.** Each stage counts the shell commands that actually ran
+  while it was open and judges them by their real exit codes, so a stage that says "all checks
+  passed" next to `1 failed` is visible at a glance.
+- **The human gate really blocks.** Before shipping, Forge stops and shows the evidence: _Ship it_,
+  _Change something_ (your note is routed to the stage it concerns), or _Stop_. A blanket
+  `"*": "allow"` permission does not remove it. Ship means a commit on a branch: Forge does not
+  push, open PRs or deploy unless you ask.
+
+Press `Tab` until the agent reads **forge**, then describe what you want built. In scripts,
+`rift run --agent forge "…"` stops at the gate unless you pass `--auto`.
+
 ### Mission Control
 
 Every session on one board, ordered so whatever needs you is on top.
@@ -184,6 +229,7 @@ RIFT inherits OpenCode's agents, switchable with `Tab`:
 - **build** — full-access agent for development work
 - **plan** — read-only agent for analysis and exploration
 - **vibe** — planner and executor models working together, with a review gate between steps
+- **forge** — turns a product goal into verified software through an eleven-stage pipeline with a human gate
 
 A **general** subagent handles complex searches and multistep tasks; invoke it with `@general`.
 

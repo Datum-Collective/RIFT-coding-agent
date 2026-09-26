@@ -6,6 +6,7 @@ import { createMemo, type Accessor } from "solid-js"
 import { useSync } from "../../context/sync"
 import { useLocal } from "../../context/local"
 import { task as deriveTask, type Task, type TaskInput, type TaskPart } from "../../util/task"
+import { forge as deriveForge, type Forge } from "../../util/forge"
 
 type Sync = ReturnType<typeof useSync>
 
@@ -55,4 +56,10 @@ export function useTask(sessionID: Accessor<string>): Accessor<Task> {
       }),
     )
   })
+}
+
+/** Live Forge pipeline for one session, or undefined when the session never used Forge. */
+export function useForge(sessionID: Accessor<string>): Accessor<Forge | undefined> {
+  const sync = useSync()
+  return createMemo(() => deriveForge(taskInput(sync, sessionID())))
 }

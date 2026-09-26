@@ -12,6 +12,7 @@ import { ProviderTransform } from "@/provider/transform"
 import PROMPT_GENERATE from "./generate.txt"
 import PROMPT_COMPACTION from "./prompt/compaction.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
+import PROMPT_FORGE from "./prompt/forge.txt"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
 import { Permission } from "@/permission"
@@ -138,6 +139,7 @@ const layer = Layer.effect(
           question: "deny",
           plan_enter: "deny",
           plan_exit: "deny",
+          forge: "deny",
           // mirrors github.com/github/gitignore Node.gitignore pattern for .env files
           read: {
             "*": "allow",
@@ -187,6 +189,27 @@ const layer = Layer.effect(
                 },
               }),
               user,
+            ),
+            mode: "primary",
+            native: true,
+          },
+          forge: {
+            name: "forge",
+            description:
+              "Turns a product goal into verified software: requirements, architecture, parallel agents, adversarial testing, evidence, and a human gate before shipping.",
+            prompt: PROMPT_FORGE,
+            color: "#f97316",
+            options: {},
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                question: "allow",
+                forge: "allow",
+              }),
+              user,
+              // After the user's rules so a blanket "*": "allow" cannot remove the gate. An
+              // agent-level forge permission in config still overrides this.
+              Permission.fromConfig({ forge_gate: "ask" }),
             ),
             mode: "primary",
             native: true,

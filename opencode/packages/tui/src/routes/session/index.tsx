@@ -54,7 +54,8 @@ import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
 import { TaskView } from "../../component/control/task-view"
-import { useTask } from "../../component/control/use-task"
+import { useForge, useTask } from "../../component/control/use-task"
+import { ForgeView } from "../../component/control/forge-view"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { filetype } from "../../util/filetype"
 import parsers from "../../parsers-config"
@@ -275,6 +276,7 @@ export function Session() {
   // full conversation is one keypress away, and whichever view was chosen is remembered.
   const [viewMode, setViewMode] = kv.signal<"task" | "log">("view_mode", "task")
   const task = useTask(() => route.sessionID)
+  const forge = useForge(() => route.sessionID)
 
   const wide = createMemo(() => dimensions().width > 120)
   const sidebarVisible = createMemo(() => {
@@ -1236,7 +1238,9 @@ export function Session() {
               >
                 <box height={1} />
                 <Show when={viewMode() === "task"}>
-                  <TaskView task={task()} width={contentWidth()} />
+                  <Show when={forge()} fallback={<TaskView task={task()} width={contentWidth()} />}>
+                    {(pipeline) => <ForgeView forge={pipeline()} width={contentWidth()} />}
+                  </Show>
                 </Show>
                 <Show when={viewMode() === "log"}>
                   <For each={messages()}>

@@ -1,0 +1,8 @@
+Records progress through the RIFT Forge pipeline so the person watching can see and steer it.
+
+Stages, in order: goal, requirements, architecture, graph, agents, verify, adversarial, repair, evidence, gate, ship.
+
+- Call it with status "active" when you start a stage, and again with status "done" once its artifact is final.
+- Put the stage's artifact in `items` as short lines (a requirement, a decision, a work item, a finding, a piece of evidence) and give it a one-line `summary`.
+- Re-opening an earlier stage with status "active" marks every later stage stale in the UI. Re-run those stages afterwards.
+- Calling it with stage "gate" and status "active" stops and waits for the human. If they approve, the call succeeds. If they ask for changes, the call fails with their feedback: route that feedback to the stage it concerns.

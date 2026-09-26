@@ -190,6 +190,57 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
           }}
         />
       </Match>
+      <Match when={store.stage === "permission" && props.request.permission === "forge_gate"}>
+        {(() => {
+          const summary = typeof props.request.metadata?.summary === "string" ? props.request.metadata.summary : ""
+          const raw = props.request.metadata?.items
+          const items = (Array.isArray(raw) ? raw : []).flatMap((item) =>
+            typeof item === "object" && item !== null && "text" in item && typeof item.text === "string"
+              ? [{ text: item.text, failed: "status" in item && (item.status === "failed" || item.status === "warn") }]
+              : [],
+          )
+          return (
+            <Prompt
+              title="Forge · Human Gate"
+              header={
+                <box flexDirection="row" gap={1} flexShrink={0}>
+                  <text fg={theme.warning}>{"◈"}</text>
+                  <text fg={theme.text}>Human gate — ready to ship?</text>
+                </box>
+              }
+              body={
+                <box paddingLeft={1} flexDirection="column">
+                  <Show when={summary}>
+                    <text fg={theme.text}>{summary}</text>
+                  </Show>
+                  <For each={items}>
+                    {(item) => (
+                      <text fg={item.failed ? theme.warning : theme.textMuted}>
+                        {(item.failed ? "⚠ " : "- ") + item.text}
+                      </text>
+                    )}
+                  </For>
+                </box>
+              }
+              options={{ once: "Ship it", change: "Change something", reject: "Stop" }}
+              escapeKey="reject"
+              fullscreen
+              onSelect={(option) => {
+                if (option === "change") {
+                  setStore("stage", "reject")
+                  return
+                }
+                void sdk.client.permission.reply({
+                  reply: option === "once" ? "once" : "reject",
+                  requestID: props.request.id,
+                  directory: props.directory,
+                  workspace: project.workspace.current(),
+                })
+              }}
+            />
+          )
+        })()}
+      </Match>
       <Match when={store.stage === "permission"}>
         {(() => {
           const info = () => {

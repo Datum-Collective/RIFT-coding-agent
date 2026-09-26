@@ -12,6 +12,7 @@ import { ReadTool } from "./read"
 import { TaskTool } from "./task"
 import { Database } from "@opencode-ai/core/database/database"
 import { TodoWriteTool } from "./todo"
+import { ForgeTool } from "./forge"
 import { WebFetchTool } from "./webfetch"
 import { BrowserTool } from "./browser"
 import { BrowserOpenTool } from "./browser_open"
@@ -105,6 +106,7 @@ const layer = Layer.effect(
     const read = yield* ReadTool
     const question = yield* QuestionTool
     const todo = yield* TodoWriteTool
+    const forge = yield* ForgeTool
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
@@ -223,6 +225,7 @@ const layer = Layer.effect(
           browseropen: Tool.init(browseropen),
           browser: Tool.init(browser),
           todo: Tool.init(todo),
+          forge: Tool.init(forge),
           search: Tool.init(websearch),
           skill: Tool.init(skilltool),
           patch: Tool.init(patchtool),
@@ -248,6 +251,7 @@ const layer = Layer.effect(
             tool.browseropen,
             tool.browser,
             tool.todo,
+            tool.forge,
             tool.search,
             tool.skill,
             tool.patch,
