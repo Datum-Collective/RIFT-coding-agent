@@ -168,4 +168,3 @@ First release with working installers for macOS, Linux and Windows.
 - cooking
 - Replace entire codebase with Relay IDE project
 - Initial commit
-
