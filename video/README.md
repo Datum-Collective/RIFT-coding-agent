@@ -1,13 +1,15 @@
 # RIFT Video — a code-driven video engine
 
-Turn a sentence into a rendered MP4. In Claude Code, from the repo root:
+Turn a sentence into a rendered MP4. In RIFT, in any project:
 
 ```
 /video 30-second vertical launch video for Acme, a Postgres backup tool, for developers
 ```
 
-Claude writes a storyboard, turns it into a typed spec, validates it, looks at every scene, and
-renders `video/out/<id>.mp4`. Everything below is what that command drives, and how to use or
+The agent sets this engine up if the project doesn't have it (`rift video init`), writes a
+storyboard, turns it into a typed spec, validates it, looks at every scene, and renders
+`out/<id>.mp4`. The engine ships inside RIFT, so nothing needs to be downloaded except its npm
+dependencies. Everything below is what that command drives, and how to use or
 extend it by hand.
 
 ## What it is

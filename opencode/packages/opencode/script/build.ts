@@ -12,6 +12,8 @@ const dir = path.resolve(__dirname, "..")
 process.chdir(dir)
 
 const generated = await import("./generate.ts")
+// Pack the repo's video/ engine so `rift video init` ships in every build.
+await import("./video-template.ts")
 
 import { Script } from "@opencode-ai/script"
 import pkg from "../package.json"

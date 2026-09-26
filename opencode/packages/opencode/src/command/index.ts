@@ -9,6 +9,7 @@ import { MCP } from "../mcp"
 import { Skill } from "../skill"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
+import PROMPT_VIDEO from "./template/video.txt"
 import { LegacyEvent } from "@opencode-ai/schema/legacy-event"
 
 type State = {
@@ -46,6 +47,7 @@ export function hints(template: string) {
 export const Default = {
   INIT: "init",
   REVIEW: "review",
+  VIDEO: "video",
 } as const
 
 export interface Interface {
@@ -85,6 +87,13 @@ const layer = Layer.effect(
         },
         subtask: true,
         hints: hints(PROMPT_REVIEW),
+      }
+      commands[Default.VIDEO] = {
+        name: Default.VIDEO,
+        description: "make an animated video from a brief: storyboard, spec, check frames, render MP4",
+        source: "command",
+        template: PROMPT_VIDEO,
+        hints: hints(PROMPT_VIDEO),
       }
       for (const [name, command] of Object.entries(cfg.command ?? {})) {
         commands[name] = {
