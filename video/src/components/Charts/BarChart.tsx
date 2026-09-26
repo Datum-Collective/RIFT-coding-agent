@@ -51,7 +51,7 @@ export function BarChart(props: {
                 display: "flex",
                 justifyContent: "space-between",
                 fontFamily: theme.fonts.sans,
-                fontSize: type("label") * 1.2,
+                fontSize: type("body"),
               }}
             >
               <span

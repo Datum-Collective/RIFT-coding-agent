@@ -1,7 +1,7 @@
 import { defineVideo, FORMATS } from "../../spec/schema";
 
 /**
- * Storyboard — about 75s, 16:9, paper theme. One running example, "The cat sat on the mat",
+ * Storyboard — 90s, 16:9, paper theme. One running example, "The cat sat on the mat",
  * carried through every step so the viewer follows one sentence rather than abstractions.
  *   Title → tokenize → embed → the attention question → Q/K/V → one attention map →
  *   many heads → the block → next-token probabilities → recap.
@@ -24,7 +24,8 @@ const causal = (weights: (row: number, col: number) => number) =>
   TOKENS.map((_, row) => {
     const raw = TOKENS.map((__, col) => (col <= row ? weights(row, col) : 0));
     const total = raw.reduce((sum, value) => sum + value, 0);
-    return raw.map((value) => Math.round((value / total) * 100) / 100);
+    // Exact softmax-style weights: rounding here could make a row sum to 0.99 or 1.01.
+    return raw.map((value) => value / total);
   });
 
 export const transformerExplainer = defineVideo({
@@ -35,7 +36,7 @@ export const transformerExplainer = defineVideo({
   brief:
     "Create a 90-second 16:9 explainer explaining how a transformer processes a token. Audience: computer science students. Style: clean educational motion graphics. Explain tokenization, show embeddings, visualize attention, explain Q/K/V conceptually, show multiple attention heads, end with the transformer output.",
   format: FORMATS.horizontal,
-  targetDurationInSeconds: 75,
+  targetDurationInSeconds: 90,
   style: {
     theme: "paper",
     pacing: "medium",
@@ -45,7 +46,7 @@ export const transformerExplainer = defineVideo({
     {
       id: "title",
       type: "title",
-      durationInSeconds: 5,
+      durationInSeconds: 6,
       eyebrow: "How transformers work",
       headline: "What happens to one token?",
       subheadline: "From text to the next word.",
@@ -53,7 +54,7 @@ export const transformerExplainer = defineVideo({
     {
       id: "tokenize",
       type: "chips",
-      durationInSeconds: 8,
+      durationInSeconds: 9.5,
       transition: { type: "fade", durationInSeconds: 0.5 },
       heading: "1 · Tokenize: text becomes pieces",
       narration:
@@ -71,7 +72,7 @@ export const transformerExplainer = defineVideo({
     {
       id: "embed",
       type: "vectors",
-      durationInSeconds: 9,
+      durationInSeconds: 11,
       transition: { type: "fade", durationInSeconds: 0.5 },
       heading: "2 · Embed: each ID becomes a vector",
       narration:
@@ -85,7 +86,7 @@ export const transformerExplainer = defineVideo({
     {
       id: "question",
       type: "statement",
-      durationInSeconds: 6,
+      durationInSeconds: 7,
       transition: { type: "fade", durationInSeconds: 0.5 },
       narration:
         "Then every token asks which other tokens matter to it. That is attention.",
@@ -98,7 +99,7 @@ export const transformerExplainer = defineVideo({
     {
       id: "qkv",
       type: "cards",
-      durationInSeconds: 10,
+      durationInSeconds: 12,
       transition: { type: "fade", durationInSeconds: 0.5 },
       heading: "3 · Query, Key, Value",
       narration:
@@ -120,7 +121,7 @@ export const transformerExplainer = defineVideo({
     {
       id: "attention",
       type: "heatmap",
-      durationInSeconds: 10,
+      durationInSeconds: 12.5,
       transition: { type: "fade", durationInSeconds: 0.5 },
       heading: "4 · Scores → softmax → attention weights",
       narration:
@@ -142,7 +143,7 @@ export const transformerExplainer = defineVideo({
     {
       id: "heads",
       type: "heatmap",
-      durationInSeconds: 10,
+      durationInSeconds: 12.5,
       transition: { type: "fade", durationInSeconds: 0.5 },
       heading: "5 · Many heads, many patterns",
       narration:
@@ -182,7 +183,7 @@ export const transformerExplainer = defineVideo({
     {
       id: "block",
       type: "flow",
-      durationInSeconds: 8,
+      durationInSeconds: 9,
       transition: { type: "fade", durationInSeconds: 0.5 },
       heading: "6 · One transformer block, repeated",
       narration:
@@ -200,7 +201,7 @@ export const transformerExplainer = defineVideo({
     {
       id: "output",
       type: "chart",
-      durationInSeconds: 8,
+      durationInSeconds: 9,
       transition: { type: "fade", durationInSeconds: 0.5 },
       heading: "7 · Output: a probability for every next token",
       narration:
@@ -219,7 +220,7 @@ export const transformerExplainer = defineVideo({
     {
       id: "recap",
       type: "cta",
-      durationInSeconds: 5.5,
+      durationInSeconds: 6,
       transition: { type: "fade", durationInSeconds: 0.5 },
       headline: "Tokens → vectors → attention → next token",
       subline: "Repeated once for every token the model generates.",

@@ -42,10 +42,12 @@ export function report(spec: VideoSpec) {
   console.log(
     `${status} ${spec.id} ${color.dim(`${spec.format.width}×${spec.format.height} · ${spec.format.fps}fps · ${seconds.toFixed(2)}s · ${spec.scenes.length} scenes`)}`,
   );
-  for (const issue of errors)
-    console.log(`    ${color.red("error")} ${issue.path}: ${issue.message}`);
-  for (const issue of result.warnings)
-    console.log(`    ${color.yellow("warn")}  ${issue.path}: ${issue.message}`);
+  errors.forEach((issue) =>
+    console.log(`    ${color.red("error")} ${issue.path}: ${issue.message}`),
+  );
+  result.warnings.forEach((issue) =>
+    console.log(`    ${color.yellow("warn")}  ${issue.path}: ${issue.message}`),
+  );
   return errors.length === 0;
 }
 
@@ -64,23 +66,22 @@ async function main() {
     );
   const specsOk = specs.map(report).every(Boolean);
 
-  let registered = true;
-  if (values.deep) {
-    const compositions = await getCompositions(await bundleProject());
-    const ids = new Set(compositions.map((composition) => composition.id));
-    const expected = [
-      ...specs.map((spec) => spec.id),
-      ...Object.keys(templates),
-    ];
-    const absent = expected.filter((id) => !ids.has(id));
-    registered = absent.length === 0;
-    console.log(
-      registered
-        ? `${color.green("✓")} ${expected.length} compositions registered`
-        : `${color.red("✗")} not registered: ${absent.join(", ")}`,
-    );
-  }
+  const registered = values.deep ? await checkRegistered(specs) : true;
   if (!fontsOk || !specsOk || !registered) process.exit(1);
+}
+
+/** Bundles the project and confirms every video and template is a composition. */
+async function checkRegistered(specs: VideoSpec[]) {
+  const compositions = await getCompositions(await bundleProject());
+  const ids = new Set(compositions.map((composition) => composition.id));
+  const expected = [...specs.map((spec) => spec.id), ...Object.keys(templates)];
+  const absent = expected.filter((id) => !ids.has(id));
+  console.log(
+    absent.length === 0
+      ? `${color.green("✓")} ${expected.length} compositions registered`
+      : `${color.red("✗")} not registered: ${absent.join(", ")}`,
+  );
+  return absent.length === 0;
 }
 
 // Paths with spaces are percent-encoded in URLs, so compare real file URLs.

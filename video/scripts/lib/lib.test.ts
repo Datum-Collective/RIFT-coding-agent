@@ -19,7 +19,11 @@ test("render args take the composition by flag or position, and default the outp
     composition: "rift-launch",
     output: "out/x.mp4",
   });
-  assert.throws(() => renderArgs([]), /which composition/);
+  // Bare `npm run render` renders the default composition.
+  assert.deepEqual(renderArgs([]), {
+    composition: "ProductLaunch",
+    output: "out/ProductLaunch.mp4",
+  });
 });
 
 test("the rendered file is checked against what the spec promised", () => {

@@ -4,26 +4,31 @@ export type Blank = { start: number; end: number };
 
 /**
  * Stretches of near-black video. Every theme's darkest colour sits well above ffmpeg's pixel
- * threshold, so a hit means nothing was drawn, not that the design is dark.
+ * threshold, so a hit means nothing was drawn, not that the design is dark. Uses the system
+ * ffmpeg, else the one bundled with Remotion; throws if neither runs, so the check can never be
+ * skipped silently.
  */
 export function blankStretches(file: string): Blank[] {
-  const result = spawnSync(
-    "ffmpeg",
-    [
-      "-hide_banner",
-      "-i",
-      file,
-      "-vf",
-      "blackdetect=d=0.3:pix_th=0.02",
-      "-an",
-      "-f",
-      "null",
-      "-",
-    ],
-    {
-      encoding: "utf8",
-    },
-  );
+  const args = [
+    "-hide_banner",
+    "-i",
+    file,
+    "-vf",
+    "blackdetect=d=0.3:pix_th=0.02",
+    "-an",
+    "-f",
+    "null",
+    "-",
+  ];
+  const system = spawnSync("ffmpeg", args, { encoding: "utf8" });
+  const result =
+    system.status === 0
+      ? system
+      : spawnSync("npx", ["remotion", "ffmpeg", ...args], { encoding: "utf8" });
+  if (result.status !== 0)
+    throw new Error(
+      `blank-frame check could not run ffmpeg on ${file}: ${result.stderr || result.error}`,
+    );
   return parseBlackFrames(result.stderr ?? "");
 }
 

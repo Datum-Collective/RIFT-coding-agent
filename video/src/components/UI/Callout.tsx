@@ -10,7 +10,7 @@ export function Callout(props: { children: ReactNode }) {
         borderLeft: `${space(0.75)}px solid ${theme.palette.accent}`,
         paddingLeft: space(2.5),
         fontFamily: theme.fonts.sans,
-        fontSize: type("body") * 0.85,
+        fontSize: type("body"),
         color: theme.palette.text,
       }}
     >

@@ -39,7 +39,7 @@ export function BrowserWindow(props: {
               key={index}
               style={{
                 fontFamily: theme.fonts.sans,
-                fontSize: type("body") * 0.8,
+                fontSize: type("body"),
                 color: theme.palette.textMuted,
               }}
             >

@@ -12,7 +12,10 @@ import { Terminal } from "../components/UI/Terminal";
 import { stagger } from "../lib/animation/stagger";
 import { useVideo } from "../lib/context";
 import type { SceneOf } from "../spec/schema";
-import { SceneHeading } from "./parts";
+import { SceneHeading, SceneNote } from "./parts";
+import { ImageReveal } from "../components/Media/ImageReveal";
+import { VideoClip } from "../components/Media/VideoClip";
+import { VIDEO_FILE } from "../spec/validate";
 
 export function TerminalScene(props: { scene: SceneOf<"terminal"> }) {
   const { space } = useVideo();
@@ -51,13 +54,7 @@ export function ListScene(props: { scene: SceneOf<"list"> }) {
                   text={item.label}
                   style={{ fontWeight: 600, color: theme.palette.text }}
                 />
-                {item.detail ? (
-                  <Body
-                    text={item.detail}
-                    muted
-                    style={{ fontSize: type("body") * 0.8 }}
-                  />
-                ) : null}
+                {item.detail ? <Body text={item.detail} muted /> : null}
               </Stack>
             </Stack>
           </Reveal>
@@ -105,13 +102,7 @@ export function CardsScene(props: { scene: SceneOf<"cards"> }) {
                   text={card.title}
                   style={{ fontWeight: 700, fontSize: type("title") * 0.85 }}
                 />
-                {card.body ? (
-                  <Body
-                    text={card.body}
-                    muted
-                    style={{ fontSize: type("body") * (vertical ? 0.95 : 0.8) }}
-                  />
-                ) : null}
+                {card.body ? <Body text={card.body} muted /> : null}
               </Stack>
             </Card>
           </Reveal>
@@ -192,6 +183,36 @@ export function CtaScene(props: { scene: SceneOf<"cta"> }) {
           <Body text={props.scene.subline} muted />
         </Reveal>
       ) : null}
+    </SceneFrame>
+  );
+}
+
+/** An image or clip as the subject of the scene, with an optional heading and caption. */
+export function MediaScene(props: { scene: SceneOf<"media"> }) {
+  const { space } = useVideo();
+  const video = VIDEO_FILE.test(props.scene.src);
+  return (
+    <SceneFrame gap={space(4)}>
+      <SceneHeading text={props.scene.heading} />
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          justifyContent: "center",
+        }}
+      >
+        {video ? (
+          <VideoClip src={props.scene.src} fit={props.scene.fit} />
+        ) : (
+          <ImageReveal
+            src={props.scene.src}
+            fit={props.scene.fit}
+            delay={props.scene.heading ? 0.25 : 0}
+          />
+        )}
+      </div>
+      <SceneNote text={props.scene.caption} delay={0.6} />
     </SceneFrame>
   );
 }

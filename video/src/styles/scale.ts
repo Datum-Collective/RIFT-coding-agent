@@ -15,8 +15,9 @@ export type TypeRole =
   | "caption"
   | "mono";
 
-// At a 1080px short edge. The skill's floor for 1080-wide video is 84px headlines and 44px
-// supporting text; phones are the default viewing surface.
+// At a 1080px short edge. Copy a viewer must read to follow the video stays at or above the
+// skill's 44px floor (84px for headlines). `label` and `mono` are below it on purpose and are
+// for tertiary marks only: eyebrows, window titles, IDs, diagram axes.
 const TYPE_AT_1080: Record<TypeRole, number> = {
   display: 132,
   headline: 96,
@@ -72,7 +73,7 @@ export function safeArea(frame: Frame): Insets {
     };
   }
   return {
-    top: Math.round(96 * u),
+    top: Math.round(100 * u),
     right: Math.round(120 * u),
     bottom: Math.round(110 * u),
     left: Math.round(120 * u),
@@ -117,7 +118,7 @@ export function estimateLines(
 
 /** Terminal text: a little larger on vertical, where the window is the whole story. */
 export function terminalFontSize(frame: Frame) {
-  return typeSize(frame, "mono") * (frame.height > frame.width ? 1.2 : 1);
+  return typeSize(frame, "mono") * (frame.height > frame.width ? 1.25 : 1);
 }
 
 /** Code text shrinks slightly for longer listings. */
@@ -129,4 +130,23 @@ export function codeFontSize(frame: Frame, lines: number) {
 export function monoCharsPerLine(frame: Frame, fontSize: number, gutter = 0) {
   const inner = contentBox(frame).width - 2 * space(frame, 4) - gutter;
   return Math.floor(inner / (fontSize * ADVANCE.mono));
+}
+
+/** The line-number column and padding a CodeEditor draws to the left of each line. */
+export function codeGutter(frame: Frame, fontSize: number) {
+  return (
+    fontSize * 1.4 +
+    space(frame, 3) +
+    space(frame, 3) +
+    space(frame, 4) +
+    space(frame, 0.5)
+  );
+}
+
+/** Characters that fit on one line of code in a CodeEditor, matching what it renders. */
+export function codeCharsPerLine(frame: Frame, lines: number) {
+  const size = codeFontSize(frame, lines);
+  return Math.floor(
+    (contentBox(frame).width - codeGutter(frame, size)) / (size * ADVANCE.mono),
+  );
 }

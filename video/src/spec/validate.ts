@@ -4,7 +4,7 @@
  * scripts/lib/assets.ts because the browser bundle cannot touch the disk.
  */
 import {
-  codeFontSize,
+  codeCharsPerLine,
   contentBox,
   estimateLines,
   monoCharsPerLine,
@@ -22,6 +22,12 @@ export type Validation = { errors: Issue[]; warnings: Issue[] };
 const READ_WORDS_PER_SECOND = 4;
 const NARRATION_WORDS_PER_SECOND = 3.3;
 const READ_LEAD_IN_SECONDS = 0.8;
+// Two lines at caption size across a phone.
+const MAX_CAPTION_CHARS = 42;
+// Past this a code listing is a wall, not a point.
+const MAX_CODE_LINES = 14;
+
+export const VIDEO_FILE = /\.(mp4|webm|mov|mkv)$/i;
 
 export function validate(spec: VideoSpec): Validation {
   const errors: Issue[] = [];
@@ -93,7 +99,11 @@ export function validate(spec: VideoSpec): Validation {
   return { errors, warnings };
 }
 
-export type AssetRef = { src: string; path: string; kind: "image" | "audio" };
+export type AssetRef = {
+  src: string;
+  path: string;
+  kind: "image" | "video" | "audio";
+};
 
 /** Every file in public/ the spec depends on. */
 export function assetRefs(spec: VideoSpec): AssetRef[] {
@@ -101,6 +111,14 @@ export function assetRefs(spec: VideoSpec): AssetRef[] {
     if (scene.type === "browser" && scene.image)
       return [
         { src: scene.image, path: `scenes[${index}].image`, kind: "image" },
+      ];
+    if (scene.type === "media")
+      return [
+        {
+          src: scene.src,
+          path: `scenes[${index}].src`,
+          kind: VIDEO_FILE.test(scene.src) ? "video" : "image",
+        },
       ];
     if (scene.type === "cta" && scene.logo)
       return [
@@ -133,10 +151,12 @@ export function assetRefs(spec: VideoSpec): AssetRef[] {
 
 function checkFormat(spec: VideoSpec, errors: Issue[]) {
   const { width, height, fps } = spec.format;
-  for (const [name, value] of [
-    ["width", width],
-    ["height", height],
-  ] as const) {
+  (
+    [
+      ["width", width],
+      ["height", height],
+    ] as const
+  ).forEach(([name, value]) => {
     if (value % 2 !== 0)
       errors.push({
         path: `format.${name}`,
@@ -147,7 +167,7 @@ function checkFormat(spec: VideoSpec, errors: Issue[]) {
         path: `format.${name}`,
         message: `${value} is outside 240–4096`,
       });
-  }
+  });
   if (fps < 12 || fps > 120)
     errors.push({
       path: "format.fps",
@@ -197,12 +217,7 @@ function checkFit(scene: Scene, path: string, frame: Frame, errors: Issue[]) {
   }
   if (scene.type === "code") {
     const lines = scene.code.split("\n");
-    const size = codeFontSize(frame, lines.length);
-    const max = monoCharsPerLine(
-      frame,
-      size,
-      size * 1.4 + 2 * 8 * (frame.width / 1080) * 3,
-    );
+    const max = codeCharsPerLine(frame, lines.length);
     lines.forEach((line, index) => {
       if (line.length > max)
         errors.push({
@@ -252,11 +267,10 @@ function checkData(scene: Scene, path: string, errors: Issue[]) {
       path: `${path}.rows`,
       message: "every vector needs the same number of values",
     });
-  if (scene.type === "code" && scene.code.split("\n").length > 14)
+  if (scene.type === "code" && scene.code.split("\n").length > MAX_CODE_LINES)
     errors.push({
       path: `${path}.code`,
-      message:
-        "more than 14 lines will not be readable; show the part that matters",
+      message: `more than ${MAX_CODE_LINES} lines will not be readable; show the part that matters`,
     });
 }
 
@@ -280,10 +294,10 @@ function checkCaptions(
           path: `captions.items[${index}]`,
           message: `ends at ${round(item.endMs / 1000)}s, after the video ends at ${round(totalSeconds)}s`,
         });
-      if (item.text.length > 42)
+      if (item.text.length > MAX_CAPTION_CHARS)
         warnings.push({
           path: `captions.items[${index}]`,
-          message: "over 42 characters wraps past two caption lines",
+          message: `over ${MAX_CAPTION_CHARS} characters wraps past two caption lines`,
         });
     },
   );
@@ -332,10 +346,14 @@ function visibleWords(scene: Scene) {
         return [scene.heading];
       case "browser":
         return [scene.heading, scene.page?.title, ...(scene.page?.lines ?? [])];
+      case "media":
+        return [scene.heading, scene.caption];
       case "quote":
         return [scene.quote, scene.author, scene.role];
       case "cta":
         return [scene.headline, scene.subline, scene.url];
+      default:
+        return unhandled(scene);
     }
   })();
   return countWords(parts.filter(Boolean).join(" "));
@@ -348,4 +366,9 @@ function countWords(text: string) {
 
 function round(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+/** Compile-time guard: a new scene type fails here until validation knows its words. */
+function unhandled(scene: never): never {
+  throw new Error(`Unknown scene ${JSON.stringify(scene)}`);
 }

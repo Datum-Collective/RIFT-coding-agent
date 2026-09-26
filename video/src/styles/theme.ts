@@ -75,13 +75,22 @@ const PALETTES: Record<Theme["name"], Palette> = {
 };
 
 export function themeFor(spec: VideoSpec): Theme {
-  const palette = PALETTES[spec.style.theme];
-  const accent = spec.style.accent;
+  const base = PALETTES[spec.style.theme];
+  const brand = Object.fromEntries(
+    Object.entries(spec.style.palette ?? {}).filter(
+      (entry) => entry[1] !== undefined,
+    ),
+  );
+  const accent = spec.style.palette?.accent ?? spec.style.accent;
+  const palette: Palette = {
+    ...base,
+    // A brand accent also drives success, so "done" states stay on brand.
+    ...(accent ? { accent, accentSoft: soften(accent), success: accent } : {}),
+    ...brand,
+  };
   return {
     name: spec.style.theme,
-    palette: accent
-      ? { ...palette, accent, accentSoft: soften(accent), success: accent }
-      : palette,
+    palette,
     fonts: { sans: "Inter", mono: "JetBrains Mono" },
     radius: { sm: 8, md: 16, lg: 28 },
     hairline: 2,

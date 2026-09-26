@@ -14,7 +14,7 @@ import { VideoProvider } from "../lib/context";
 import "../lib/typography/fonts";
 import { SceneRenderer } from "../scenes/registry";
 import { VideoSpec, type Transition } from "../spec/schema";
-import { timeline, transitionFrames } from "../spec/timing";
+import { timeline, toFrames, transitionFrames } from "../spec/timing";
 import { themeFor } from "../styles/theme";
 import { AudioTracks } from "./AudioTracks";
 
@@ -39,7 +39,7 @@ export function SpecVideo(props: SpecProps) {
                   : null}
                 <TransitionSeries.Sequence
                   name={scene.id}
-                  durationInFrames={Math.round(scene.durationInSeconds * fps)}
+                  durationInFrames={toFrames(scene.durationInSeconds, fps)}
                 >
                   <SceneRenderer scene={scene} />
                 </TransitionSeries.Sequence>

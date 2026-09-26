@@ -17,6 +17,7 @@ import {
   CodeScene,
   CtaScene,
   ListScene,
+  MediaScene,
   TerminalScene,
 } from "./ProductScenes";
 import { QuoteScene, StatementScene, TitleScene } from "./TypographyScenes";
@@ -40,6 +41,8 @@ export function SceneRenderer(props: { scene: Scene }) {
       return <CodeScene scene={scene} />;
     case "browser":
       return <BrowserScene scene={scene} />;
+    case "media":
+      return <MediaScene scene={scene} />;
     case "cta":
       return <CtaScene scene={scene} />;
     case "flow":
@@ -54,5 +57,12 @@ export function SceneRenderer(props: { scene: Scene }) {
       return <VectorsScene scene={scene} />;
     case "heatmap":
       return <HeatmapScene scene={scene} />;
+    default:
+      return unhandled(scene);
   }
+}
+
+/** Compile-time guard: adding a scene type to the schema fails here until it is drawn. */
+function unhandled(scene: never): never {
+  throw new Error(`No component for scene ${JSON.stringify(scene)}`);
 }

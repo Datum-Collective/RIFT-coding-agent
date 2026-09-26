@@ -30,7 +30,7 @@ const composition = await selectComposition({
   inputProps,
 });
 
-let last = -1;
+const printed = new Set<number>();
 await renderMedia({
   composition,
   serveUrl,
@@ -44,28 +44,31 @@ await renderMedia({
   jpegQuality: 92,
   onProgress: ({ progress }) => {
     const step = Math.floor(progress * 10);
-    if (step !== last) process.stdout.write(`\r  rendering ${step * 10}%`);
-    last = step;
+    if (printed.has(step)) return;
+    printed.add(step);
+    process.stdout.write(`\r  rendering ${step * 10}%`);
   },
 });
 process.stdout.write("\n");
 
 const actual = probe(output);
-const problems = checkOutput(actual, {
-  width: spec.format.width,
-  height: spec.format.height,
-  fps: spec.format.fps,
-  durationInSeconds: timeline(spec).durationInFrames / spec.format.fps,
-  audio: Boolean(
-    spec.audio?.music || spec.audio?.voiceover || spec.audio?.effects.length,
-  ),
-});
-const blanks = blankStretches(output);
-for (const blank of blanks)
-  problems.push(`blank frames from ${blank.start}s to ${blank.end}s`);
-
+const blanks = blankStretches(output).map(
+  (blank) => `blank frames from ${blank.start}s to ${blank.end}s`,
+);
+const problems = [
+  ...checkOutput(actual, {
+    width: spec.format.width,
+    height: spec.format.height,
+    fps: spec.format.fps,
+    durationInSeconds: timeline(spec).durationInFrames / spec.format.fps,
+    audio: Boolean(
+      spec.audio?.music || spec.audio?.voiceover || spec.audio?.effects.length,
+    ),
+  }),
+  ...blanks,
+];
 if (problems.length) {
-  for (const problem of problems) console.log(`  ${color.red("✗")} ${problem}`);
+  problems.forEach((problem) => console.log(`  ${color.red("✗")} ${problem}`));
   process.exit(1);
 }
 console.log(

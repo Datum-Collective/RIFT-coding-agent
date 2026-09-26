@@ -214,6 +214,16 @@ export const BrowserScene = z.object({
     .optional(),
 });
 
+export const MediaScene = z.object({
+  ...sceneBase,
+  type: z.literal("media"),
+  heading: z.string().optional(),
+  /** An image (png, jpg, svg, webp) or video clip (mp4, webm, mov) in public/. */
+  src: assetPath,
+  caption: z.string().optional(),
+  fit: z.enum(["contain", "cover"]).default("contain"),
+});
+
 export const QuoteScene = z.object({
   ...sceneBase,
   type: z.literal("quote"),
@@ -247,6 +257,7 @@ export const Scene = z.discriminatedUnion("type", [
   HeatmapScene,
   CodeScene,
   BrowserScene,
+  MediaScene,
   QuoteScene,
   CtaScene,
 ]);
@@ -286,6 +297,18 @@ export const Audio = z.object({
 
 export const Theme = z.enum(["terminal", "paper", "midnight"]);
 
+type PaletteRole =
+  | "background"
+  | "surface"
+  | "surfaceRaised"
+  | "border"
+  | "text"
+  | "textMuted"
+  | "accent"
+  | "danger"
+  | "warning"
+  | "success";
+
 export const VideoSpec = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/, "video ids are kebab-case"),
   title: text,
@@ -305,6 +328,31 @@ export const VideoSpec = z.object({
     accent: z
       .string()
       .regex(/^#[0-9a-fA-F]{6}$/)
+      .optional(),
+    /** Brand colours by role; anything not given comes from the theme. */
+    palette: z
+      .object(
+        Object.fromEntries(
+          [
+            "background",
+            "surface",
+            "surfaceRaised",
+            "border",
+            "text",
+            "textMuted",
+            "accent",
+            "danger",
+            "warning",
+            "success",
+          ].map((role) => [
+            role,
+            z
+              .string()
+              .regex(/^#[0-9a-fA-F]{6}$/)
+              .optional(),
+          ]),
+        ) as Record<PaletteRole, z.ZodOptional<z.ZodString>>,
+      )
       .optional(),
     pacing: z.enum(["slow", "medium", "fast"]).default("medium"),
     visualDirection: z.string().optional(),

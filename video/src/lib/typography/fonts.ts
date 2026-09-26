@@ -16,12 +16,11 @@ const FACES = [
   { family: "JetBrains Mono", file: "JetBrainsMono-700.woff2", weight: "700" },
 ] as const;
 
-export const fontsReady = Promise.all(
-  FACES.map((face) =>
-    loadFont({
-      family: face.family,
-      url: staticFile(`fonts/${face.file}`),
-      weight: face.weight,
-    }),
-  ),
-);
+// loadFont registers each face and holds rendering until it has loaded.
+for (const face of FACES) {
+  void loadFont({
+    family: face.family,
+    url: staticFile(`fonts/${face.file}`),
+    weight: face.weight,
+  });
+}

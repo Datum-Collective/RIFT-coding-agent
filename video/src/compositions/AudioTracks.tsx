@@ -1,6 +1,7 @@
 import { Audio } from "@remotion/media";
 import { interpolate, Sequence, staticFile, useVideoConfig } from "remotion";
 import { useVideo } from "../lib/context";
+import { toFrames } from "../spec/timing";
 
 /** Music, voiceover and effects, each placed on the timeline in frames so sync is exact. */
 export function AudioTracks() {
@@ -22,7 +23,7 @@ export function AudioTracks() {
         <Sequence
           key={track.name}
           name={track.name}
-          from={Math.round(track.startAtSeconds * fps)}
+          from={toFrames(track.startAtSeconds, fps)}
           layout="none"
         >
           <Audio

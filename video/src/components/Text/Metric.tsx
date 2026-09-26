@@ -1,7 +1,7 @@
 import { interpolate, useCurrentFrame, useVideoConfig } from "remotion";
 import { useVideo } from "../../lib/context";
 import { motion } from "../../styles/theme";
-import { Label } from "./Typography";
+import { Body } from "./Typography";
 
 /** A number that counts up to its value, then holds. The label never moves. */
 export function Metric(props: {
@@ -44,7 +44,7 @@ export function Metric(props: {
         {shown.toFixed(props.decimals ?? 0)}
         <span style={{ color: theme.palette.accent }}>{props.suffix}</span>
       </div>
-      <Label muted text={props.label} />
+      <Body muted text={props.label} />
     </div>
   );
 }

@@ -9,8 +9,14 @@ import {
 } from "remotion";
 import { buildCaptions, parseEmphasis } from "../../lib/captions/build";
 import { useSafeArea, useVideo } from "../../lib/context";
-import type { Caption } from "../../spec/schema";
+import type { Caption, VideoSpec } from "../../spec/schema";
+import { toFrames } from "../../spec/timing";
 import { motion } from "../../styles/theme";
+
+type CaptionSource = NonNullable<VideoSpec["captions"]>["source"];
+
+// How much speech one caption page holds when captions arrive word by word.
+const WORDS_PER_PAGE_MS = 1200;
 
 type Page = {
   startMs: number;
@@ -34,11 +40,8 @@ export function CaptionTrack() {
   return (
     <AbsoluteFill style={{ pointerEvents: "none" }}>
       {pages.map((page, index) => {
-        const from = Math.round((page.startMs / 1000) * fps);
-        const duration = Math.max(
-          1,
-          Math.round((page.endMs / 1000) * fps) - from,
-        );
+        const from = toFrames(page.startMs / 1000, fps);
+        const duration = Math.max(1, toFrames(page.endMs / 1000, fps) - from);
         return (
           <Sequence
             key={index}
@@ -71,7 +74,8 @@ function CaptionPage(props: { page: Page }) {
       style={{
         justifyContent: "flex-end",
         alignItems: "center",
-        padding: `0 ${inset.right}px ${Math.max(inset.bottom - space(8), space(10))}px ${inset.left}px`,
+        // Captions sit just above the platform UI on vertical, and never within 100px of the edge.
+        padding: `0 ${inset.right}px ${Math.max(inset.bottom - space(8), space(12.5))}px ${inset.left}px`,
       }}
     >
       <div
@@ -123,7 +127,7 @@ function CaptionPage(props: { page: Page }) {
   );
 }
 
-function toPages(captions: Caption[], source: "narration" | "items"): Page[] {
+function toPages(captions: Caption[], source: CaptionSource): Page[] {
   if (source === "narration")
     return captions.map((caption) => ({
       startMs: caption.startMs,
@@ -134,7 +138,7 @@ function toPages(captions: Caption[], source: "narration" | "items"): Page[] {
     }));
   return createTikTokStyleCaptions({
     captions,
-    combineTokensWithinMilliseconds: 1200,
+    combineTokensWithinMilliseconds: WORDS_PER_PAGE_MS,
   }).pages.map((page) => ({
     startMs: page.startMs,
     endMs: page.startMs + page.durationMs,

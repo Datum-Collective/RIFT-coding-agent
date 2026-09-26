@@ -16,21 +16,28 @@ export function WordReveal(props: {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const { theme, space } = useVideo();
-  const words = parseEmphasis(props.text).flatMap((segment) =>
-    segment.text
-      .split(/(\s+)/)
-      .filter(Boolean)
-      .map((word) => ({ word, emphasis: segment.emphasis })),
-  );
-  let index = 0;
+  // Spaces are kept as their own entries so wrapping is natural; only words get a reveal slot.
+  const words = parseEmphasis(props.text)
+    .flatMap((segment) =>
+      segment.text
+        .split(/(\s+)/)
+        .filter(Boolean)
+        .map((word) => ({ word, emphasis: segment.emphasis })),
+    )
+    .map((item, position, all) => ({
+      ...item,
+      space: /^\s+$/.test(item.word),
+      slot: all.slice(0, position).filter((other) => !/^\s+$/.test(other.word))
+        .length,
+    }));
   return (
     <>
       {words.map((item, key) => {
-        if (/^\s+$/.test(item.word)) return <span key={key}>{item.word}</span>;
+        if (item.space) return <span key={key}>{item.word}</span>;
         const amount = progress(
           frame,
           fps,
-          (props.delay ?? 0) + index++ * (props.perWord ?? 0.07),
+          (props.delay ?? 0) + item.slot * (props.perWord ?? 0.07),
           0.5,
         );
         return (

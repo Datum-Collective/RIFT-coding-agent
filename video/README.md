@@ -45,7 +45,7 @@ The first render downloads Chrome Headless Shell (~90 MB) once.
 | `npm run dev` | Remotion Studio: live preview, scrubbing, and the spec as an editable form |
 | `npm run validate [-- <id>] [--deep]` | Spec rules, assets on disk, fonts; `--deep` also bundles and checks registration |
 | `npm run frames -- <id>` | One PNG per scene plus `contact-sheet.png` in `out/frames/<id>/` |
-| `npm run render -- <id> [--output out/x.mp4]` | Validate → render H.264 → verify the file |
+| `npm run render [-- <id>] [--output out/x.mp4]` | Validate → render H.264 → verify the file (default: `ProductLaunch`) |
 | `npm run new -- <id> [--template T] [--format F]` | Start a video from a template and register it |
 | `npm test` | Unit tests for timing, captions, validation and the scripts |
 | `npm run lint` | ESLint (Remotion's config) and TypeScript |
@@ -55,7 +55,7 @@ Examples:
 
 ```bash
 npm run render -- rift-launch                                     # 30s, 9:16
-npm run render -- transformer-explainer                           # 75s, 16:9
+npm run render -- transformer-explainer                           # 90s, 16:9
 npm run render -- ProductLaunch --output out/product-launch.mp4   # a template
 ```
 
@@ -123,7 +123,9 @@ Rules the engine enforces:
 | `paper` | teaching, explainers, diagrams | warm off-white, blue accent |
 | `midnight` | cinematic typography, announcements | near-black, warm amber accent |
 
-`style.accent` overrides a theme's accent with a brand colour.
+`style.accent` sets a brand accent. `style.palette` overrides any role (`background`, `surface`,
+`surfaceRaised`, `border`, `text`, `textMuted`, `accent`, `danger`, `warning`, `success`) with a
+hex colour; roles you leave out come from the theme.
 
 ### Scene catalog
 
@@ -134,7 +136,7 @@ Rules the engine enforces:
 | `quote` | testimonial | `quote`, `author`, `role?` |
 | `terminal` | CLI demo; inputs type out, results follow | `heading?`, `title`, `lines[{kind: input\|output\|success\|error\|muted, text}]` |
 | `code` | a snippet with highlighted lines | `heading?`, `filename?`, `code`, `highlight?[]` (1-based) |
-| `browser` | a product page or screenshot | `heading?`, `url`, `image?` or `page{title, lines[]}` |
+| `browser` | a product page or screenshot in a browser frame | `heading?`, `url`, `image?` or `page{title, lines[]}` |
 | `list` | checklist, status list | `heading`, `items[{label, detail?, status?}]` |
 | `cards` | features, concepts (up to 6) | `heading?`, `cards[{title, body?, glyph?}]` |
 | `flow` | a process, with an optional loop back | `heading?`, `steps[]`, `loop?{from, to, label?}` |
@@ -143,6 +145,7 @@ Rules the engine enforces:
 | `chips` | tokens, tags, IDs | `heading?`, `chips[{label, sub?}]`, `note?` |
 | `vectors` | embeddings, feature vectors (−1..1) | `heading?`, `rows[{label, values[]}]`, `note?` |
 | `heatmap` | attention, similarity (0..1), up to 4 matrices | `heading?`, `matrices[{title?, rows[], cols[], values[][]}]`, `note?` |
+| `media` | an image or video clip from `public/` | `heading?`, `src`, `caption?`, `fit?` (`contain`/`cover`) |
 | `cta` | the close | `logo?` or `wordmark?`, `headline`, `url?`, `subline?` |
 
 Every scene also takes `id`, `durationInSeconds`, `narration?` and `transition?` (`fade`,
@@ -177,9 +180,10 @@ video/
 Components take props, never content, and read theme and sizes from context:
 
 - **Text:** `Display`, `Headline`, `Subheadline`, `Body`, `Label`, `Code`, `Eyebrow`, `Cta`, `Metric`, `Emphasis`
-- **Motion:** `Reveal` / `FadeIn` / `SlideIn`, `WordReveal`, `TypeReveal`. One entrance curve
+- **Motion:** `Reveal` / `FadeIn` / `SlideIn`, `ScaleIn`, `WordReveal`, `TypeReveal`. One entrance curve
   (`motion.enter`) and a pacing-aware `stagger()`, with no springs or bounce by design.
-- **UI:** `Window`, `Terminal`, `BrowserWindow`, `CodeEditor`, `Card`, `StatusGlyph`, `Cursor`, `Callout`, `ProgressBar`
+- **UI:** `Window`, `Terminal`, `BrowserWindow`, `CodeEditor`, `Card`, `StatusGlyph`, `Cursor`, `Callout`, `ProgressBar`, `Notification`, `HighlightBox`
+- **Media:** `AssetImage`, `ImageReveal`, `VideoClip`
 - **Charts:** `BarChart`, `FlowSteps`, `Heatmap`, `VectorStrip`, `Chip`
 - **Captions:** `CaptionTrack`, in `@remotion/captions` format
 - **Layout:** `SceneFrame` (background plus platform safe area), `Stack`
@@ -188,7 +192,8 @@ Components take props, never content, and read theme and sizes from context:
 
 **A new scene type:** add its schema to `src/spec/schema.ts` (and to the `Scene` union), draw it
 in `src/scenes/`, map it in `scenes/registry.tsx`, and teach `validate.ts` what has to fit and
-what counts as reading time. TypeScript flags every switch that's missing the new case.
+what counts as reading time. Exhaustive `never` guards make TypeScript fail in both places until
+you do.
 
 **Voiceover (ElevenLabs, Kokoro, local TTS):** implement `VoiceoverProvider` in
 `src/lib/audio/provider.ts`. It writes a file to `public/audio/` and returns its path, which goes
@@ -208,6 +213,19 @@ for FFmpeg only for what it adds.
 **Manim, avatars (HeyGen), publishing, MCP tools:** render or fetch into `public/` as assets, or
 publish from `out/`. The core renderer stays independent of all of them.
 
+## Known limitations
+
+- **Fit is estimated.** Validation estimates text width from character counts; `npm run frames`
+  is the real check for clipping and overlap, and `/video` makes Claude look at every frame.
+- **No line charts or dashboards yet.** Bar charts, heatmaps, vectors and metrics exist. Add a
+  scene type for anything else (see Extending).
+- **Per-scene timing is duration plus transition.** Entrance timing comes from the pacing, not
+  from per-element keyframes in the spec; fine-tune in Studio or in the scene component.
+- **Two font families.** Inter and JetBrains Mono ship in `public/fonts`. A brand font means
+  adding its files and a `loadFont` entry in `src/lib/typography/fonts.ts`.
+- **No voice, transcription or capture providers ship.** The interfaces are there; pick a provider
+  when a video needs one.
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -217,4 +235,5 @@ publish from `out/`. The core renderer stays independent of all of them.
 | `wraps to N lines` / `characters, but N fit` | Shorten the copy; don't shrink the type below the scale. |
 | `missing file public/...` | Add the asset, or fix the path (relative to `public/`, no leading slash). |
 | Render exits with `blank frames` | A scene drew nothing for that stretch; check it with `npm run frames`. |
+| `blank-frame check could not run ffmpeg` | Neither system ffmpeg nor Remotion's bundled one ran; reinstall with `npm install`. |
 | First render hangs at "Downloading Chrome" | One-time ~90 MB download; needs network once. |

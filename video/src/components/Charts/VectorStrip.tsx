@@ -21,7 +21,7 @@ export function VectorStrip(props: {
       <div
         style={{
           fontFamily: theme.fonts.mono,
-          fontSize: type("label") * 1.15,
+          fontSize: type("body"),
           color: theme.palette.text,
           minWidth: props.cell * 4,
           textAlign: "right",

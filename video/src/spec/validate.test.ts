@@ -219,12 +219,24 @@ test("asset references are collected from every scene and audio track", () => {
         logo: "images/logo.svg",
         durationInSeconds: 3,
       },
+      {
+        id: "m",
+        type: "media",
+        src: "assets/demo.mp4",
+        durationInSeconds: 3,
+      },
     ],
   );
   assert.deepEqual(
     assetRefs(spec)
       .map((ref) => ref.src)
       .sort(),
-    ["audio/bed.mp3", "audio/hit.wav", "images/logo.svg", "images/shot.png"],
+    [
+      "assets/demo.mp4",
+      "audio/bed.mp3",
+      "audio/hit.wav",
+      "images/logo.svg",
+      "images/shot.png",
+    ],
   );
 });
