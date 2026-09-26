@@ -17,6 +17,7 @@ import { StatsCommand } from "./cli/cmd/stats"
 import { McpCommand } from "./cli/cmd/mcp"
 import { GithubCommand } from "./cli/cmd/github"
 import { ExportCommand } from "./cli/cmd/export"
+import { ReplayCommand } from "./cli/cmd/replay"
 import { ImportCommand } from "./cli/cmd/import"
 import { AttachCommand } from "./cli/cmd/attach"
 import { TuiThreadCommand } from "./cli/cmd/tui"
@@ -97,6 +98,7 @@ const cli = yargs(args)
   .command(ModelsCommand)
   .command(StatsCommand)
   .command(ExportCommand)
+  .command(ReplayCommand)
   .command(ImportCommand)
   .command(GithubCommand)
   .command(PrCommand)

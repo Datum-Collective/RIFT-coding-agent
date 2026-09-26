@@ -479,6 +479,13 @@ const layer = Layer.effect(
                   hash: patch.hash,
                   files: patch.files,
                 })
+                if (completedSnapshot) {
+                  yield* snapshot.keep({
+                    before: ctx.snapshot,
+                    after: completedSnapshot,
+                    message: `RIFT: ${patch.files.length} ${patch.files.length === 1 ? "file" : "files"}\n\nSession: ${ctx.sessionID}\nMessage: ${ctx.assistantMessage.id}`,
+                  })
+                }
               }
               ctx.snapshot = undefined
             }

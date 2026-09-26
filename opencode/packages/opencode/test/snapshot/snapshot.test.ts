@@ -1216,3 +1216,77 @@ it.instance(
   }),
   { git: true },
 )
+
+const historyGitDir = () =>
+  Effect.promise(async () => {
+    const { Global } = await import("@opencode-ai/core/global")
+    const found = await Array.fromAsync(
+      new Bun.Glob("*/*/refs/rift/history").scan({ cwd: path.join(Global.Path.data, "snapshot"), onlyFiles: true }),
+    )
+    const dirs = await Promise.all(
+      found.map(async (ref) => {
+        const dir = path.join(Global.Path.data, "snapshot", ref, "..", "..", "..")
+        return { dir, time: (await fs.stat(path.join(dir, "refs/rift/history"))).mtimeMs }
+      }),
+    )
+    return dirs.sort((a, b) => b.time - a.time)[0]!.dir
+  })
+
+const git = (gitdir: string, ...cmd: string[]) =>
+  Effect.promise(() =>
+    $`git --git-dir ${gitdir} ${cmd}`
+      .quiet()
+      .nothrow()
+      .then((r) => r.stdout.toString().trim()),
+  )
+
+it.instance(
+  "keep pins every step so gc cannot prune snapshots time travel needs",
+  withTrackedSnapshot(({ tmp, snapshot, before }) =>
+    Effect.gen(function* () {
+      yield* write(`${tmp.path}/a.txt`, "EDITED BY RIFT")
+      const after = (yield* snapshot.track())!
+      yield* snapshot.keep({ before, after, message: "RIFT: 1 file\n\nSession: ses_x" })
+
+      const gitdir = yield* historyGitDir()
+      yield* git(gitdir, "gc", "--prune=now")
+      expect(yield* git(gitdir, "cat-file", "-t", before)).toBe("tree")
+      expect(yield* git(gitdir, "cat-file", "-t", after)).toBe("tree")
+      expect((yield* git(gitdir, "log", "--format=%s", Snapshot.HISTORY_REF)).split("\n")).toEqual([
+        "RIFT: 1 file",
+        "Before RIFT",
+      ])
+
+      yield* write(`${tmp.path}/a.txt`, "BEFORE TRAVEL")
+      yield* snapshot.restore(before)
+      expect(yield* readText(`${tmp.path}/a.txt`)).toBe(tmp.extra.aContent)
+    }),
+  ),
+  { git: true },
+)
+
+it.instance(
+  "keep never credits RIFT with edits made between its steps",
+  withTrackedSnapshot(({ tmp, snapshot, before }) =>
+    Effect.gen(function* () {
+      yield* write(`${tmp.path}/a.txt`, "RIFT ONE")
+      const first = (yield* snapshot.track())!
+      yield* snapshot.keep({ before, after: first, message: "RIFT: step one" })
+
+      yield* write(`${tmp.path}/b.txt`, "HUMAN EDIT")
+      const human = (yield* snapshot.track())!
+      yield* write(`${tmp.path}/a.txt`, "RIFT TWO")
+      const second = (yield* snapshot.track())!
+      yield* snapshot.keep({ before: human, after: second, message: "RIFT: step two" })
+
+      const gitdir = yield* historyGitDir()
+      expect((yield* git(gitdir, "log", "--format=%s", Snapshot.HISTORY_REF)).split("\n")).toEqual([
+        "RIFT: step two",
+        "Outside RIFT",
+        "RIFT: step one",
+        "Before RIFT",
+      ])
+    }),
+  ),
+  { git: true },
+)

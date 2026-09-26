@@ -21,6 +21,7 @@ export const FileDiff = Info
 export type FileDiff = typeof FileDiff.Type
 
 const prune = "7.days"
+export const HISTORY_REF = "refs/rift/history"
 const limit = 2 * 1024 * 1024
 const core = ["-c", "core.longpaths=true", "-c", "core.symlinks=true"]
 const cfg = ["-c", "core.autocrlf=false", ...core]
@@ -39,6 +40,7 @@ export interface Interface {
   readonly track: () => Effect.Effect<string | undefined>
   readonly patch: (hash: string) => Effect.Effect<Patch>
   readonly restore: (snapshot: string) => Effect.Effect<void>
+  readonly keep: (input: { before: string; after: string; message: string }) => Effect.Effect<void>
   readonly revert: (patches: Patch[]) => Effect.Effect<void>
   readonly diff: (hash: string) => Effect.Effect<string>
   readonly diffFull: (from: string, to: string) => Effect.Effect<FileDiff[]>
@@ -375,6 +377,48 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
                   .filter((item) => !ignored.has(item))
                   .map((x) => path.join(state.worktree, x).replaceAll("\\", "/")),
               }
+            }),
+          )
+        })
+
+        // Commits a step onto refs/rift/history. Snapshot trees are otherwise unreachable and
+        // `gc --prune` deletes them after a week, which would break time travel to older work.
+        const keep = Effect.fnUntraced(function* (input: { before: string; after: string; message: string }) {
+          return yield* locked(
+            Effect.gen(function* () {
+              if (!(yield* enabled())) return
+              const env = {
+                GIT_AUTHOR_NAME: "RIFT",
+                GIT_AUTHOR_EMAIL: "rift@localhost",
+                GIT_COMMITTER_NAME: "RIFT",
+                GIT_COMMITTER_EMAIL: "rift@localhost",
+              }
+              const head = (yield* git(args(["rev-parse", "--verify", "-q", HISTORY_REF]), {
+                cwd: state.directory,
+              })).text.trim()
+              const headTree = head
+                ? (yield* git(args(["rev-parse", `${head}^{tree}`]), { cwd: state.directory })).text.trim()
+                : ""
+              const commit = Effect.fnUntraced(function* (tree: string, parent: string, message: string) {
+                const result = yield* git(
+                  args(["commit-tree", tree, ...(parent ? ["-p", parent] : []), "-m", message]),
+                  { cwd: state.directory, env },
+                )
+                return result.code === 0 ? result.text.trim() : ""
+              })
+              // The first step also pins the codebase as it was before RIFT touched it. Later, changes
+              // made between steps by someone else get their own commit, so the history never credits
+              // RIFT with an edit it did not make.
+              const parent =
+                headTree === input.before
+                  ? head
+                  : yield* commit(input.before, head, head ? "Outside RIFT" : "Before RIFT")
+              const next = yield* commit(input.after, parent, input.message)
+              if (!next) {
+                yield* Effect.logWarning("failed to keep snapshot", { tree: input.after })
+                return
+              }
+              yield* git(args(["update-ref", HISTORY_REF, next]), { cwd: state.directory })
             }),
           )
         })
@@ -765,7 +809,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
           Effect.forkScoped,
         )
 
-        return { cleanup, track, patch, restore, revert, diff, diffFull }
+        return { cleanup, track, patch, restore, keep, revert, diff, diffFull }
       }),
     )
 
@@ -784,6 +828,9 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
       }),
       restore: Effect.fn("Snapshot.restore")(function* (snapshot: string) {
         return yield* InstanceState.useEffect(state, (s) => s.restore(snapshot))
+      }),
+      keep: Effect.fn("Snapshot.keep")(function* (input: { before: string; after: string; message: string }) {
+        return yield* InstanceState.useEffect(state, (s) => s.keep(input))
       }),
       revert: Effect.fn("Snapshot.revert")(function* (patches: Patch[]) {
         return yield* InstanceState.useEffect(state, (s) => s.revert(patches))

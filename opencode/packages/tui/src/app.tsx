@@ -43,6 +43,7 @@ import { PermissionProvider } from "./context/permission"
 import { DialogModel } from "./component/dialog-model"
 import { DialogVibeModels } from "./component/dialog-vibe-models"
 import { MissionControl } from "./component/control/mission-control"
+import { ReplayDialog } from "./component/control/replay-view"
 import { useConnected } from "./component/use-connected"
 import { DialogMcp } from "./component/dialog-mcp"
 import { DialogStatus } from "./component/dialog-status"
@@ -646,6 +647,15 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         slashName: "mission",
         run: () => {
           dialog.replace(() => <MissionControl />)
+        },
+      },
+      {
+        name: "replay.open",
+        title: "Replay and time travel",
+        category: "Session",
+        slashName: "replay",
+        run: () => {
+          dialog.replace(() => <ReplayDialog />)
         },
       },
       {

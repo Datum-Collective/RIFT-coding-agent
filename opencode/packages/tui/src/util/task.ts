@@ -111,6 +111,7 @@ type ToolState = {
   status: "pending" | "running" | "completed" | "error"
   input?: unknown
   title?: string
+  metadata?: Record<string, unknown>
   time?: { start?: number; end?: number }
 }
 

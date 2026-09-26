@@ -160,6 +160,25 @@ keystroke away.
 A strong model plans and reviews each step while a cheaper one does the work, so you get good
 decisions without paying frontier prices for every edit.
 
+### Replay and time travel
+
+Every edit RIFT makes is kept. Each step that changes files is committed to a private history
+(a shadow git repo, never your own), including a snapshot of the codebase before RIFT first touched
+it and a separate commit for anything you changed by hand in between. Snapshots used to be pruned
+after a week; now they last.
+
+`/replay` shows that history as a GitHub-style activity grid. Pick a day, pick a turn, and either
+open the session or **travel back** to before that turn. `/redo` brings everything back.
+
+```
+rift replay                  # this codebase's activity grid and recent sessions
+rift replay <session>        # every step: decisions, tool calls, files, tests, failures, repairs, evidence
+rift replay <session> --json # the same, for scripts
+```
+
+Tests in a replay are judged by their real exit codes. A command that failed and later passed is
+marked as a repair.
+
 ### Mission Control
 
 Every session on one board, ordered so whatever needs you is on top.
@@ -171,6 +190,7 @@ rift                              # start in the current directory
 rift /path/to/project             # start somewhere else
 rift run "fix the failing test"   # non-interactive, for scripts and CI
 rift --continue                   # resume the last session
+rift replay <session>             # replay what RIFT did, step by step
 ```
 
 | Key         | Action                                        |
