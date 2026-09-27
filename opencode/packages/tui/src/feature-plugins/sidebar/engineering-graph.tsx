@@ -5,12 +5,17 @@
  * with its status and owning agent, and under it the evidence RIFT gathered itself: every check
  * shown as passed, failed or not run, with the reason. The agent never writes evidence. This
  * replaces the old token/cost readout, which now lives as a single line in the sidebar footer.
+ *
+ * Rendered as a `tree`-style ASCII graph (├── / └── / │) rather than an indented list, so
+ * structure reads from the branch lines instead of a separate glyph gutter. Status is a single
+ * small indicator on the node's own line; everything under a node (files, decisions, unmet
+ * dependencies, evidence) continues that node's branch, plain and muted, so it stays secondary.
  */
 import type { TuiPlugin, TuiPluginApi, TuiSidebarGraphItem } from "@opencode-ai/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
 import { createMemo, For, Show } from "solid-js"
 import { useTheme } from "../../context/theme"
-import { Row, shortenPath } from "../../component/control/primitives"
+import { GLYPH, signalColor, shortenPath } from "../../component/control/primitives"
 import { useTask } from "../../component/control/use-task"
 import { deriveGraph, evidenceFor } from "../../util/engineering-graph"
 import type { Evidence, Signal } from "../../util/task"
@@ -28,44 +33,42 @@ const SIGNAL: Record<TuiSidebarGraphItem["status"], Signal> = {
   failed: "failed",
 }
 
-const STATUS_LABEL: Record<TuiSidebarGraphItem["status"], string> = {
-  not_started: "not started",
-  in_progress: "in progress",
-  blocked: "blocked",
-  testing: "testing",
-  done: "done",
-  failed: "failed",
-}
+type Branch = { node: TuiSidebarGraphItem; prefix: string; isLast: boolean }
 
-type TreeNode = TuiSidebarGraphItem & { children: TreeNode[]; depth: number }
-
-function buildTree(nodes: readonly TuiSidebarGraphItem[]): TreeNode[] {
+/** Lays declared nodes out as a tree: each row's own branch prefix, plus the prefix its children continue with. */
+function layout(nodes: readonly TuiSidebarGraphItem[]): Branch[] {
   const byParent = new Map<string | undefined, TuiSidebarGraphItem[]>()
   for (const node of nodes) {
-    const key = node.parent_id
-    const list = byParent.get(key) ?? []
+    const list = byParent.get(node.parent_id) ?? []
     list.push(node)
-    byParent.set(key, list)
+    byParent.set(node.parent_id, list)
   }
-  function attach(parent_id: string | undefined, depth: number): TreeNode[] {
-    return (byParent.get(parent_id) ?? []).map((node) => ({
-      ...node,
-      depth,
-      children: attach(node.id, depth + 1),
-    }))
+  function walk(parent_id: string | undefined, prefix: string): Branch[] {
+    const siblings = byParent.get(parent_id) ?? []
+    return siblings.flatMap((node, index) => {
+      const isLast = index === siblings.length - 1
+      const childPrefix = prefix + (isLast ? "    " : "│   ")
+      return [{ node, prefix, isLast }, ...walk(node.id, childPrefix)]
+    })
   }
-  return attach(undefined, 0)
+  return walk(undefined, "")
 }
 
-function flatten(tree: TreeNode[]): TreeNode[] {
-  return tree.flatMap((node) => [node, ...flatten(node.children)])
+function branchPrefix(branch: Branch) {
+  return branch.prefix + (branch.isLast ? "└── " : "├── ")
 }
 
-function List(props: { label: string; items: readonly string[] }) {
+/** Where a node's own detail lines continue its branch: same rule as a child, minus the connector. */
+function detailPrefix(branch: Branch) {
+  return branch.prefix + (branch.isLast ? "    " : "│   ")
+}
+
+function List(props: { label: string; items: readonly string[]; prefix: string }) {
   const { theme } = useTheme()
   return (
     <Show when={props.items.length > 0}>
-      <text fg={theme.textMuted}>
+      <text fg={theme.textMuted} wrapMode="none">
+        {props.prefix}
         {props.label}: {props.items.slice(0, MAX_LIST).join(", ")}
         {props.items.length > MAX_LIST ? ` +${props.items.length - MAX_LIST} more` : ""}
       </text>
@@ -81,23 +84,26 @@ const EVIDENCE_SIGNAL: Record<Evidence["status"], Signal> = {
 }
 
 /** One line of evidence: ✓ passed, ✗ failed, ○ not run, ● running. The detail says why. */
-function EvidenceRow(props: { item: Evidence; indent: number }) {
+function EvidenceRow(props: { item: Evidence; prefix: string }) {
   const { theme } = useTheme()
+  const signal = () => EVIDENCE_SIGNAL[props.item.status]
   return (
-    <Row signal={EVIDENCE_SIGNAL[props.item.status]} indent={props.indent}>
-      <text fg={props.item.status === "failed" ? theme.text : theme.textMuted} wrapMode="none">
+    <text wrapMode="none">
+      <span style={{ fg: theme.borderSubtle }}>{props.prefix}</span>
+      <span style={{ fg: signalColor(theme, signal()) }}>{GLYPH[signal()]} </span>
+      <span style={{ fg: props.item.status === "failed" ? theme.text : theme.textMuted }}>
         {props.item.label}
-        <Show when={props.item.detail}>
-          <span style={{ fg: theme.textMuted }}> · {props.item.detail}</span>
-        </Show>
-      </text>
-    </Row>
+        <Show when={props.item.detail}> · {props.item.detail}</Show>
+      </span>
+    </text>
   )
 }
 
-function NodeRow(props: { node: TreeNode; byID: Map<string, TuiSidebarGraphItem>; evidence: readonly Evidence[] }) {
+function NodeRow(props: { branch: Branch; byID: Map<string, TuiSidebarGraphItem>; evidence: readonly Evidence[] }) {
   const { theme } = useTheme()
-  const node = () => props.node
+  const node = () => props.branch.node
+  const signal = () => SIGNAL[node().status]
+  const detail = () => detailPrefix(props.branch)
   const unmetDeps = createMemo(() =>
     node()
       .dependencies.map((depID) => props.byID.get(depID))
@@ -105,23 +111,24 @@ function NodeRow(props: { node: TreeNode; byID: Map<string, TuiSidebarGraphItem>
   )
 
   return (
-    <Row signal={SIGNAL[node().status]} indent={node().depth * 2} dim={node().status === "done"}>
-      <box>
-        <text fg={node().status === "in_progress" ? theme.text : theme.textMuted} wrapMode="none">
+    <box>
+      <text wrapMode="none">
+        <span style={{ fg: theme.borderSubtle }}>{branchPrefix(props.branch)}</span>
+        <span style={{ fg: signalColor(theme, signal()) }}>{GLYPH[signal()]} </span>
+        <span style={{ fg: node().status === "in_progress" ? theme.text : theme.textMuted }}>
           {node().title}
-          <span style={{ fg: theme.textMuted }}> · {STATUS_LABEL[node().status]}</span>
-          <Show when={node().owner}>
-            <span style={{ fg: theme.textMuted }}> · {node().owner}</span>
-          </Show>
+          <Show when={node().owner}> · {node().owner}</Show>
+        </span>
+      </text>
+      <Show when={unmetDeps().length > 0}>
+        <text fg={theme.warning} wrapMode="none">
+          {detail()}waiting on: {unmetDeps().map((dep) => dep.title).join(", ")}
         </text>
-        <Show when={unmetDeps().length > 0}>
-          <text fg={theme.warning}>waiting on: {unmetDeps().map((dep) => dep.title).join(", ")}</text>
-        </Show>
-        <List label="files" items={node().files.map((file) => shortenPath(file, 30))} />
-        <List label="decisions" items={node().decisions} />
-        <For each={props.evidence}>{(item) => <EvidenceRow item={item} indent={0} />}</For>
-      </box>
-    </Row>
+      </Show>
+      <List label="files" items={node().files.map((file) => shortenPath(file, 30))} prefix={detail()} />
+      <List label="decisions" items={node().decisions} prefix={detail()} />
+      <For each={props.evidence}>{(item) => <EvidenceRow item={item} prefix={detail()} />}</For>
+    </box>
   )
 }
 
@@ -145,13 +152,12 @@ export function GraphPanel(props: {
   evidence?: ReadonlyMap<string, readonly Evidence[]>
 }) {
   const { theme } = useTheme()
-  const tree = createMemo(() => buildTree(props.nodes))
-  const rows = createMemo(() => flatten(tree()))
+  const branches = createMemo(() => layout(props.nodes))
   const byID = createMemo(() => new Map(props.nodes.map((node) => [node.id, node])))
 
   return (
     <Show
-      when={rows().length > 0}
+      when={branches().length > 0}
       fallback={
         <box>
           <text fg={theme.text}>
@@ -165,8 +171,8 @@ export function GraphPanel(props: {
         <text fg={theme.text}>
           <b>Engineering graph</b>
         </text>
-        <For each={rows()}>
-          {(node) => <NodeRow node={node} byID={byID()} evidence={props.evidence?.get(node.id) ?? []} />}
+        <For each={branches()}>
+          {(branch) => <NodeRow branch={branch} byID={byID()} evidence={props.evidence?.get(branch.node.id) ?? []} />}
         </For>
       </box>
     </Show>
