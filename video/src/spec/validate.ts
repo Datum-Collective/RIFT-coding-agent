@@ -8,8 +8,10 @@ import {
   contentBox,
   estimateLines,
   monoCharsPerLine,
+  space,
   terminalFontSize,
   typeSize,
+  versusSideWidth,
   type Frame,
 } from "../styles/scale";
 import type { Scene, VideoSpec } from "./schema";
@@ -120,6 +122,10 @@ export function assetRefs(spec: VideoSpec): AssetRef[] {
           kind: VIDEO_FILE.test(scene.src) ? "video" : "image",
         },
       ];
+    if (scene.type === "ansi")
+      return [{ src: scene.src, path: `scenes[${index}].src`, kind: "image" }];
+    if (scene.type === "versus")
+      return [{ src: scene.mark, path: `scenes[${index}].mark`, kind: "image" }];
     if (scene.type === "cta" && scene.logo)
       return [
         { src: scene.logo, path: `scenes[${index}].logo`, kind: "image" },
@@ -200,6 +206,7 @@ function checkFit(scene: Scene, path: string, frame: Frame, errors: Issue[]) {
       fit(`lines[${index}]`, line, "headline", vertical ? 3 : 2),
     );
   if (scene.type === "cta") fit("headline", scene.headline, "headline", 3);
+  if (scene.type === "versus") checkVersus(scene, path, frame, errors);
   if (scene.type === "quote")
     fit("quote", scene.quote, "title", vertical ? 8 : 5);
   if ("heading" in scene && scene.heading)
@@ -226,6 +233,73 @@ function checkFit(scene: Scene, path: string, frame: Frame, errors: Issue[]) {
         });
     });
   }
+  // ANSI art scales to the frame by construction; the overlays must still read.
+  if (scene.type === "ansi") {
+    if (scene.bubble && scene.bubble.length > 40)
+      errors.push({
+        path: `${path}.bubble`,
+        message: `${scene.bubble.length} characters, but 40 fit in a bot bubble; shorten it`,
+      });
+    if (scene.terminal && scene.terminal.length > 32)
+      errors.push({
+        path: `${path}.terminal`,
+        message: `${scene.terminal.length} characters, but 32 fit on an ANSI terminal line; shorten it`,
+      });
+  }
+}
+
+/**
+ * A versus round sets its claim above the split at headline size (two lines at most, so the
+ * split never moves between rounds) and each side's copy inside half the frame.
+ */
+function checkVersus(
+  scene: Extract<Scene, { type: "versus" }>,
+  path: string,
+  frame: Frame,
+  errors: Issue[],
+) {
+  const box = contentBox(frame);
+  const close = scene.beat === "close";
+  // The close sets its tagline at 0.7 of headline size; "\n" forces a break.
+  const size = typeSize(frame, "headline") * (close ? 0.7 : 1);
+  const maxLines = close ? 4 : 2;
+  const lines = scene.headline
+    .split("\n")
+    .reduce((sum, line) => sum + estimateLines(line, size, box.width), 0);
+  if (lines > maxLines)
+    errors.push({
+      path: `${path}.headline`,
+      message: `wraps to ${lines} lines, more than the ${maxLines} a ${scene.beat} beat holds; shorten it`,
+    });
+  // Each side is half the frame less its padding; mono run lines cannot rewrap.
+  const side = versusSideWidth(frame);
+  if (scene.claim && estimateLines(scene.claim, typeSize(frame, "body"), side) > 1)
+    errors.push({
+      path: `${path}.claim`,
+      message: `does not fit on one line in half the frame; shorten it`,
+    });
+  const monoMax = Math.floor(
+    (side - 2 * space(frame, 3)) / (typeSize(frame, "mono") * 0.6),
+  );
+  scene.run.forEach((line, index) => {
+    if (line.text.length + 2 > monoMax)
+      errors.push({
+        path: `${path}.run[${index}]`,
+        message: `${line.text.length} characters, but ${monoMax - 2} fit in half the frame; shorten it`,
+      });
+  });
+  if (scene.beat === "check" && (!scene.claim || scene.run.length === 0))
+    errors.push({
+      path,
+      message: "a check beat needs a claim and the run that proves it",
+    });
+  if (scene.beat === "alert" && !scene.claim)
+    errors.push({ path, message: "an alert beat needs the claim both sides show" });
+  if (scene.url && scene.url.length * typeSize(frame, "label") * 0.55 > box.width)
+    errors.push({
+      path: `${path}.url`,
+      message: "too long for one line at label size; shorten it",
+    });
 }
 
 function checkData(scene: Scene, path: string, errors: Issue[]) {
@@ -348,6 +422,22 @@ function visibleWords(scene: Scene) {
         return [scene.heading, scene.page?.title, ...(scene.page?.lines ?? [])];
       case "media":
         return [scene.heading, scene.caption];
+      case "ansi":
+        return [scene.heading, scene.bubble, scene.terminal];
+      case "manga":
+        return scene.panels.flatMap((panel) => [
+          panel.label,
+          ...panel.balloons.map((balloon) => balloon.text),
+        ]);
+      case "versus":
+        // The claim is shown on both sides, but it is the same line: read once.
+        return [
+          scene.headline,
+          scene.claim,
+          ...scene.run.map((line) => line.text),
+          scene.subline,
+          scene.url,
+        ];
       case "quote":
         return [scene.quote, scene.author, scene.role];
       case "cta":

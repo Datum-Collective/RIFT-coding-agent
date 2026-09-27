@@ -116,6 +116,17 @@ export function estimateLines(
   ).lines;
 }
 
+/**
+ * Width of one side of a versus split. The divider sits on the frame's centre line and both
+ * sides stop at the wider safe inset, so the split stays symmetrical.
+ */
+export function versusSideWidth(frame: Frame) {
+  const inset = safeArea(frame);
+  return (
+    frame.width / 2 - Math.max(inset.left, inset.right) - 2 * space(frame, 1.5)
+  );
+}
+
 /** Terminal text: a little larger on vertical, where the window is the whole story. */
 export function terminalFontSize(frame: Frame) {
   return typeSize(frame, "mono") * (frame.height > frame.width ? 1.25 : 1);

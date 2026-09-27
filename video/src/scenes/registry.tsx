@@ -3,6 +3,7 @@
  * here, and teaching validation how much of it has to fit; nothing else changes.
  */
 import type { Scene } from "../spec/schema";
+import { AnsiScene } from "./AnsiScenes";
 import {
   ChartScene,
   ChipsScene,
@@ -21,6 +22,8 @@ import {
   TerminalScene,
 } from "./ProductScenes";
 import { QuoteScene, StatementScene, TitleScene } from "./TypographyScenes";
+import { MangaScene } from "./MangaScenes";
+import { VersusScene } from "./VersusScenes";
 
 export function SceneRenderer(props: { scene: Scene }) {
   const scene = props.scene;
@@ -43,6 +46,12 @@ export function SceneRenderer(props: { scene: Scene }) {
       return <BrowserScene scene={scene} />;
     case "media":
       return <MediaScene scene={scene} />;
+    case "ansi":
+      return <AnsiScene scene={scene} />;
+    case "manga":
+      return <MangaScene scene={scene} />;
+    case "versus":
+      return <VersusScene scene={scene} />;
     case "cta":
       return <CtaScene scene={scene} />;
     case "flow":

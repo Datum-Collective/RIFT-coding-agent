@@ -224,6 +224,105 @@ export const MediaScene = z.object({
   fit: z.enum(["contain", "cover"]).default("contain"),
 });
 
+export const AnsiScene = z.object({
+  ...sceneBase,
+  type: z.literal("ansi"),
+  heading: z.string().optional(),
+  /** Span-styled ASCII art in public/, e.g. "assets/rift-cig.html". Parsed to cells. */
+  src: assetPath,
+  /** Which beat of the showdown this scene stages. */
+  beat: z
+    .enum(["ember", "bot", "drag", "bolt", "headshot"])
+    .default("ember"),
+  /** Speech bubble for the bracket bot (bot, drag and headshot beats). */
+  bubble: z.string().optional(),
+  /** Command typed out at the bottom of the frame (drag beat). */
+  terminal: z.string().optional(),
+  /** Crop to the face and draw the cells larger (bolt and headshot beats). */
+  closeup: z.boolean().default(false),
+});
+
+export const MangaBalloon = z.object({
+  /** Dialogue. Keep short; validation caps it so balloons read at phone size. */
+  text: z.string().min(1).max(48),
+  tail: z.enum(["left", "right", "up", "down", "none"]).default("down"),
+  whisper: z.boolean().default(false),
+});
+
+export const MangaPanel = z.object({
+  /** Panel artwork, drawn from the shared SVG cast and FX kit. */
+  art: z.enum([
+    "standup",
+    "glint",
+    "sprint",
+    "whisper",
+    "rewire",
+    "rename",
+    "pillar",
+    "cavein",
+    "aftermath",
+    "verdict",
+    "ship",
+    "nightdesk",
+    "errors",
+    "duck",
+    "blast",
+    "sunrise",
+    "sleep",
+  ]),
+  /** At most 2; one focal point per panel. */
+  balloons: z.array(MangaBalloon).max(2).default([]),
+  /** Big graphic SFX lettering (e.g. キラッ, ドドドド). */
+  sfx: z.string().max(8).optional(),
+  /** Small rectangular narration box in the panel corner. */
+  label: z.string().max(24).optional(),
+  /** White ink on a black panel (impact frames). */
+  invert: z.boolean().default(false),
+});
+
+export const MangaScene = z.object({
+  ...sceneBase,
+  type: z.literal("manga"),
+  /** 1–3 panels, laid out in manga reading order (right to left, top to bottom). */
+  panels: z.array(MangaPanel).min(1).max(3),
+  /** Camera move across the page. Shake is deterministic; no random. */
+  camera: z.enum(["push", "pan", "still", "shake"]).default("push"),
+});
+
+/**
+ * A split-screen comparison: a plain geometric bot glyph on the left, the product's mark on the
+ * right, one claim per scene. Consecutive versus scenes keep the frame (divider, marks) in the
+ * same place, so a fade between rounds only changes what differs.
+ */
+export const VersusScene = z.object({
+  ...sceneBase,
+  type: z.literal("versus"),
+  /** The claim this round is about, set large above the split. The close uses it as the tagline. */
+  headline: text,
+  /** The right side's identity in public/ (the real logo file, never a redraw). */
+  mark: assetPath,
+  /** The mark's width over its height, e.g. 3 for a 576×192 banner. */
+  markAspect: z.number().positive().default(1),
+  /**
+   * Width over height of the monogram at the mark's left edge (e.g. the R of a wordmark). The
+   * sides show only that crop; the close grows it back into the whole mark. Omit to show it all.
+   */
+  monogram: z.number().positive().optional(),
+  /**
+   * intro: both sides plain grey with the same task. check: both claim, only the right runs it.
+   * memory: a lone bubble against an activity history. alert: a buried failure against a loud one.
+   * close: the split resolves to the mark, the tagline, and the links.
+   */
+  beat: z.enum(["intro", "check", "memory", "alert", "close"]),
+  /** The line both sides show (check, alert), e.g. "✓ Tests passing". */
+  claim: z.string().optional(),
+  /** check: the real run under the right side's claim. */
+  run: z.array(TerminalLine).max(3).default([]),
+  /** close: small lines under the tagline. */
+  subline: z.string().optional(),
+  url: z.string().optional(),
+});
+
 export const QuoteScene = z.object({
   ...sceneBase,
   type: z.literal("quote"),
@@ -258,6 +357,9 @@ export const Scene = z.discriminatedUnion("type", [
   CodeScene,
   BrowserScene,
   MediaScene,
+  AnsiScene,
+  MangaScene,
+  VersusScene,
   QuoteScene,
   CtaScene,
 ]);
