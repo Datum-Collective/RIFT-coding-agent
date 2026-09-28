@@ -1,27 +1,69 @@
+/* RIFT share viewer. Chat-first and calm, after Lovable's shared chats: neutral surfaces, the
+   conversation in readable type, and the work folded into cards. Inter and JetBrains Mono are
+   RIFT's faces from its launch videos; the one accent is the logo's CGA blue, used sparingly. */
+
+@font-face {
+  font-family: "Inter"; /* unslop-ignore: RIFT brand face, bundled by the video engine */
+  src: url("../fonts/Inter-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Inter"; /* unslop-ignore: RIFT brand face, bundled by the video engine */
+  src: url("../fonts/Inter-500.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Inter"; /* unslop-ignore: RIFT brand face, bundled by the video engine */
+  src: url("../fonts/Inter-600.woff2") format("woff2");
+  font-weight: 600 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../fonts/JetBrainsMono-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../fonts/JetBrainsMono-500.woff2") format("woff2");
+  font-weight: 500 700;
+  font-display: swap;
+}
+
 :root {
-  --bg: #0a0a0b;
-  --panel: #131316;
-  --line: #24242a;
-  --text: #ececf1;
-  --muted: #8a8a96;
-  --accent: #5b5bff;
-  --add: #3ecf8e;
-  --del: #ff5c5c;
-  --mono: ui-monospace, "JetBrains Mono", "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
-  --sans: Inter, ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+  --bg: #0e0e10;
+  --surface: #151518;
+  --surface-2: #1d1d21;
+  --border: #26262b;
+  --text: #ededf0;
+  --text-2: #a3a3ad;
+  --text-3: #6e6e78;
+  --accent: #7070ff; /* unslop-ignore: the logo's CGA bright blue (#5555ff), lifted for contrast on dark */
+  --accent-ink: #ffffff;
+  --glow: rgba(0, 0, 170, 0.22); /* the logo's CGA blue */
+  --pass: #3fbf7f;
+  --fail: #f0605d;
+  --sans: "Inter", ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif; /* unslop-ignore: RIFT brand face */
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   color-scheme: dark;
 }
 
 @media (prefers-color-scheme: light) {
   :root {
     --bg: #fbfbfc;
-    --panel: #f1f1f4;
-    --line: #e2e2e8;
-    --text: #16161a;
-    --muted: #6b6b76;
-    --accent: #4040e6;
-    --add: #13804f;
-    --del: #c93030;
+    --surface: #ffffff;
+    --surface-2: #f2f2f4;
+    --border: #e4e4e8;
+    --text: #17171b;
+    --text-2: #55555f;
+    --text-3: #8c8c96;
+    --accent: #3434d4; /* unslop-ignore: the logo's CGA blue, deepened for contrast on light */
+    --glow: rgba(85, 85, 255, 0.1);
+    --pass: #178a53;
+    --fail: #cf3431;
     color-scheme: light;
   }
 }
@@ -30,108 +72,290 @@
   box-sizing: border-box;
 }
 
+::selection {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
 body {
   margin: 0;
-  background: var(--bg);
+  min-height: 100vh;
+  background: radial-gradient(ellipse 70% 320px at 50% -60px, var(--glow), transparent 70%) no-repeat, var(--bg);
   color: var(--text);
-  font: 15px/1.6 var(--sans);
+  font: 15px/1.65 var(--sans);
   -webkit-font-smoothing: antialiased;
 }
 
-#app {
-  max-width: 820px;
-  margin: 0 auto;
-  padding: 48px 20px 64px;
+a {
+  color: var(--accent);
+  text-decoration: none;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font: 600 13px/1 var(--mono);
-  letter-spacing: 0.18em;
+a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
-.mark {
-  width: 4px;
-  height: 16px;
-  background: var(--accent);
+.muted,
+.note {
+  color: var(--text-2);
 }
 
-header {
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--line);
+.add {
+  color: var(--pass);
 }
 
-h1 {
-  margin: 18px 0 6px;
-  font-size: 26px;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
+.del {
+  color: var(--fail);
 }
 
-.meta,
-.muted {
-  color: var(--muted);
-}
-
-.meta {
-  margin: 0;
-  font: 13px var(--mono);
-}
-
-.msg {
-  padding: 22px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.who {
-  margin-bottom: 8px;
-  font: 600 12px var(--mono);
-  text-transform: lowercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-}
-
-.msg.rift .who {
+.hunk {
   color: var(--accent);
 }
 
-.who .muted {
-  font-weight: 400;
+/* Logo: RIFT's CGA pixel art. It carries its own black ground, so it sits as a small tile. */
+
+.logo {
+  display: block;
+  height: 32px;
+  width: auto;
+  border-radius: 5px;
+  image-rendering: pixelated;
+}
+
+.brand {
+  display: inline-flex;
+  flex: none;
+}
+
+/* Top bar */
+
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 60px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.crumb {
+  min-width: 0;
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.top nav {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+  flex: none;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--text);
+  color: var(--bg);
+  font: 500 13px var(--sans);
+  cursor: pointer;
+}
+
+.button:hover {
+  text-decoration: none;
+  opacity: 0.9;
+}
+
+.button.ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* Thread */
+
+.thread {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 48px 20px 32px;
+}
+
+.intro h1 {
+  margin: 0 0 10px;
+  font-size: 30px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* One row of facts: the proof pill, then model, date, duration and changes. */
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 0;
+  margin: 0;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.meta span + span::before {
+  content: "·";
+  margin: 0 8px;
+}
+
+/* The verdict: a small pill for what RIFT itself checked. */
+
+.proof {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 26px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px; /* unslop-ignore: the one pill on the page, for the proof status */
+  background: var(--surface);
+  color: var(--text-3);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: help;
+}
+
+.proof.pass {
+  color: var(--pass);
+  border-color: color-mix(in srgb, var(--pass) 40%, var(--border));
+  background: color-mix(in srgb, var(--pass) 10%, var(--surface));
+}
+
+.proof.fail {
+  color: var(--fail);
+  border-color: color-mix(in srgb, var(--fail) 40%, var(--border));
+  background: color-mix(in srgb, var(--fail) 10%, var(--surface));
+}
+
+.provenance {
+  margin: 12px 2px 0;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+/* Messages */
+
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  margin-top: 44px;
+}
+
+.msg.user {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.bubble {
+  max-width: min(78%, 600px);
+  padding: 11px 16px;
+  border-radius: 20px 20px 6px 20px;
+  background: var(--surface-2);
+  overflow-wrap: anywhere;
+}
+
+.msg.rift {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 14px;
+}
+
+.avatar {
+  display: block;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  object-fit: cover;
+  image-rendering: pixelated;
+  background: #000;
+}
+
+.content {
+  min-width: 0;
+}
+
+.who {
+  margin: 4px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.who .agent {
   margin-left: 6px;
+  color: var(--text-3);
+  font-weight: 400;
+}
+
+.content > * + * {
+  margin-top: 12px;
 }
 
 .text p {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
 }
 
-.text :last-child {
+.text > :last-child {
   margin-bottom: 0;
 }
 
 .text h3,
 .text h4,
 .text h5 {
-  margin: 16px 0 8px;
+  margin: 20px 0 8px;
   font-size: 15px;
+  font-weight: 600;
 }
 
 .text ul,
 .text ol {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
   padding-left: 22px;
 }
 
-blockquote {
-  margin: 0 0 10px;
-  padding-left: 12px;
-  border-left: 2px solid var(--line);
-  color: var(--muted);
+.text li + li {
+  margin-top: 4px;
 }
 
-a {
-  color: var(--accent);
+blockquote {
+  margin: 0 0 12px;
+  padding-left: 14px;
+  border-left: 3px solid var(--border);
+  color: var(--text-2);
+}
+
+.host {
+  color: var(--text-3);
+  font-size: 12px;
 }
 
 code,
@@ -141,77 +365,154 @@ pre {
 }
 
 :not(pre) > code {
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--panel);
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-size: 0.86em;
 }
 
 pre {
-  margin: 8px 0 0;
-  padding: 12px 14px;
-  overflow-x: auto;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--panel);
-  line-height: 1.5;
-  max-height: 460px;
+  margin: 0;
+  padding: 14px 16px;
+  overflow: auto;
+  max-height: 440px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  line-height: 1.6;
 }
 
-.call,
-.thinking {
-  margin: 6px 0;
+.diff {
+  white-space: pre;
+}
+
+/* Steps: a run of tool calls in one card. */
+
+.steps {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.call + .call {
+  border-top: 1px solid var(--border);
+}
+
+.call > summary,
+div.call {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px 14px;
   font: 13px var(--mono);
+}
+
+.call pre {
+  margin: 0 12px 12px;
 }
 
 details > summary {
   cursor: pointer;
   list-style: none;
-  color: var(--muted);
 }
 
 details > summary::-webkit-details-marker {
   display: none;
 }
 
-details > summary::before {
-  content: "▸ ";
-  color: var(--muted);
+details.call > summary::after {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-right: 1.5px solid var(--text-3);
+  border-bottom: 1.5px solid var(--text-3);
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
 }
 
-details[open] > summary::before {
-  content: "▾ ";
+details.call[open] > summary::after {
+  transform: rotate(45deg);
 }
 
-div.call::before {
-  content: "· ";
-  color: var(--muted);
+details.call > summary:hover {
+  background: var(--surface-2);
+}
+
+.status {
+  flex: none;
+  width: 14px;
+  text-align: center;
 }
 
 .tool {
+  flex: none;
   color: var(--text);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .target {
-  color: var(--muted);
-  overflow-wrap: anywhere;
+  min-width: 0;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flag,
+.stat {
+  flex: none;
+  font-size: 12px;
+}
+
+.stat {
+  margin-left: auto;
+}
+
+details.call > summary .stat {
+  margin-left: auto;
+  margin-right: 10px;
+}
+
+.thinking > summary {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.thinking > summary::before {
+  content: "›";
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s;
+}
+
+.thinking[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.thinking .text {
+  margin-top: 8px;
+  padding-left: 14px;
+  border-left: 2px solid var(--border);
+  color: var(--text-2);
 }
 
 .verified {
-  margin-top: 12px;
-  padding: 10px 14px;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--add);
-  border-radius: 6px;
-  font: 13px var(--mono);
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--pass) 35%, var(--border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--pass) 6%, var(--surface));
+  font-size: 13px;
 }
 
 .verified .label {
-  margin-bottom: 4px;
-  color: var(--muted);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  margin-bottom: 6px;
+  color: var(--pass);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .verified ul {
@@ -220,46 +521,93 @@ div.call::before {
   list-style: none;
 }
 
-.add {
-  color: var(--add);
-}
-
-.del {
-  color: var(--del);
-}
-
-.hunk {
-  color: var(--accent);
-}
-
-.diff {
-  white-space: pre;
+.verified li + li {
+  margin-top: 4px;
 }
 
 .changes {
-  padding: 22px 0;
+  margin-top: 44px;
 }
+
+.changes h2 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* Footer */
 
 footer {
-  margin-top: 36px;
-  font: 13px var(--mono);
-  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 780px;
+  margin: 56px auto 0;
+  padding: 44px 20px 64px;
+  border-top: 1px solid var(--border);
+  text-align: center;
 }
 
-footer p {
-  margin: 4px 0;
+footer .logo {
+  height: 92px;
+  border-radius: 10px;
 }
+
+.empty .logo {
+  height: 56px;
+}
+
+.tagline {
+  margin: 14px 0 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+footer .muted {
+  margin: 0 0 14px;
+  font-size: 13px;
+}
+
+/* Empty and error states */
 
 .empty {
-  padding-top: 18vh;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 24vh 20px 0;
 }
 
-@media (max-width: 560px) {
-  #app {
-    padding: 28px 16px 48px;
-  }
+.empty h1 {
+  margin: 28px 0 8px;
+  font-size: 22px;
+  font-weight: 600;
+}
 
-  h1 {
-    font-size: 22px;
+@media (max-width: 640px) {
+  .top {
+    padding: 0 14px;
+    gap: 12px;
+  }
+  .crumb,
+  .button.ghost {
+    display: none;
+  }
+  .thread {
+    padding: 32px 16px 24px;
+  }
+  .intro h1 {
+    font-size: 23px;
+  }
+  .bubble {
+    max-width: 88%;
+  }
+  .msg.rift {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
   }
 }
