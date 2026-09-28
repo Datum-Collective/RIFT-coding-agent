@@ -178,7 +178,7 @@ export const Info = Schema.Struct({
   }),
   enterprise: Schema.optional(
     Schema.Struct({ url: Schema.optional(Schema.String).annotate({ description: "Enterprise URL" }) }),
-  ),
+  ).annotate({ description: "@deprecated No longer used: RIFT shares sessions as GitHub Gists." }),
   tool_output: Schema.optional(
     Schema.Struct({
       max_lines: Schema.optional(PositiveInt).annotate({
