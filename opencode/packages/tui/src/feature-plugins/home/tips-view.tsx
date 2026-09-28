@@ -74,7 +74,7 @@ function parse(tip: string): TipPart[] {
   return parts
 }
 
-const NO_MODELS_TIP = "Run {highlight}/connect{/highlight} to add an AI provider. RIFT is ready; it just needs a brain"
+const NO_MODELS_TIP = "Run {highlight}/connect{/highlight} to add an AI provider. Until then, RIFT is a very nice text box"
 const NO_MODELS_PARTS = parse(NO_MODELS_TIP)
 
 function shortcutText(value: string) {
@@ -173,57 +173,57 @@ export function Tips(props: { api: TuiPluginApi; connected?: boolean }) {
   )
 }
 
-// Each tip teaches one real feature first; the joke rides second. Keep them to about two lines.
+// Voice: dry and specific, about what working with agents is actually like. About half the tips
+// are plain; a joke only goes in when it's true. No memes, no "X, but for Y", no exclamation marks.
 const TIPS: Tip[] = [
   // RIFT itself
-  "RIFT runs the checks before it says {highlight}done{/highlight}. Trust issues, but make it engineering",
-  "The sidebar's engineering graph is the real plan. The chat is just vibes about the plan",
-  (shortcuts) => press(shortcuts.viewToggle(), "to flip between the task view and the full chat. One shows the work, one shows the yapping"),
-  (shortcuts) => press(shortcuts.missionControl(), "to open Mission Control. No NASA clearance required"),
-  (shortcuts) => press(shortcuts.diffOpen(), "to review every change. Read the diff before the diff reads you"),
-  (shortcuts) => press(shortcuts.sessionSidebarClose(), "to close the sidebar when you're not typing. Monk mode: on"),
-  (shortcuts) => press(shortcuts.sessionSidebarToggle(), "to bring the sidebar back. It missed you"),
-  (shortcuts) => press(shortcuts.agentCycle(), "to cycle Build, Plan and Vibe. Plan thinks, Build does, Vibe… vibes"),
-  "Switch to {highlight}Plan{/highlight} to think it through before anything gets touched. Revolutionary, we know",
-  "Mention {highlight}@agent-name{/highlight} to hand work to a specialist subagent. Delegation: the senior engineer's superpower",
-
-  // /video
-  "Type {highlight}/video{/highlight} and one sentence. RIFT storyboards it, checks every frame and renders the MP4",
-  "{highlight}/video{/highlight} looks at every frame before it ships. More than most launch videos can say",
+  "RIFT runs the checks before it says {highlight}done{/highlight}. We had to build that on purpose, which says a lot about the industry",
+  "The engineering graph shows what's actually done. The chat shows what the agent says is done. RIFT lives in the gap",
+  (shortcuts) => press(shortcuts.viewToggle(), "to switch between the task view and the full chat. One is what happened, the other is how the agent felt about it"),
+  (shortcuts) => press(shortcuts.missionControl(), "for Mission Control: every session at once. For people running five agents on one attention span"),
+  (shortcuts) => press(shortcuts.diffOpen(), "to read the diff. The agent is confident. Confidence is not a test"),
+  (shortcuts) =>
+    shortcuts.sessionSidebarClose() && shortcuts.sessionSidebarToggle()
+      ? `Press ${shortcutText(shortcuts.sessionSidebarClose())} to close the sidebar when you're not typing; ${shortcutText(shortcuts.sessionSidebarToggle())} brings it back`
+      : undefined,
+  (shortcuts) => press(shortcuts.agentCycle(), "to cycle between the Build, Plan and Vibe agents"),
+  "The {highlight}Plan{/highlight} agent reads everything and changes nothing. Like a senior engineer in their last week",
+  "Mention {highlight}@agent-name{/highlight} to hand a job to a subagent. Delegation works better when the delegate can't say no",
+  "Type {highlight}/video{/highlight} and one sentence to get an MP4. It checks every frame first, which is more QA than most launch videos get",
 
   // Prompting
-  "Type {highlight}@{/highlight} and a filename to attach it. Faster than pasting 400 lines and apologizing",
-  "Start a message with {highlight}!{/highlight} to run a shell command ({highlight}!git status{/highlight}). Muscle memory, respected",
-  "Drag images or PDFs into the terminal. A screenshot of the bug beats a paragraph about the bug",
-  (shortcuts) => press(shortcuts.inputPaste(), "to paste an image from your clipboard. A screenshot is worth a thousand tokens"),
-  (shortcuts) => `Use ${commandText("/editor", shortcuts.editorOpen())} to write your prompt in your own editor. Your dotfiles deserve an audience`,
-  (shortcuts) => press(shortcuts.inputNewline(), "for a newline. Enter sends; that's the deal"),
-  (shortcuts) => press(shortcuts.inputClear(), "to clear the prompt. Some thoughts are better left unsent"),
+  "Type {highlight}@{/highlight} and a filename to attach it. Pasting 400 lines also works, the way shouting also works",
+  "Start a message with {highlight}!{/highlight} to run a shell command, like {highlight}!git status{/highlight}. You were going to type it anyway",
+  "Drag a screenshot or PDF into the terminal to attach it. It reads stack traces faster than you read Slack",
+  (shortcuts) => press(shortcuts.inputPaste(), "to paste an image from the clipboard. The screenshot of the error, not a photo of your monitor"),
+  (shortcuts) => `Use ${commandText("/editor", shortcuts.editorOpen())} to write long prompts in your own editor. Finally, a reason you configured it`,
+  (shortcuts) => press(shortcuts.inputNewline(), "for a newline. Enter sends"),
+  (shortcuts) => press(shortcuts.inputClear(), "to clear the prompt. Some messages are better as drafts"),
 
   // Sessions
-  "{highlight}/undo{/highlight} reverts the last message and its file changes. Time travel, minus the paradoxes",
-  "{highlight}/redo{/highlight} brings back what you undid. Commitment issues are fully supported",
-  "{highlight}/compact{/highlight} summarizes a long session before it hits the context limit. Marie Kondo for tokens",
-  (shortcuts) => `Use ${commandText("/new", shortcuts.sessionNew())} for a fresh session. New context, who dis`,
-  (shortcuts) => `Use ${commandText("/sessions", shortcuts.sessionList())} to list, pin and resume sessions. Yesterday's rabbit hole is still there`,
-  (shortcuts) => press(shortcuts.sessionPinToggle(), "in the session list to pin one. Favorites, but for problems"),
+  "{highlight}/undo{/highlight} reverts the last message and every file it touched. Nobody has to know",
+  "{highlight}/redo{/highlight} restores what you undid. It was fine, actually",
+  "{highlight}/compact{/highlight} summarizes a long session to free up context. It keeps the decisions and drops the arguing",
+  (shortcuts) => `Use ${commandText("/new", shortcuts.sessionNew())} for a fresh session. Sometimes the context is the bug`,
+  (shortcuts) => `Use ${commandText("/sessions", shortcuts.sessionList())} to list and resume sessions, including the "quick fix" from three days ago`,
+  (shortcuts) => press(shortcuts.sessionPinToggle(), "in the session list to pin a session. For the bug that keeps coming back"),
   (shortcuts) =>
     shortcuts.sessionQuickSwitch1() && shortcuts.sessionQuickSwitch9()
-      ? `Use ${shortcutText(shortcuts.sessionQuickSwitch1())} through ${shortcutText(shortcuts.sessionQuickSwitch9())} to jump between pinned sessions. Tab hoarding, perfected`
+      ? `Use ${shortcutText(shortcuts.sessionQuickSwitch1())} through ${shortcutText(shortcuts.sessionQuickSwitch9())} to jump between pinned sessions`
       : undefined,
-  (shortcuts) => press(shortcuts.sessionRename(), `to rename a session. "fix stuff 7" is not a name`),
-  (shortcuts) => press(shortcuts.sessionInterrupt(), "to stop the agent mid-thought. Rude, but sometimes necessary"),
-  (shortcuts) => press(shortcuts.sessionBackground(), "to send running subagents to the background. They keep working, you keep scrolling"),
-  (shortcuts) => `Use ${commandText("/export", shortcuts.sessionExport())} to save the conversation as Markdown. Receipts`,
-  (shortcuts) => press(shortcuts.messagesCopy(), "to copy the last reply. Like Ctrl+C, but it understood you"),
-  (shortcuts) => `Use ${commandText("/timeline", shortcuts.sessionTimeline())} to jump to any message. Scrolling is for amateurs`,
-  (shortcuts) => press(shortcuts.messagesFirst(), "to jump to the start of the conversation, back when things were simple"),
-  (shortcuts) => press(shortcuts.messagesLast(), "to jump back to the latest message. Welcome back to the present"),
+  (shortcuts) => press(shortcuts.sessionRename(), `to rename a session. "untitled 14" helps nobody at the retro`),
+  (shortcuts) => press(shortcuts.sessionInterrupt(), "to stop the agent mid-thought. It won't take it personally"),
+  (shortcuts) => press(shortcuts.sessionBackground(), "to push running subagents to the background. They keep working. You can pretend you are too"),
+  (shortcuts) => `Use ${commandText("/export", shortcuts.sessionExport())} to save the conversation as Markdown, for when someone asks why the migration did that`,
+  (shortcuts) => press(shortcuts.messagesCopy(), "to copy the last reply"),
+  (shortcuts) => `Use ${commandText("/timeline", shortcuts.sessionTimeline())} to jump to any message, like the one where it started going wrong`,
+  (shortcuts) => press(shortcuts.messagesFirst(), "to jump to the first message, back when the plan was simple"),
+  (shortcuts) => press(shortcuts.messagesLast(), "to jump to the latest message"),
   (shortcuts) =>
     shortcuts.messagesPageUp() && shortcuts.messagesPageDown()
-      ? `Use ${shortcutText(shortcuts.messagesPageUp())}/${shortcutText(shortcuts.messagesPageDown())} to page through history. Speed-reading optional`
+      ? `Use ${shortcutText(shortcuts.messagesPageUp())}/${shortcutText(shortcuts.messagesPageDown())} to page through the conversation`
       : undefined,
-  (shortcuts) => press(shortcuts.messagesToggleConceal(), "to fold code blocks away. Out of sight, out of context"),
+  (shortcuts) => press(shortcuts.messagesToggleConceal(), "to hide code blocks and read just the conversation, like a manager"),
   (shortcuts) => {
     const items = [
       shortcuts.sessionParent(),
@@ -232,42 +232,42 @@ const TIPS: Tip[] = [
       shortcuts.childNext(),
     ].filter(Boolean)
     if (!items.length) return undefined
-    return `Use ${items.map(shortcutText).join(" / ")} to move between parent and child sessions. Subagents have family trees now`
+    return `Use ${items.map(shortcutText).join(" / ")} to move between a session and its subagents`
   },
-  "{highlight}/review{/highlight} reviews uncommitted changes, branches or PRs. A second pair of eyes that never needs coffee",
-  "{highlight}/share{/highlight} makes a public link to the session. Show your work, or your crimes",
+  "{highlight}/review{/highlight} reviews uncommitted changes, branches or PRs. It doesn't know it's 2am, and it doesn't care",
+  "{highlight}/share{/highlight} makes a public link to this session. Read it once before sending",
 
   // Models, looks, navigation
-  (shortcuts) => `Use ${commandText("/models", shortcuts.modelList())} to switch models. Commitment is optional`,
-  (shortcuts) => press(shortcuts.modelCycleRecent(), "to bounce between recent models. The situationship of model selection"),
-  (shortcuts) => `Use ${commandText("/themes", shortcuts.themeList())} to pick from ${themeCount} themes. Dark mode is a personality`,
-  "{highlight}/connect{/highlight} adds keys for 75+ providers. Yes, that one too",
-  (shortcuts) => press(shortcuts.commandList(), "for the command palette. Every action, zero memorization"),
-  (shortcuts) => `The leader key is ${shortcutText(shortcuts.leader())}: press it, then one more key. Chords, but for shipping`,
-  (shortcuts) => `Use ${commandText("/help", shortcuts.helpShow())} for help. Reading the manual remains undefeated`,
-  (shortcuts) => `Use ${commandText("/status", shortcuts.statusView())} for system status. Everything's fine. Probably. Check anyway`,
+  (shortcuts) => `Use ${commandText("/models", shortcuts.modelList())} to switch models. The bug will still be there`,
+  (shortcuts) => press(shortcuts.modelCycleRecent(), "to switch between recently used models"),
+  (shortcuts) => `Use ${commandText("/themes", shortcuts.themeList())} to pick from ${themeCount} themes. Choosing one counts as progress, briefly`,
+  "{highlight}/connect{/highlight} adds an AI provider. 75+ supported. You'll use two",
+  (shortcuts) => press(shortcuts.commandList(), "for the command palette. Every command, nothing to memorize"),
+  (shortcuts) => `The leader key is ${shortcutText(shortcuts.leader())}: press it, then one more key. Emacs users, you're welcome`,
+  (shortcuts) => `Use ${commandText("/help", shortcuts.helpShow())} to see everything RIFT can do. Nobody reads it, which is why tips exist`,
+  (shortcuts) => `Use ${commandText("/status", shortcuts.statusView())} to see what's connected and what quietly isn't`,
 
   // Making RIFT yours
-  "Run {highlight}/init{/highlight} so RIFT learns your codebase's rules. Onboarding in seconds, not sprints",
-  "Commit {highlight}AGENTS.md{/highlight} so every agent on the team follows the same rules. Peer pressure, automated",
-  "Drop {highlight}.md{/highlight} prompts in {highlight}.rift/commands/{/highlight} to make your own slash commands. Copy-paste is not a workflow",
-  "Use {highlight}$ARGUMENTS{/highlight} in a custom command to take input. Templates with ambition",
-  "Configure MCP servers in the {highlight}mcp{/highlight} config section to give RIFT new tools. Teach it tricks",
-  "Set any keybind to {highlight}none{/highlight} to turn it off. Your fingers, your rules",
-  'Set {highlight}"git push": "ask"{/highlight} in permissions and RIFT asks before pushing. Consent is cool',
-  'Set {highlight}"rm -rf *": "deny"{/highlight} in permissions. Just in case. You know why',
-  "{highlight}doom_loop{/highlight} protection stops an agent calling the same tool forever. Unlike your 2am debugging",
+  "Run {highlight}/init{/highlight} and RIFT writes down your project's rules, including the weird build step only Dave knows about",
+  "Commit {highlight}AGENTS.md{/highlight} so the whole team's agents share the same rules, instead of each one learning the codebase from scratch like each teammate did",
+  "Save a prompt you keep retyping as a {highlight}.md{/highlight} file in {highlight}.rift/commands/{/highlight} and it becomes a slash command",
+  "Use {highlight}$ARGUMENTS{/highlight} in a custom command to pass it input",
+  "Add MCP servers in the {highlight}mcp{/highlight} config section to give RIFT new tools",
+  "Set any keybind to {highlight}none{/highlight} to turn it off",
+  'Set {highlight}"git push": "ask"{/highlight} in permissions and RIFT asks before pushing. Pushes to main are a group decision',
+  'Set {highlight}"rm -rf *": "deny"{/highlight} in permissions. You will never need it, until the one time',
+  "{highlight}doom_loop{/highlight} stops an agent calling the same tool forever. It does not cover you rerunning CI",
 
   // The CLI
-  '{highlight}rift run "…"{/highlight} runs one prompt with no TUI. For scripts and cron jobs with ambition',
-  "{highlight}rift --continue{/highlight} picks up your last session. Like you never left",
-  "{highlight}rift pr 42{/highlight} checks out a PR and opens RIFT on it. Code review, but it reads the code first",
-  "{highlight}rift stats{/highlight} shows your token spend. Sit down first",
-  "{highlight}rift --mini{/highlight} starts the minimal interface. Same brain, fewer pixels",
-  "{highlight}rift serve{/highlight} runs RIFT headless for API access. All brain, no face",
-  "{highlight}rift upgrade{/highlight} gets the latest RIFT. New tricks, same agent",
+  '{highlight}rift run "…"{/highlight} runs one prompt with no interface. Put it in cron and pretend you have a team',
+  "{highlight}rift --continue{/highlight} picks up your last session exactly where you left it. The bug is also where you left it",
+  "{highlight}rift pr 42{/highlight} checks out a pull request and opens RIFT on it. Reviewing before approving: a bold new workflow",
+  "{highlight}rift stats{/highlight} shows your token spend. It's a business expense",
+  "{highlight}rift --mini{/highlight} starts a minimal interface, for terminals split eight ways",
+  "{highlight}rift serve{/highlight} runs RIFT headless over HTTP. Build your own front end; we won't be offended",
+  "{highlight}rift upgrade{/highlight} installs the latest version. There usually is one",
 ]
 
-const INPUT_UNDO_TIP: Tip = (shortcuts) => press(shortcuts.inputUndo(), "to undo edits in your prompt. Ctrl+Z for your words")
+const INPUT_UNDO_TIP: Tip = (shortcuts) => press(shortcuts.inputUndo(), "to undo edits in your prompt")
 const TERMINAL_SUSPEND_TIP: Tip = (shortcuts) =>
-  press(shortcuts.terminalSuspend(), "to suspend RIFT and drop to your shell. {highlight}fg{/highlight} brings it back, no hard feelings")
+  press(shortcuts.terminalSuspend(), "to drop to your shell. {highlight}fg{/highlight} brings RIFT back. It won't ask where you went")
