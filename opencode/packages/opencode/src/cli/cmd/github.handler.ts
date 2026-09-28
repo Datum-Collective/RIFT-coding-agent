@@ -33,7 +33,7 @@ import { setTimeout as sleep } from "node:timers/promises"
 import { Process } from "@/util/process"
 import { parseGitHubRemote } from "@/util/repository"
 import { Effect } from "effect"
-import { extractResponseText, formatPromptTooLargeError } from "./github.shared"
+import { extractResponseText, formatPromptTooLargeError, shouldShareSession } from "./github.shared"
 
 type GitHubAuthor = {
   login: string
@@ -512,8 +512,7 @@ export const githubRun = Effect.fn("Cli.github.run")(function* (args: { event?: 
       )
       await subscribeSessionEvents()
       shareUrl = await (async () => {
-        if (share === false) return
-        if (!share && repoData.data.private) return
+        if (!shouldShareSession(share)) return
         // Shares are gists; an Actions GITHUB_TOKEN usually can't create them, so a failed share
         // only drops the link from the comment instead of failing the run.
         return runLocalEffect(sessionShare.share(session.id))

@@ -1,8 +1,23 @@
 import type { Message, Model, Part, Session, SnapshotFileDiff } from "@opencode-ai/sdk/v2"
 import { GITHUB_REPO } from "@opencode-ai/core/brand"
 
-// A shared session is one JSON file in a secret GitHub Gist. The viewer on GitHub Pages reads the
-// gist id from the URL fragment, so the id never reaches the Pages server's logs.
+/**
+ * The privacy model a shared session relies on, in one place, so every caller upholds it:
+ *
+ * - A share is a secret Gist: unlisted (excluded from search, profiles and GitHub's own
+ *   search), not encrypted, readable by anyone who has the id. The id is 128 bits of random
+ *   hex from GitHub, not brute-forceable, so having the link is the only way in.
+ * - The URL fragment (`#<id>`) carries the id. Browsers never send a fragment to a server, so
+ *   it never reaches GitHub Pages' logs, any CDN in front of it, or a Referer header — that is
+ *   the whole reason the id lives after `#` and not in the path or a query string.
+ * - `snapshot()` below scrubs recognisable secrets and the home folder before anything leaves
+ *   the machine, but it only catches what it recognises; the rest of the session is legible to
+ *   whoever holds the link.
+ * - The link itself is the only access control there is, so nothing in RIFT may hand it to
+ *   someone the sharer didn't choose: no auto-posting it somewhere that notifies people (see
+ *   `shouldShareSession` in `cli/cmd/github.shared.ts`), no server-side logging of it, no
+ *   third-party script on the viewer page that could read the fragment and phone home.
+ */
 const [owner, repo] = GITHUB_REPO.split("/")
 export const VIEWER = `https://${owner.toLowerCase()}.github.io/${repo}/s/`
 export const FILE = "rift-session.json"

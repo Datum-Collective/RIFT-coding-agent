@@ -1,0 +1,25 @@
+# /s/ pages are private share links: unlisted, and only meant to be reached by the exact link
+# a person was given. The per-page <meta name="robots"> already blocks indexing; this is the
+# same rule for crawlers that fetch robots.txt before rendering the page.
+User-agent: *
+Disallow: /s/
+
+# AI training crawlers that honour a plain opt-out, checked here too since some of them skip
+# per-page meta tags.
+User-agent: GPTBot
+Disallow: /s/
+
+User-agent: CCBot
+Disallow: /s/
+
+User-agent: Google-Extended
+Disallow: /s/
+
+User-agent: ClaudeBot
+Disallow: /s/
+
+User-agent: anthropic-ai
+Disallow: /s/
+
+User-agent: Bytespider
+Disallow: /s/

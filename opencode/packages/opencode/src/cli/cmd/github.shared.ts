@@ -28,3 +28,15 @@ export function formatPromptTooLargeError(files: { filename: string; content: st
       : ""
   return `PROMPT_TOO_LARGE: The prompt exceeds the model's context limit.${fileDetails}`
 }
+
+/**
+ * Whether an automated run should post a session link into a PR or issue comment.
+ *
+ * A comment notifies every subscriber by email and is visible to anyone reading the PR, on
+ * public and private repos alike. A "secret" gist stops being secret the moment its link goes
+ * out that way, so this only ever shares when the run explicitly asked for it — repo visibility
+ * plays no part, and there is no repo-visibility-based default to fall back to.
+ */
+export function shouldShareSession(share: boolean | undefined): boolean {
+  return share === true
+}
