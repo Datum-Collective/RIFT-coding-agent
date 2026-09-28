@@ -5,6 +5,10 @@ import { createMemo, Show } from "solid-js"
 import { abbreviateHome } from "../../runtime"
 import { useTuiPaths } from "../../context/runtime"
 import { RiftVersion } from "@opencode-ai/core/installation/version"
+import { shortenPath } from "../../component/control/primitives"
+
+// The sidebar is 56 columns wide with 2-column padding on each side; leave a little slack.
+const PATH_MAX = 34
 
 const id = "internal:sidebar-footer"
 
@@ -38,7 +42,8 @@ function View(props: { api: TuiPluginApi; sessionID: string }) {
     const out = abbreviateHome(dir, paths.home)
     const branch = session?.directory === props.api.state.path.directory ? props.api.state.vcs?.branch : undefined
     const text = branch ? out + ":" + branch : out
-    const list = text.split("/")
+    const short = shortenPath(text, PATH_MAX)
+    const list = short.split("/")
     return {
       parent: list.slice(0, -1).join("/"),
       name: list.at(-1) ?? "",
@@ -80,16 +85,14 @@ function View(props: { api: TuiPluginApi; sessionID: string }) {
           </box>
         </box>
       </Show>
-      <text>
+      <text wrapMode="none">
         <span style={{ fg: theme().textMuted }}>{path().parent}/</span>
         <span style={{ fg: theme().text }}>{path().name}</span>
       </text>
-      <Show when={tokens() > 0}>
-        <text fg={theme().textMuted}>
-          {tokens().toLocaleString()} tokens · {money.format(cost())}
-        </text>
-      </Show>
       <text fg={theme().textMuted}>
+        <Show when={tokens() > 0}>
+          {tokens().toLocaleString()} tok · {money.format(cost())}{" "}
+        </Show>
         <span style={{ fg: theme().success }}>•</span>{" "}
         <span style={{ fg: theme().text }}>
           <b>RIFT</b>

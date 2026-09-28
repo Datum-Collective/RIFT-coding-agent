@@ -160,6 +160,23 @@ keystroke away.
 A strong model plans and reviews each step while a cheaper one does the work, so you get good
 decisions without paying frontier prices for every edit.
 
+### RIFT Video
+
+Type `/video` and a sentence, in any project:
+
+```
+/video 30-second vertical launch video for this project, for developers
+```
+
+RIFT writes a storyboard, turns it into a typed spec, checks every scene as a still image, and
+renders an MP4 whose resolution, length and frame rate it verifies before calling it done. Under
+the hood it is a [Remotion](https://www.remotion.dev) engine that ships inside RIFT: the first
+`/video` in a project runs `rift video init`, which writes it to `video/` (or `.rift/video/` if
+that name is taken) and installs its dependencies. Rendering needs Node 20+; no paid services.
+
+Launches, explainers, terminal and code demos, charts, attention maps, captions: see the
+[engine README](video/README.md) for the scene catalog and how to extend it.
+
 ### Mission Control
 
 Every session on one board, ordered so whatever needs you is on top.
@@ -171,6 +188,7 @@ rift                              # start in the current directory
 rift /path/to/project             # start somewhere else
 rift run "fix the failing test"   # non-interactive, for scripts and CI
 rift --continue                   # resume the last session
+rift video init                   # set up the video engine in this project
 ```
 
 | Key         | Action                                        |

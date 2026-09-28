@@ -1,0 +1,47 @@
+{
+  "name": "rift-video",
+  "version": "1.0.0",
+  "description": "Code-driven video production engine: natural-language brief to spec to Remotion to MP4",
+  "scripts": {
+    "dev": "remotion studio",
+    "build": "tsc && remotion bundle",
+    "lint": "eslint src scripts && tsc",
+    "test": "tsx --test \"src/**/*.test.ts\" \"scripts/**/*.test.ts\"",
+    "validate": "tsx scripts/validate.ts",
+    "frames": "tsx scripts/frames.ts",
+    "render": "tsx scripts/render.ts",
+    "new": "tsx scripts/new.ts",
+    "upgrade": "remotion upgrade"
+  },
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@remotion/bundler": "4.0.529",
+    "@remotion/captions": "4.0.529",
+    "@remotion/cli": "4.0.529",
+    "@remotion/fonts": "4.0.529",
+    "@remotion/layout-utils": "4.0.529",
+    "@remotion/media": "4.0.529",
+    "@remotion/renderer": "4.0.529",
+    "@remotion/transitions": "4.0.529",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.529",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@remotion/eslint-config-flat": "4.0.529",
+    "@types/node": "26.6.3",
+    "@types/react": "19.2.7",
+    "@types/web": "0.0.166",
+    "eslint": "9.39.5",
+    "prettier": "3.8.1",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
+  },
+  "private": true,
+  "sideEffects": [
+    "./src/lib/typography/fonts.ts",
+    "./src/index.ts"
+  ]
+}

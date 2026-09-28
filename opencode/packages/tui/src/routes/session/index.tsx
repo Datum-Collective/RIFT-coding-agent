@@ -155,7 +155,7 @@ const sessionGlobalBindingCommands = [
   "session.half.page.down",
 ] as const
 
-const sessionGlobalUnfocusedBindingCommands = ["session.first", "session.last"] as const
+const sessionGlobalUnfocusedBindingCommands = ["session.first", "session.last", "session.sidebar.close"] as const
 
 const context = createContext<{
   width: number
@@ -717,6 +717,21 @@ export function Session() {
           const isVisible = sidebarVisible()
           setSidebar(() => (isVisible ? "hide" : "auto"))
           setSidebarOpen(!isVisible)
+        })
+        dialog.clear()
+      },
+    },
+    {
+      // Bare key, not leader-prefixed: a quick way to dismiss the sidebar without a chord.
+      title: "Close sidebar",
+      value: "session.sidebar.close",
+      category: "Session",
+      hidden: true,
+      run: () => {
+        if (!sidebarVisible()) return
+        batch(() => {
+          setSidebar(() => "hide")
+          setSidebarOpen(false)
         })
         dialog.clear()
       },
