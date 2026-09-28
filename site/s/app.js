@@ -25,11 +25,12 @@ async function load() {
   if (!file) return fail("Not a RIFT session", "That gist exists, but RIFT didn't make it.")
 
   // GitHub truncates large files in the API response; the full copy lives at the raw URL.
-  const text =
-    file.truncated && String(file.raw_url).startsWith("https://gist.githubusercontent.com/")
-      ? await (await fetch(file.raw_url)).text()
-      : file.content
-  const snap = JSON.parse(text)
+  if (file.truncated && !String(file.raw_url).startsWith("https://gist.githubusercontent.com/")) {
+    return fail("Couldn't load this share", "GitHub didn't return the full session.")
+  }
+  const raw = file.truncated ? await fetch(file.raw_url) : undefined
+  if (raw && !raw.ok) return fail("Couldn't load this share", `GitHub answered HTTP ${raw.status}.`)
+  const snap = JSON.parse(raw ? await raw.text() : file.content)
   if (snap.format !== "rift-share" || snap.version !== 1) {
     return fail("Not a RIFT session", "That gist exists, but RIFT didn't make it.")
   }

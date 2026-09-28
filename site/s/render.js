@@ -12,19 +12,24 @@ export function escape(value) {
 
 const GLYPH = { passed: "✓", failed: "✗", timed_out: "✗", not_run: "○", queued: "●" }
 
+// Counts come from the gist too; coercing them to numbers keeps them from carrying markup.
+const count = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0)
+const stat = (d) => `<span class="add">+${count(d.additions)}</span> <span class="del">−${count(d.deletions)}</span>`
+
 export function render(snap) {
   const messages = snap.messages ?? []
   const model = messages.findLast((m) => m.info.role === "assistant")?.info.modelID
   const diffs = snap.diffs ?? []
-  const added = diffs.reduce((sum, d) => sum + (d.additions ?? 0), 0)
-  const removed = diffs.reduce((sum, d) => sum + (d.deletions ?? 0), 0)
+  const total = {
+    additions: diffs.reduce((sum, d) => sum + count(d.additions), 0),
+    deletions: diffs.reduce((sum, d) => sum + count(d.deletions), 0),
+  }
   const meta = [
-    model,
-    duration(snap.session.time),
-    diffs.length ? `${diffs.length} ${diffs.length === 1 ? "file" : "files"} <span class="add">+${added}</span> <span class="del">−${removed}</span>` : "",
+    model ? escape(model) : "",
+    escape(duration(snap.session.time)),
+    diffs.length ? `${diffs.length} ${diffs.length === 1 ? "file" : "files"} ${stat(total)}` : "",
   ]
     .filter(Boolean)
-    .map((item, i) => (i === 2 ? item : escape(item)))
     .join(" · ")
 
   return `
@@ -96,8 +101,7 @@ function verification(checks) {
 function changes(diffs) {
   const files = diffs
     .map((d) => {
-      const stat = `<span class="add">+${d.additions ?? 0}</span> <span class="del">−${d.deletions ?? 0}</span>`
-      const head = `<span class="target">${escape(d.file)}</span> ${stat}`
+      const head = `<span class="target">${escape(d.file)}</span> ${stat(d)}`
       return d.patch ? `<details class="call"><summary>${head}</summary>${patch(d.patch)}</details>` : `<div class="call">${head}</div>`
     })
     .join("\n")

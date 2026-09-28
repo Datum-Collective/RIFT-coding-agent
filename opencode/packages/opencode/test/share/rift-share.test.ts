@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type * as SDK from "@opencode-ai/sdk/v2"
+import type { AssistantMessage, Session, ToolPart } from "@opencode-ai/sdk/v2"
 import { RiftShare } from "@/share/rift-share"
 
 const session = {
@@ -11,7 +11,7 @@ const session = {
   title: "Fix flaky upload test",
   version: "0.1.14",
   time: { created: 1, updated: 2 },
-} as SDK.Session
+} as Session
 
 const assistant = {
   id: "msg_2",
@@ -26,7 +26,7 @@ const assistant = {
   path: { cwd: "/Users/me/secret-client/app", root: "/Users/me/secret-client" },
   cost: 0,
   tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
-} as SDK.AssistantMessage
+} as AssistantMessage
 
 const tool = (output: string) =>
   ({
@@ -44,7 +44,7 @@ const tool = (output: string) =>
       metadata: {},
       time: { start: 1, end: 2 },
     },
-  }) as SDK.ToolPart
+  }) as ToolPart
 
 describe("RiftShare.snapshot", () => {
   test("is tagged with the RIFT share format so the viewer and import can recognise it", () => {
@@ -71,7 +71,7 @@ describe("RiftShare.snapshot", () => {
       diffs: [],
       models: [],
     })
-    const part = snap.messages[0].parts[0] as SDK.ToolPart
+    const part = snap.messages[0].parts[0] as ToolPart
     const output = part.state.status === "completed" ? part.state.output : ""
     expect(output.length).toBeLessThan(21_000)
     expect(output).toContain("30000 more characters")
@@ -84,7 +84,7 @@ describe("RiftShare.snapshot", () => {
       diffs: [],
       models: [],
     })
-    const part = snap.messages[0].parts[0] as SDK.ToolPart
+    const part = snap.messages[0].parts[0] as ToolPart
     expect(part.state.status === "completed" && part.state.output).toBe("12 passed")
   })
 })
@@ -123,25 +123,35 @@ describe("RiftShare.find", () => {
   })
 })
 
-describe("RiftShare.file", () => {
+describe("RiftShare.fromGist", () => {
   test("finds the share file's JSON in a gist API response", () => {
     const gist = { files: { [RiftShare.FILE]: { content: '{"format":"rift-share"}', truncated: false } } }
-    expect(RiftShare.file(gist)).toEqual({ content: '{"format":"rift-share"}' })
+    expect(RiftShare.fromGist(gist)).toEqual({ content: '{"format":"rift-share"}' })
   })
 
   test("points at the raw file when GitHub truncated a large share", () => {
     const raw = "https://gist.githubusercontent.com/shiv207/abc/raw/rift-session.json"
     const gist = { files: { [RiftShare.FILE]: { content: "{", truncated: true, raw_url: raw } } }
-    expect(RiftShare.file(gist)).toEqual({ raw })
+    expect(RiftShare.fromGist(gist)).toEqual({ raw })
+  })
+
+  test("refuses a truncated share whose raw URL is not on GitHub's gist host", () => {
+    const gist = { files: { [RiftShare.FILE]: { content: "{", truncated: true, raw_url: "https://evil.example/x" } } }
+    expect(RiftShare.fromGist(gist)).toBeUndefined()
+  })
+
+  test("reads a RIFT link however its host is capitalised, like find does", () => {
+    const id = "8f3a0c1d2e4b5a69788f"
+    expect(RiftShare.parse(RiftShare.url(id).replace("datum-collective", "Datum-Collective"))).toBe(id)
   })
 
   test("finds nothing in a gist that is not a RIFT share", () => {
-    expect(RiftShare.file({ files: { "notes.md": { content: "hi" } } })).toBeUndefined()
-    expect(RiftShare.file({ message: "Not Found" })).toBeUndefined()
+    expect(RiftShare.fromGist({ files: { "notes.md": { content: "hi" } } })).toBeUndefined()
+    expect(RiftShare.fromGist({ message: "Not Found" })).toBeUndefined()
   })
 })
 
-describe("RiftShare.read", () => {
+describe("RiftShare.toSession", () => {
   test("turns a shared snapshot back into an importable session", () => {
     const snap = RiftShare.snapshot({
       session,
@@ -149,15 +159,15 @@ describe("RiftShare.read", () => {
       diffs: [],
       models: [],
     })
-    const out = RiftShare.read(JSON.parse(JSON.stringify(snap)))
+    const out = RiftShare.toSession(JSON.parse(JSON.stringify(snap)))
     expect(out?.info.id).toBe("ses_1")
     expect(out?.messages).toHaveLength(1)
     expect(out?.messages[0].parts).toHaveLength(1)
   })
 
   test("refuses JSON that is not a RIFT share", () => {
-    expect(RiftShare.read({ hello: "world" })).toBeUndefined()
-    expect(RiftShare.read({ format: "rift-share", version: 99 })).toBeUndefined()
-    expect(RiftShare.read(null)).toBeUndefined()
+    expect(RiftShare.toSession({ hello: "world" })).toBeUndefined()
+    expect(RiftShare.toSession({ format: "rift-share", version: 99 })).toBeUndefined()
+    expect(RiftShare.toSession(null)).toBeUndefined()
   })
 })

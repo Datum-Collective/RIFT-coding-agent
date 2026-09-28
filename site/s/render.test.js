@@ -119,6 +119,25 @@ describe("render", () => {
   })
 })
 
+describe("render with hostile change counts", () => {
+  test("treats change counts as numbers, never as markup", () => {
+    const html = render(
+      snapshot([], { diffs: [{ file: "a.ts", patch: "", additions: "<b>9</b>", deletions: '"><i>x' }] }),
+    )
+    expect(html).not.toContain("<b>9")
+    expect(html).not.toContain("<i>x")
+  })
+
+  test("keeps the change summary formatted when there is no model or duration", () => {
+    const html = render({
+      ...snapshot([], { diffs: [{ file: "a.ts", patch: "", additions: 3, deletions: 1 }] }),
+      session: { id: "s", title: "t", time: { created: 0, updated: 0 } },
+    })
+    expect(html).toContain('<span class="add">+3</span>')
+    expect(html).not.toContain("&lt;span")
+  })
+})
+
 describe("markdown", () => {
   test("renders code fences, inline code, bold, lists and safe links", () => {
     const html = markdown("**Fix**: use `waitFor`\n\n- one\n- two\n\n```ts\nconst a = 1 < 2\n```\n\n[docs](https://example.com)")

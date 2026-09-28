@@ -521,7 +521,8 @@ export function Session() {
           .then((res) => copy(res.data.share!.url))
           .catch(() => {
             toast.show({
-              message: "Couldn't share. Sharing saves a secret GitHub Gist: sign in with `gh auth login` or set GITHUB_TOKEN.",
+              message:
+                "Couldn't share this session. It's saved as a GitHub Gist, so if you're not signed in, run `gh auth login` or set GITHUB_TOKEN.",
               variant: "error",
             })
           })
@@ -619,13 +620,11 @@ export function Session() {
       },
       run: async () => {
         await sdk.client.session
-          .unshare({
-            sessionID: route.sessionID,
-          })
+          .unshare({ sessionID: route.sessionID }, { throwOnError: true })
           .then(() => toast.show({ message: "Unshared. The gist is deleted.", variant: "success" }))
-          .catch((error) => {
+          .catch(() => {
             toast.show({
-              message: error instanceof Error ? error.message : "Failed to unshare session",
+              message: "Couldn't unshare. Deleting the gist needs GitHub, so check you're signed in with `gh auth login`.",
               variant: "error",
             })
           })

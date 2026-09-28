@@ -51,8 +51,19 @@ function layer(client: HttpClient.HttpClient, token = signedIn) {
 
 const row = (id: SessionID) =>
   Effect.gen(function* () {
-    const { db } = yield* Database.Service
-    return yield* db.select().from(SessionShareTable).where(eq(SessionShareTable.session_id, id)).get().pipe(Effect.orDie)
+    const database = yield* Database.Service
+    return yield* database.db
+      .select()
+      .from(SessionShareTable)
+      .where(eq(SessionShareTable.session_id, id))
+      .get()
+      .pipe(Effect.orDie)
+  })
+
+const newSession = (title: string) =>
+  Effect.gen(function* () {
+    const sessions = yield* Session.Service
+    return yield* sessions.create({ title })
   })
 
 beforeEach(async () => {
@@ -68,9 +79,10 @@ describe("ShareNext", () => {
         return Effect.succeed(json(req, { id: GIST, html_url: `https://gist.github.com/${GIST}` }, 201))
       })
       return Effect.gen(function* () {
-        const session = yield* (yield* Session.Service).create({ title: "Fix flaky upload test" })
+        const session = yield* newSession("Fix flaky upload test")
+        const share = yield* ShareNext.Service
 
-        const result = yield* (yield* ShareNext.Service).create(session.id)
+        const result = yield* share.create(session.id)
 
         expect(result.id).toBe(GIST)
         expect(result.url).toBe(RiftShare.url(GIST))
@@ -89,13 +101,34 @@ describe("ShareNext", () => {
     }),
   )
 
+  it.live("sharing an already shared session returns the same link instead of a second gist", () =>
+    provideTmpdirInstance(() => {
+      const posts: HttpClientRequest.HttpClientRequest[] = []
+      const client = HttpClient.make((req) => {
+        if (req.method === "POST") posts.push(req)
+        return Effect.succeed(json(req, { id: GIST }, 201))
+      })
+      return Effect.gen(function* () {
+        const session = yield* newSession("test")
+        const share = yield* ShareNext.Service
+
+        const first = yield* share.create(session.id)
+        const second = yield* share.create(session.id)
+
+        expect(second.url).toBe(first.url)
+        expect(posts).toHaveLength(1)
+      }).pipe(Effect.provide(layer(client)))
+    }),
+  )
+
   it.live("create explains how to sign in when there is no GitHub token", () =>
     provideTmpdirInstance(() => {
       const client = HttpClient.make(() => Effect.die("unexpected http call"))
       return Effect.gen(function* () {
-        const session = yield* (yield* Session.Service).create({ title: "test" })
+        const session = yield* newSession("test")
+        const share = yield* ShareNext.Service
 
-        const exit = yield* ShareNext.Service.use((svc) => Effect.exit(svc.create(session.id)))
+        const exit = yield* Effect.exit(share.create(session.id))
 
         expect(Exit.isFailure(exit)).toBe(true)
         expect(String(exit)).toContain("gh auth login")
@@ -108,9 +141,10 @@ describe("ShareNext", () => {
     provideTmpdirInstance(() => {
       const client = HttpClient.make((req) => Effect.succeed(json(req, { message: "Bad credentials" }, 401)))
       return Effect.gen(function* () {
-        const session = yield* (yield* Session.Service).create({ title: "test" })
+        const session = yield* newSession("test")
+        const share = yield* ShareNext.Service
 
-        const exit = yield* ShareNext.Service.use((svc) => Effect.exit(svc.create(session.id)))
+        const exit = yield* Effect.exit(share.create(session.id))
 
         expect(Exit.isFailure(exit)).toBe(true)
         expect(yield* row(session.id)).toBeUndefined()
@@ -127,11 +161,11 @@ describe("ShareNext", () => {
         return Effect.succeed(HttpClientResponse.fromWeb(req, new Response(null, { status: 204 })))
       })
       return Effect.gen(function* () {
-        const session = yield* (yield* Session.Service).create({ title: "test" })
-        const service = yield* ShareNext.Service
+        const session = yield* newSession("test")
+        const share = yield* ShareNext.Service
 
-        yield* service.create(session.id)
-        yield* service.remove(session.id)
+        yield* share.create(session.id)
+        yield* share.remove(session.id)
 
         expect(yield* row(session.id)).toBeUndefined()
         expect(seen.map((req) => [req.method, req.url])).toContainEqual([
@@ -149,54 +183,88 @@ describe("ShareNext", () => {
         return Effect.succeed(json(req, { message: "Not Found" }, 404))
       })
       return Effect.gen(function* () {
-        const session = yield* (yield* Session.Service).create({ title: "test" })
-        const service = yield* ShareNext.Service
+        const session = yield* newSession("test")
+        const share = yield* ShareNext.Service
 
-        yield* service.create(session.id)
-        yield* service.remove(session.id)
+        yield* share.create(session.id)
+        yield* share.remove(session.id)
 
         expect(yield* row(session.id)).toBeUndefined()
       }).pipe(Effect.provide(layer(client)))
     }),
   )
 
-  it.live("rapid changes to a shared session become one gist update with the latest state", () =>
+  it.live("download reads a shared session back from its gist", () =>
     provideTmpdirInstance(() => {
-      const patches: HttpClientRequest.HttpClientRequest[] = []
-      const client = HttpClient.make((req) => {
-        if (req.method === "PATCH") patches.push(req)
-        return Effect.succeed(json(req, { id: GIST }))
+      const snap = RiftShare.snapshot({
+        session: { id: "ses_shared", title: "Shared", time: { created: 1, updated: 2 } } as never,
+        messages: [],
+        diffs: [],
+        models: [],
       })
+      const client = HttpClient.make((req) =>
+        Effect.succeed(json(req, { id: GIST, files: { [RiftShare.FILE]: { content: JSON.stringify(snap) } } })),
+      )
       return Effect.gen(function* () {
-        const events = yield* EventV2Bridge.Service
         const share = yield* ShareNext.Service
-        const sessions = yield* Session.Service
 
-        const info = yield* sessions.create({ title: "first" })
-        yield* share.init()
-        const { db } = yield* Database.Service
-        yield* db
-          .insert(SessionShareTable)
-          .values({ session_id: info.id, id: GIST, url: RiftShare.url(GIST), secret: "" })
-          .run()
-          .pipe(Effect.orDie)
+        const out = yield* share.download(GIST)
 
-        const diff = (file: string) => ({ file, patch: "", additions: 1, deletions: 0, status: "modified" as const })
-        yield* events.publish(Session.Event.Diff, { sessionID: info.id, diff: [diff("a.ts")] })
-        yield* events.publish(Session.Event.Diff, { sessionID: info.id, diff: [diff("b.ts")] })
-        yield* pollWithTimeout(
-          Effect.sync(() => (patches.length === 1 ? true : undefined)),
-          "timed out waiting for the gist update",
-          "15 seconds",
-        )
-
-        expect(patches).toHaveLength(1)
-        expect(patches[0].url).toBe(`https://api.github.com/gists/${GIST}`)
-        const snap = JSON.parse(body(patches[0]).files[RiftShare.FILE].content)
-        expect(snap.format).toBe("rift-share")
-        expect(snap.session.id).toBe(info.id)
+        expect(out?.info.id).toBe("ses_shared")
       }).pipe(Effect.provide(layer(client)))
     }),
+  )
+
+  it.live("download finds nothing in a gist RIFT didn't make", () =>
+    provideTmpdirInstance(() => {
+      const client = HttpClient.make((req) =>
+        Effect.succeed(json(req, { id: GIST, files: { "notes.md": { content: "hi" } } })),
+      )
+      return Effect.gen(function* () {
+        const share = yield* ShareNext.Service
+        expect(yield* share.download(GIST)).toBeUndefined()
+      }).pipe(Effect.provide(layer(client)))
+    }),
+  )
+
+  it.live(
+    "rapid changes to a shared session become one gist update with the latest state",
+    () =>
+      provideTmpdirInstance(() => {
+        const patches: HttpClientRequest.HttpClientRequest[] = []
+        const client = HttpClient.make((req) => {
+          if (req.method === "PATCH") patches.push(req)
+          return Effect.succeed(json(req, { id: GIST }))
+        })
+        return Effect.gen(function* () {
+          const events = yield* EventV2Bridge.Service
+          const share = yield* ShareNext.Service
+          const database = yield* Database.Service
+
+          const info = yield* newSession("first")
+          yield* share.init()
+          yield* database.db
+            .insert(SessionShareTable)
+            .values({ session_id: info.id, id: GIST, url: RiftShare.url(GIST), secret: "" })
+            .run()
+            .pipe(Effect.orDie)
+
+          const diff = (file: string) => ({ file, patch: "", additions: 1, deletions: 0, status: "modified" as const })
+          yield* events.publish(Session.Event.Diff, { sessionID: info.id, diff: [diff("a.ts")] })
+          yield* events.publish(Session.Event.Diff, { sessionID: info.id, diff: [diff("b.ts")] })
+          yield* pollWithTimeout(
+            Effect.sync(() => (patches.length === 1 ? true : undefined)),
+            "timed out waiting for the gist update",
+            "15 seconds",
+          )
+
+          expect(patches).toHaveLength(1)
+          expect(patches[0].url).toBe(`https://api.github.com/gists/${GIST}`)
+          const snap = JSON.parse(body(patches[0]).files[RiftShare.FILE].content)
+          expect(snap.format).toBe("rift-share")
+          expect(snap.session.id).toBe(info.id)
+        }).pipe(Effect.provide(layer(client)))
+      }),
     // The batching delay is the behaviour under test, and it is longer than bun's default timeout.
     20_000,
   )

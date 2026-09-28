@@ -7,6 +7,7 @@ import { Database } from "@opencode-ai/core/database/database"
 import { SessionTable, MessageTable, PartTable } from "@opencode-ai/core/session/sql"
 import { InstanceRef } from "@/effect/instance-ref"
 import { RiftShare } from "@/share/rift-share"
+import { ShareNext } from "@/share/share-next"
 import { EOL } from "os"
 import path from "path"
 import { FSUtil } from "@opencode-ai/core/fs-util"
@@ -61,25 +62,10 @@ const runImport = Effect.fn("Cli.import.body")(function* (file: string, ctx: Ins
   }
 
   if (gistID) {
-    const download = (url: string) =>
-      Effect.tryPromise({
-        try: async () => {
-          const response = await fetch(url, { headers: { accept: "application/vnd.github+json", "user-agent": "rift" } })
-          if (!response.ok) throw new Error(`HTTP ${response.status}`)
-          return response.text()
-        },
-        catch: (e) => new CliError({ message: `Failed to download share: ${e instanceof Error ? e.message : String(e)}` }),
-      })
-    const parse = (text: string) =>
-      Effect.try({ try: () => JSON.parse(text) as unknown, catch: () => new CliError({ message: "Share was not valid JSON" }) })
-
-    const located = RiftShare.file(yield* parse(yield* download(`https://api.github.com/gists/${gistID}`)))
-    if (!located) {
-      process.stdout.write(`Not a RIFT share: ${gistID}`)
-      process.stdout.write(EOL)
-      return
-    }
-    exportData = RiftShare.read(yield* parse("content" in located ? located.content : yield* download(located.raw)))
+    const share = yield* ShareNext.Service
+    exportData = yield* share
+      .download(gistID)
+      .pipe(Effect.mapError((e) => new CliError({ message: `Failed to download share: ${e instanceof Error ? e.message : String(e)}` })))
     if (!exportData) {
       process.stdout.write(`Not a RIFT share: ${gistID}`)
       process.stdout.write(EOL)
