@@ -15,16 +15,9 @@ export function escape(value) {
     .replaceAll("'", "&#39;")
 }
 
-// The TUI's block wordmark (opencode/packages/tui/src/logo.ts), one pixel per half-cell.
-// "RI" sits back and "FT" leads, as on the TUI home screen.
-const RI =
-  "M0 2h1v1h-1zM0 3h1v1h-1zM1 2h1v1h-1zM2 2h1v1h-1zM3 2h1v1h-1zM3 3h1v1h-1zM5 2h1v1h-1zM6 2h1v1h-1zM6 3h1v1h-1zM7 2h1v1h-1zM7 3h1v1h-1zM8 2h1v1h-1zM0 4h1v1h-1zM0 5h1v1h-1zM1 4h1v1h-1zM2 4h1v1h-1zM3 5h1v1h-1zM6 4h1v1h-1zM6 5h1v1h-1zM7 4h1v1h-1zM7 5h1v1h-1zM0 6h1v1h-1zM3 6h1v1h-1zM5 6h1v1h-1zM6 6h1v1h-1zM6 7h1v1h-1zM7 6h1v1h-1zM7 7h1v1h-1zM8 6h1v1h-1z"
-const FT =
-  "M14 1h1v1h-1zM10 2h1v1h-1zM10 3h1v1h-1zM11 2h1v1h-1zM12 2h1v1h-1zM13 2h1v1h-1zM15 2h1v1h-1zM15 3h1v1h-1zM16 2h1v1h-1zM16 3h1v1h-1zM17 2h1v1h-1zM17 3h1v1h-1zM18 2h1v1h-1zM18 3h1v1h-1zM10 4h1v1h-1zM10 5h1v1h-1zM11 4h1v1h-1zM12 4h1v1h-1zM16 4h1v1h-1zM16 5h1v1h-1zM17 4h1v1h-1zM17 5h1v1h-1zM10 6h1v1h-1zM16 6h1v1h-1zM16 7h1v1h-1zM17 6h1v1h-1zM17 7h1v1h-1z"
-const R = "M0 2h1v1h-1zM0 3h1v1h-1zM1 2h1v1h-1zM2 2h1v1h-1zM3 2h1v1h-1zM3 3h1v1h-1zM0 4h1v1h-1zM0 5h1v1h-1zM1 4h1v1h-1zM2 4h1v1h-1zM3 5h1v1h-1zM0 6h1v1h-1zM3 6h1v1h-1z"
-
-export const LOGO = `<svg class="logo" viewBox="0 1 19 7" shape-rendering="crispEdges" role="img" aria-label="RIFT"><path class="ri" d="${RI}"/><path class="ft" d="${FT}"/></svg>`
-const AVATAR = `<span class="avatar" aria-hidden="true"><svg viewBox="-1.5 1 7 7" shape-rendering="crispEdges"><path d="${R}"/></svg></span>`
+// RIFT's CGA pixel-art logo, and its R on its own for the avatar.
+export const LOGO = `<img class="logo" src="../logo.png" alt="RIFT" width="536" height="184" />`
+const AVATAR = `<img class="avatar" src="../logo-r.png" alt="" width="174" height="184" />`
 
 const GLYPH = { passed: "✓", failed: "✗", timed_out: "✗", not_run: "○", queued: "●" }
 const TOOL_GLYPH = { completed: "✓", error: "✗", running: "●", pending: "○" }

@@ -1,6 +1,6 @@
 /* RIFT share viewer. Chat-first and calm, after Lovable's shared chats: neutral surfaces, the
    conversation in readable type, and the work folded into cards. Inter and JetBrains Mono are
-   RIFT's faces from its launch videos; indigo is RIFT's accent and is used sparingly. */
+   RIFT's faces from its launch videos; the one accent is the logo's CGA blue, used sparingly. */
 
 @font-face {
   font-family: "Inter"; /* unslop-ignore: RIFT brand face, bundled by the video engine */
@@ -41,13 +41,11 @@
   --text: #ededf0;
   --text-2: #a3a3ad;
   --text-3: #6e6e78;
-  --accent: #7c7cff; /* unslop-ignore: RIFT indigo, lifted for contrast on dark */
+  --accent: #7070ff; /* unslop-ignore: the logo's CGA bright blue (#5555ff), lifted for contrast on dark */
   --accent-ink: #ffffff;
-  --glow: rgba(91, 91, 255, 0.16);
+  --glow: rgba(0, 0, 170, 0.22); /* the logo's CGA blue */
   --pass: #3fbf7f;
   --fail: #f0605d;
-  --logo-back: #8a8a94;
-  --logo-front: #f4f4f6;
   --sans: "Inter", ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif; /* unslop-ignore: RIFT brand face */
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   color-scheme: dark;
@@ -62,12 +60,10 @@
     --text: #17171b;
     --text-2: #55555f;
     --text-3: #8c8c96;
-    --accent: #4b4bf0; /* unslop-ignore: RIFT indigo, deepened for contrast on light */
-    --glow: rgba(91, 91, 255, 0.1);
+    --accent: #3434d4; /* unslop-ignore: the logo's CGA blue, deepened for contrast on light */
+    --glow: rgba(85, 85, 255, 0.1);
     --pass: #178a53;
     --fail: #cf3431;
-    --logo-back: #9a9aa4;
-    --logo-front: #17171b;
     color-scheme: light;
   }
 }
@@ -117,20 +113,14 @@ a:hover {
   color: var(--accent);
 }
 
-/* Logo: the TUI wordmark, drawn from the same glyphs. */
+/* Logo: RIFT's CGA pixel art. It carries its own black ground, so it sits as a small tile. */
 
 .logo {
   display: block;
-  height: 18px;
+  height: 32px;
   width: auto;
-}
-
-.logo .ri {
-  fill: var(--logo-back);
-}
-
-.logo .ft {
-  fill: var(--logo-front);
+  border-radius: 5px;
+  image-rendering: pixelated;
 }
 
 .brand {
@@ -307,18 +297,13 @@ a:hover {
 }
 
 .avatar {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 32px;
   height: 32px;
-  border-radius: 10px;
-  background: var(--text);
-}
-
-.avatar svg {
-  width: 18px;
-  height: 18px;
-  fill: var(--bg);
+  border-radius: 9px;
+  object-fit: cover;
+  image-rendering: pixelated;
+  background: #000;
 }
 
 .content {
@@ -571,7 +556,12 @@ footer {
 }
 
 footer .logo {
-  height: 28px;
+  height: 92px;
+  border-radius: 10px;
+}
+
+.empty .logo {
+  height: 56px;
 }
 
 .tagline {
