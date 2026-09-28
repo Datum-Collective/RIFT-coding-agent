@@ -15,9 +15,21 @@ export function escape(value) {
     .replaceAll("'", "&#39;")
 }
 
+// The TUI's block wordmark (opencode/packages/tui/src/logo.ts), one pixel per half-cell.
+// "RI" sits back and "FT" leads, as on the TUI home screen.
+const RI =
+  "M0 2h1v1h-1zM0 3h1v1h-1zM1 2h1v1h-1zM2 2h1v1h-1zM3 2h1v1h-1zM3 3h1v1h-1zM5 2h1v1h-1zM6 2h1v1h-1zM6 3h1v1h-1zM7 2h1v1h-1zM7 3h1v1h-1zM8 2h1v1h-1zM0 4h1v1h-1zM0 5h1v1h-1zM1 4h1v1h-1zM2 4h1v1h-1zM3 5h1v1h-1zM6 4h1v1h-1zM6 5h1v1h-1zM7 4h1v1h-1zM7 5h1v1h-1zM0 6h1v1h-1zM3 6h1v1h-1zM5 6h1v1h-1zM6 6h1v1h-1zM6 7h1v1h-1zM7 6h1v1h-1zM7 7h1v1h-1zM8 6h1v1h-1z"
+const FT =
+  "M14 1h1v1h-1zM10 2h1v1h-1zM10 3h1v1h-1zM11 2h1v1h-1zM12 2h1v1h-1zM13 2h1v1h-1zM15 2h1v1h-1zM15 3h1v1h-1zM16 2h1v1h-1zM16 3h1v1h-1zM17 2h1v1h-1zM17 3h1v1h-1zM18 2h1v1h-1zM18 3h1v1h-1zM10 4h1v1h-1zM10 5h1v1h-1zM11 4h1v1h-1zM12 4h1v1h-1zM16 4h1v1h-1zM16 5h1v1h-1zM17 4h1v1h-1zM17 5h1v1h-1zM10 6h1v1h-1zM16 6h1v1h-1zM16 7h1v1h-1zM17 6h1v1h-1zM17 7h1v1h-1z"
+const R = "M0 2h1v1h-1zM0 3h1v1h-1zM1 2h1v1h-1zM2 2h1v1h-1zM3 2h1v1h-1zM3 3h1v1h-1zM0 4h1v1h-1zM0 5h1v1h-1zM1 4h1v1h-1zM2 4h1v1h-1zM3 5h1v1h-1zM0 6h1v1h-1zM3 6h1v1h-1z"
+
+export const LOGO = `<svg class="logo" viewBox="0 1 19 7" shape-rendering="crispEdges" role="img" aria-label="RIFT"><path class="ri" d="${RI}"/><path class="ft" d="${FT}"/></svg>`
+const AVATAR = `<span class="avatar" aria-hidden="true"><svg viewBox="-1.5 1 7 7" shape-rendering="crispEdges"><path d="${R}"/></svg></span>`
+
 const GLYPH = { passed: "✓", failed: "✗", timed_out: "✗", not_run: "○", queued: "●" }
 const TOOL_GLYPH = { completed: "✓", error: "✗", running: "●", pending: "○" }
 const HANDLE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
+const REPO = "https://github.com/Datum-Collective/RIFT-coding-agent"
 
 // Counts come from the gist too; coercing them to numbers keeps them from carrying markup.
 const count = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0)
@@ -33,32 +45,36 @@ export function render(snap, meta = {}) {
   const checks = messages.flatMap((m) =>
     m.parts.flatMap((p) => (Array.isArray(p.metadata?.rift_verification?.checks) ? p.metadata.rift_verification.checks : [])),
   )
+  const title = escape(snap.session.title || "Untitled session")
   return `
-${topbar(meta)}
-<main>
-  <section class="hero">
-    <h1>${escape(snap.session.title || "Untitled session")}</h1>
-    ${chips(snap, messages, diffs)}
+${topbar(title, meta)}
+<main class="thread">
+  <section class="intro">
+    <h1>${title}</h1>
+    ${details(snap, messages, diffs)}
     ${proof(checks)}
     ${provenance(meta)}
   </section>
-  <ol class="timeline">
+  <div class="messages">
 ${messages.map(turn).filter(Boolean).join("\n")}
-  </ol>
+  </div>
   ${diffs.length ? changes(diffs) : ""}
 </main>
 ${footer()}`
 }
 
-function topbar(meta) {
-  const link = meta.link ? `<button class="copy" type="button" data-copy="rift import ${escape(meta.link)}">Copy import command</button>` : ""
+function topbar(title, meta) {
+  const copy = meta.link
+    ? `<button class="button" type="button" data-copy="rift import ${escape(meta.link)}">Copy import command</button>`
+    : ""
   return `<header class="top">
-  <a class="wordmark" href="https://github.com/Datum-Collective/RIFT-coding-agent" aria-label="RIFT on GitHub"><span class="mark" aria-hidden="true"></span>RIFT</a>
-  <nav>${link}<a class="quiet" href="https://github.com/Datum-Collective/RIFT-coding-agent">GitHub</a></nav>
+  <a class="brand" href="${REPO}">${LOGO}</a>
+  <span class="crumb">${title}</span>
+  <nav>${copy}<a class="button ghost" href="${REPO}">Get RIFT</a></nav>
 </header>`
 }
 
-function chips(snap, messages, diffs) {
+function details(snap, messages, diffs) {
   const modelID = messages.findLast((m) => m.info.role === "assistant")?.info.modelID
   const model = (snap.models ?? []).find((m) => m?.id === modelID)?.name ?? modelID
   const version = snap.session.version && snap.session.version !== "local" ? `rift v${snap.session.version}` : ""
@@ -67,23 +83,23 @@ function chips(snap, messages, diffs) {
     deletions: diffs.reduce((sum, d) => sum + count(d.deletions), 0),
   }
   const items = [
-    version ? `<li class="version">${escape(version)}</li>` : "",
-    model ? `<li>${escape(model)}</li>` : "",
-    snap.session.time?.created ? `<li>${escape(date(snap.session.time.created))}</li>` : "",
-    duration(snap.session.time) ? `<li>${escape(duration(snap.session.time))}</li>` : "",
-    diffs.length ? `<li>${diffs.length} ${diffs.length === 1 ? "file" : "files"} ${stat(total)}</li>` : "",
+    model ? escape(model) : "",
+    snap.session.time?.created ? escape(date(snap.session.time.created)) : "",
+    escape(duration(snap.session.time)),
+    diffs.length ? `${diffs.length} ${diffs.length === 1 ? "file" : "files"} ${stat(total)}` : "",
+    version ? escape(version) : "",
   ].filter(Boolean)
-  return items.length ? `<ul class="chips">${items.join("")}</ul>` : ""
+  return items.length ? `<p class="meta">${items.map((item) => `<span>${item}</span>`).join("")}</p>` : ""
 }
 
 function proof(checks) {
   if (!checks.length) {
-    return `<div class="proof none"><span class="glyph">○</span><div><strong>No checks ran</strong><span>RIFT didn't run tests or type checks in this session.</span></div></div>`
+    return `<div class="proof none"><span class="dot">○</span><div><strong>No checks ran</strong><span>RIFT didn't run tests or type checks in this session.</span></div></div>`
   }
   const failed = checks.filter((c) => c.status === "failed" || c.status === "timed_out").length
   const tone = failed ? "fail" : "pass"
   const title = failed ? `${failed} of ${checks.length} checks failed` : `${checks.length} of ${checks.length} checks passed`
-  return `<div class="proof ${tone}"><span class="glyph">${failed ? "✗" : "✓"}</span><div><strong>${title}</strong><span>RIFT ran these itself. The agent's word isn't taken for it.</span></div></div>`
+  return `<div class="proof ${tone}"><span class="dot">${failed ? "✗" : "✓"}</span><div><strong>${title}</strong><span>RIFT ran these itself. The agent's word isn't taken for it.</span></div></div>`
 }
 
 function provenance(meta) {
@@ -93,17 +109,40 @@ function provenance(meta) {
     ? `Shared by <a href="https://github.com/${owner}" rel="nofollow noopener noreferrer">@${owner}</a>`
     : "Shared from RIFT"
   const source = gist ? ` · <a href="${escape(gist)}" rel="nofollow noopener noreferrer">view the gist</a>` : ""
-  return `<p class="provenance">${who}${source}. Everything below was written by the sharer and their agent; RIFT didn't write or review it.</p>`
+  return `<p class="provenance">${who}${source}. Written by the sharer and their agent; RIFT didn't write or review it.</p>`
 }
 
 function turn(m) {
-  const body = m.parts.map(part).filter(Boolean).join("\n")
-  if (!body) return ""
   if (m.info.role === "user") {
-    return `<li class="turn user"><span class="glyph" aria-hidden="true">❯</span><div class="body">${body}</div></li>`
+    const body = m.parts.map(part).filter(Boolean).join("\n")
+    return body ? `<div class="msg user"><div class="bubble">${body}</div></div>` : ""
   }
+  const body = blocks(m.parts)
+  if (!body) return ""
   const agent = m.info.agent ? `<span class="agent">${escape(m.info.agent)}</span>` : ""
-  return `<li class="turn agent"><span class="glyph" aria-hidden="true">●</span><div class="body"><div class="who">rift ${agent}</div>${body}</div></li>`
+  return `<div class="msg rift">${AVATAR}<div class="content"><div class="who">RIFT ${agent}</div>${body}</div></div>`
+}
+
+// A run of tool calls reads as one card of steps, the way the work actually happened.
+function blocks(parts) {
+  const out = []
+  let steps = []
+  const flush = () => {
+    if (steps.length) out.push(`<div class="steps">${steps.join("")}</div>`)
+    steps = []
+  }
+  for (const p of parts) {
+    if (p.type === "tool") {
+      steps.push(tool(p))
+      continue
+    }
+    const html = part(p)
+    if (!html) continue
+    flush()
+    out.push(html)
+  }
+  flush()
+  return out.join("\n")
 }
 
 function part(p) {
@@ -114,11 +153,10 @@ function part(p) {
     return text + (Array.isArray(checks) && checks.length ? verification(checks) : "")
   }
   if (p.type === "reasoning" && p.text?.trim()) {
-    return `<details class="thinking"><summary>thinking</summary><div class="text">${markdown(p.text)}</div></details>`
+    return `<details class="thinking"><summary>Thought it through</summary><div class="text">${markdown(p.text)}</div></details>`
   }
-  if (p.type === "tool") return tool(p)
-  if (p.type === "file") return `<p class="note">attached ${escape(p.filename ?? p.url)}</p>`
-  if (p.type === "subtask") return `<p class="note">handed to @${escape(p.agent)}: ${escape(p.description)}</p>`
+  if (p.type === "file") return `<p class="note">Attached ${escape(p.filename ?? p.url)}</p>`
+  if (p.type === "subtask") return `<p class="note">Handed to @${escape(p.agent)}: ${escape(p.description)}</p>`
   return ""
 }
 
@@ -128,11 +166,11 @@ function tool(p) {
   const target = state.title || input.command || input.filePath || input.path || input.pattern || input.url || ""
   const glyph = TOOL_GLYPH[state.status] ?? "○"
   const tone = state.status === "error" ? "del" : state.status === "completed" ? "add" : "muted"
-  const failed = state.status === "error" ? ` <span class="del">failed</span>` : ""
+  const failed = state.status === "error" ? `<span class="del flag">failed</span>` : ""
   const diff = typeof state.metadata?.diff === "string" ? patch(state.metadata.diff) : ""
   const output = state.status === "error" ? state.error : state.output
   const body = diff || (output ? `<pre>${escape(output)}</pre>` : "")
-  const summary = `<span class="${tone} step">${glyph}</span><span class="tool">${escape(p.tool)}</span><span class="target">${escape(target)}</span>${failed}`
+  const summary = `<span class="${tone} status">${glyph}</span><span class="tool">${escape(p.tool)}</span><span class="target">${escape(target)}</span>${failed}`
   if (!body) return `<div class="call">${summary}</div>`
   return `<details class="call"><summary>${summary}</summary>${body}</details>`
 }
@@ -146,24 +184,25 @@ function verification(checks) {
       return `<li><span class="${tone}">${glyph}</span> <code>${escape(c.command)}</code>${reason}</li>`
     })
     .join("")
-  return `<div class="verified"><div class="label">checked by RIFT</div><ul>${rows}</ul></div>`
+  return `<div class="verified"><div class="label">Checked by RIFT</div><ul>${rows}</ul></div>`
 }
 
 function changes(diffs) {
   const files = diffs
     .map((d) => {
-      const head = `<span class="target">${escape(d.file)}</span> ${stat(d)}`
+      const head = `<span class="target">${escape(d.file)}</span><span class="stat">${stat(d)}</span>`
       return d.patch ? `<details class="call"><summary>${head}</summary>${patch(d.patch)}</details>` : `<div class="call">${head}</div>`
     })
     .join("\n")
-  return `<section class="changes"><h2>Changes</h2>${files}</section>`
+  return `<section class="changes"><h2>Files changed</h2><div class="steps">${files}</div></section>`
 }
 
 function footer() {
   return `<footer>
-  <img class="art" src="../banner.svg" alt="RIFT" width="576" height="192" />
+  <a class="brand" href="${REPO}">${LOGO}</a>
   <p class="tagline">Agents that prove it.</p>
-  <p class="muted">RIFT is an open-source coding agent that runs the checks before it says done. <a href="https://github.com/Datum-Collective/RIFT-coding-agent">Get RIFT</a></p>
+  <p class="muted">An open-source coding agent that runs the checks before it says done.</p>
+  <a class="button" href="${REPO}">Get RIFT</a>
 </footer>`
 }
 
@@ -216,7 +255,7 @@ function prose(text) {
       if (heading && lines.length === 1) return `<h${heading[1].length + 2}>${inline(heading[2])}</h${heading[1].length + 2}>`
       if (lines.every((l) => /^\s*[-*]\s+/.test(l))) return `<ul>${lines.map((l) => `<li>${inline(l.replace(/^\s*[-*]\s+/, ""))}</li>`).join("")}</ul>`
       if (lines.every((l) => /^\s*\d+[.)]\s+/.test(l))) return `<ol>${lines.map((l) => `<li>${inline(l.replace(/^\s*\d+[.)]\s+/, ""))}</li>`).join("")}</ol>`
-      if (lines.every((l) => l.startsWith("&gt;") || l.startsWith(">"))) return `<blockquote>${inline(lines.map((l) => l.replace(/^>\s?/, "")).join(" "))}</blockquote>`
+      if (lines.every((l) => l.startsWith(">"))) return `<blockquote>${inline(lines.map((l) => l.replace(/^>\s?/, "")).join(" "))}</blockquote>`
       return `<p>${lines.map(inline).join("<br>")}</p>`
     })
     .join("")
@@ -238,7 +277,8 @@ function inline(text) {
 // Shared text can dress a link up as anything, so every link shows where it really goes.
 function link(label, href) {
   if (!/^(https?:|mailto:)/i.test(href)) return label
-  const host = /^https?:/i.test(href) ? new URL(href.replaceAll("&amp;", "&")).hostname : href.replace(/^mailto:/i, "")
+  const host = /^https?:/i.test(href) ? URL.parse(href.replaceAll("&amp;", "&"))?.hostname : href.replace(/^mailto:/i, "")
+  if (!host) return label
   const hint = label.includes(host) ? "" : ` <span class="host">${escape(host)}</span>`
   return `<a href="${href}" rel="nofollow noopener noreferrer ugc" target="_blank" title="${href}">${label}</a>${hint}`
 }

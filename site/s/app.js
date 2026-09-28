@@ -1,4 +1,4 @@
-import { escape, render } from "./render.js"
+import { LOGO, escape, render } from "./render.js"
 
 const FILE = "rift-session.json"
 const MAX_BYTES = 8_000_000
@@ -14,7 +14,7 @@ const show = (html) => {
 function fail(title, detail) {
   document.title = `${title} · RIFT`
   show(
-    `<div class="empty"><a class="wordmark" href="https://github.com/Datum-Collective/RIFT-coding-agent"><span class="mark"></span>RIFT</a><h1>${escape(title)}</h1><p class="muted">${escape(detail)}</p></div>`,
+    `<div class="empty"><a class="brand" href="https://github.com/Datum-Collective/RIFT-coding-agent">${LOGO}</a><h1>${escape(title)}</h1><p class="muted">${escape(detail)}</p></div>`,
   )
 }
 

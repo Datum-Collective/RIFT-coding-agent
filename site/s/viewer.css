@@ -1,6 +1,25 @@
-/* RIFT share viewer. Terminal-native on purpose: one typeface (JetBrains Mono, the brand's video
-   face), the RIFT indigo, and CGA-derived status colours used only for proof. */
+/* RIFT share viewer. Chat-first and calm, after Lovable's shared chats: neutral surfaces, the
+   conversation in readable type, and the work folded into cards. Inter and JetBrains Mono are
+   RIFT's faces from its launch videos; indigo is RIFT's accent and is used sparingly. */
 
+@font-face {
+  font-family: "Inter"; /* unslop-ignore: RIFT brand face, bundled by the video engine */
+  src: url("../fonts/Inter-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Inter"; /* unslop-ignore: RIFT brand face, bundled by the video engine */
+  src: url("../fonts/Inter-500.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Inter"; /* unslop-ignore: RIFT brand face, bundled by the video engine */
+  src: url("../fonts/Inter-600.woff2") format("woff2");
+  font-weight: 600 700;
+  font-display: swap;
+}
 @font-face {
   font-family: "JetBrains Mono";
   src: url("../fonts/JetBrainsMono-400.woff2") format("woff2");
@@ -10,30 +29,47 @@
 @font-face {
   font-family: "JetBrains Mono";
   src: url("../fonts/JetBrainsMono-500.woff2") format("woff2");
-  font-weight: 500;
-  font-display: swap;
-}
-@font-face {
-  font-family: "JetBrains Mono";
-  src: url("../fonts/JetBrainsMono-700.woff2") format("woff2");
-  font-weight: 700;
+  font-weight: 500 700;
   font-display: swap;
 }
 
 :root {
-  --bg: #050507;
-  --raised: #0d0d12;
-  --line: #1c1c26;
-  --text: #e7e7ee;
-  --dim: #9a9aab;
-  --faint: #5c5c6e;
-  --indigo: #5b5bff; /* unslop-ignore: RIFT brand accent */
-  --indigo-soft: rgba(91, 91, 255, 0.1);
-  --cga-blue: #0000aa;
-  --pass: #55d98a;
-  --fail: #ff6b6b;
-  --font: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --bg: #0e0e10;
+  --surface: #151518;
+  --surface-2: #1d1d21;
+  --border: #26262b;
+  --text: #ededf0;
+  --text-2: #a3a3ad;
+  --text-3: #6e6e78;
+  --accent: #7c7cff; /* unslop-ignore: RIFT indigo, lifted for contrast on dark */
+  --accent-ink: #ffffff;
+  --glow: rgba(91, 91, 255, 0.16);
+  --pass: #3fbf7f;
+  --fail: #f0605d;
+  --logo-back: #8a8a94;
+  --logo-front: #f4f4f6;
+  --sans: "Inter", ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif; /* unslop-ignore: RIFT brand face */
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #fbfbfc;
+    --surface: #ffffff;
+    --surface-2: #f2f2f4;
+    --border: #e4e4e8;
+    --text: #17171b;
+    --text-2: #55555f;
+    --text-3: #8c8c96;
+    --accent: #4b4bf0; /* unslop-ignore: RIFT indigo, deepened for contrast on light */
+    --glow: rgba(91, 91, 255, 0.1);
+    --pass: #178a53;
+    --fail: #cf3431;
+    --logo-back: #9a9aa4;
+    --logo-front: #17171b;
+    color-scheme: light;
+  }
 }
 
 * {
@@ -41,31 +77,32 @@
 }
 
 ::selection {
-  background: var(--indigo);
-  color: #fff;
+  background: var(--accent);
+  color: var(--accent-ink);
 }
 
 body {
   margin: 0;
-  background: var(--bg);
+  min-height: 100vh;
+  background: radial-gradient(ellipse 70% 320px at 50% -60px, var(--glow), transparent 70%) no-repeat, var(--bg);
   color: var(--text);
-  font: 14px/1.7 var(--font);
+  font: 15px/1.65 var(--sans);
   -webkit-font-smoothing: antialiased;
 }
 
 a {
-  color: var(--text);
-  text-decoration-color: var(--indigo);
-  text-underline-offset: 3px;
+  color: var(--accent);
+  text-decoration: none;
 }
 
 a:hover {
-  color: var(--indigo);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .muted,
 .note {
-  color: var(--dim);
+  color: var(--text-2);
 }
 
 .add {
@@ -77,7 +114,28 @@ a:hover {
 }
 
 .hunk {
-  color: var(--indigo);
+  color: var(--accent);
+}
+
+/* Logo: the TUI wordmark, drawn from the same glyphs. */
+
+.logo {
+  display: block;
+  height: 18px;
+  width: auto;
+}
+
+.logo .ri {
+  fill: var(--logo-back);
+}
+
+.logo .ft {
+  fill: var(--logo-front);
+}
+
+.brand {
+  display: inline-flex;
+  flex: none;
 }
 
 /* Top bar */
@@ -88,224 +146,203 @@ a:hover {
   z-index: 2;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  height: 56px;
-  padding: 0 24px;
-  border-bottom: 1px solid var(--line);
-  background: rgba(5, 5, 7, 0.88);
-  backdrop-filter: blur(8px);
+  gap: 16px;
+  height: 60px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(12px);
 }
 
-.wordmark {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 700;
-  font-size: 15px;
-  letter-spacing: 0.32em;
-  text-decoration: none;
-  color: var(--text);
-}
-
-.mark {
-  width: 6px;
-  height: 18px;
-  background: var(--indigo);
-  box-shadow: 6px 0 0 var(--cga-blue);
-  margin-right: 6px;
+.crumb {
+  min-width: 0;
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .top nav {
   display: flex;
+  gap: 8px;
+  margin-left: auto;
+  flex: none;
+}
+
+.button {
+  display: inline-flex;
   align-items: center;
-  gap: 18px;
-}
-
-.quiet {
-  color: var(--dim);
-  text-decoration: none;
-  font-size: 13px;
-}
-
-.copy {
-  font: 500 12px var(--font);
-  color: var(--text);
-  background: var(--indigo-soft);
-  border: 1px solid rgba(91, 91, 255, 0.45);
-  border-radius: 4px;
-  padding: 6px 12px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--text);
+  color: var(--bg);
+  font: 500 13px var(--sans);
   cursor: pointer;
 }
 
-.copy:hover {
-  background: var(--indigo);
-  color: #fff;
+.button:hover {
+  text-decoration: none;
+  opacity: 0.9;
 }
 
-/* Page */
+.button.ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text);
+}
 
-main {
-  max-width: 880px;
+/* Thread */
+
+.thread {
+  max-width: 780px;
   margin: 0 auto;
-  padding: 44px 24px 24px;
+  padding: 48px 20px 32px;
 }
 
-.hero h1 {
-  margin: 0 0 14px;
+.intro h1 {
+  margin: 0 0 10px;
   font-size: 30px;
   line-height: 1.2;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.02em;
 }
 
-.chips {
+.meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 0 0 24px;
-  padding: 0;
-  list-style: none;
+  gap: 4px 0;
+  margin: 0 0 22px;
+  color: var(--text-3);
+  font-size: 13px;
 }
 
-.chips li {
-  padding: 2px 10px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  color: var(--dim);
-  font-size: 12px;
-}
-
-.chips .version {
-  color: var(--text);
-  border-color: rgba(91, 91, 255, 0.45);
-  background: var(--indigo-soft);
+.meta span + span::before {
+  content: "·";
+  margin: 0 8px;
 }
 
 /* The verdict: what RIFT itself checked. */
 
 .proof {
   display: flex;
-  gap: 16px;
-  align-items: flex-start;
-  padding: 16px 18px;
-  border: 1px solid var(--line);
-  border-left-width: 4px;
-  border-radius: 6px;
-  background: var(--raised);
+  gap: 14px;
+  align-items: center;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
 }
 
-.proof .glyph {
-  font-size: 22px;
-  line-height: 1.1;
+.proof .dot {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
   font-weight: 700;
+  background: var(--surface-2);
+  color: var(--text-3);
 }
 
 .proof strong {
   display: block;
-  font-size: 15px;
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.proof span:not(.glyph) {
-  color: var(--dim);
-  font-size: 12px;
+.proof span:not(.dot) {
+  color: var(--text-2);
+  font-size: 13px;
 }
 
-.proof.pass {
-  border-left-color: var(--pass);
-}
-.proof.pass .glyph {
+.proof.pass .dot {
+  background: color-mix(in srgb, var(--pass) 16%, transparent);
   color: var(--pass);
 }
-.proof.fail {
-  border-left-color: var(--fail);
-}
-.proof.fail .glyph {
+
+.proof.fail .dot {
+  background: color-mix(in srgb, var(--fail) 16%, transparent);
   color: var(--fail);
-}
-.proof.none {
-  border-left-color: var(--faint);
-}
-.proof.none .glyph {
-  color: var(--faint);
 }
 
 .provenance {
-  margin: 16px 0 0;
-  color: var(--faint);
-  font-size: 12px;
+  margin: 14px 2px 0;
+  color: var(--text-3);
+  font-size: 12.5px;
 }
 
-.provenance a {
-  color: var(--dim);
+/* Messages */
+
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  margin-top: 44px;
 }
 
-/* Timeline: a gutter line with one glyph per turn, like the TUI's tree. */
-
-.timeline {
-  position: relative;
-  margin: 40px 0 0;
-  padding: 0;
-  list-style: none;
+.msg.user {
+  display: flex;
+  justify-content: flex-end;
 }
 
-.timeline::before {
-  content: "";
-  position: absolute;
-  top: 8px;
-  bottom: 8px;
-  left: 9px;
-  width: 1px;
-  background: var(--line);
+.bubble {
+  max-width: min(78%, 600px);
+  padding: 11px 16px;
+  border-radius: 20px 20px 6px 20px;
+  background: var(--surface-2);
+  overflow-wrap: anywhere;
 }
 
-.turn {
-  position: relative;
+.msg.rift {
   display: grid;
-  grid-template-columns: 20px 1fr;
-  gap: 18px;
-  padding: 0 0 30px;
+  grid-template-columns: 32px 1fr;
+  gap: 14px;
 }
 
-.turn > .glyph {
-  position: relative;
-  z-index: 1;
+.avatar {
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  margin-top: 2px;
-  background: var(--bg);
-  color: var(--indigo);
-  font-weight: 700;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--text);
 }
 
-.turn .body {
+.avatar svg {
+  width: 18px;
+  height: 18px;
+  fill: var(--bg);
+}
+
+.content {
   min-width: 0;
 }
 
-.turn.user .body {
-  padding: 10px 14px;
-  border: 1px solid rgba(91, 91, 255, 0.28);
-  border-radius: 6px;
-  background: var(--indigo-soft);
-}
-
 .who {
-  margin-bottom: 6px;
-  color: var(--indigo);
-  font-weight: 700;
-  font-size: 12px;
-  letter-spacing: 0.08em;
+  margin: 4px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .who .agent {
   margin-left: 6px;
-  color: var(--faint);
+  color: var(--text-3);
   font-weight: 400;
 }
 
+.content > * + * {
+  margin-top: 12px;
+}
+
 .text p {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
 }
 
 .text > :last-child {
@@ -315,70 +352,86 @@ main {
 .text h3,
 .text h4,
 .text h5 {
-  margin: 18px 0 8px;
-  font-size: 14px;
+  margin: 20px 0 8px;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .text ul,
 .text ol {
-  margin: 0 0 10px;
-  padding-left: 20px;
+  margin: 0 0 12px;
+  padding-left: 22px;
+}
+
+.text li + li {
+  margin-top: 4px;
 }
 
 blockquote {
-  margin: 0 0 10px;
-  padding-left: 12px;
-  border-left: 2px solid var(--line);
-  color: var(--dim);
+  margin: 0 0 12px;
+  padding-left: 14px;
+  border-left: 3px solid var(--border);
+  color: var(--text-2);
 }
 
 .host {
-  color: var(--faint);
-  font-size: 11px;
+  color: var(--text-3);
+  font-size: 12px;
 }
 
 code,
 pre {
-  font-family: var(--font);
-  font-size: 12.5px;
+  font-family: var(--mono);
+  font-size: 13px;
 }
 
 :not(pre) > code {
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: var(--raised);
-  border: 1px solid var(--line);
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-size: 0.86em;
 }
 
 pre {
-  margin: 8px 0 4px;
-  padding: 12px 14px;
+  margin: 0;
+  padding: 14px 16px;
   overflow: auto;
   max-height: 440px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--raised);
-  line-height: 1.55;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  line-height: 1.6;
 }
 
 .diff {
   white-space: pre;
 }
 
-/* Tool calls and thinking */
+/* Steps: a run of tool calls in one card. */
 
-.call,
-.thinking {
-  margin: 4px 0;
-  font-size: 12.5px;
+.steps {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
 }
 
-.call summary,
+.call + .call {
+  border-top: 1px solid var(--border);
+}
+
+.call > summary,
 div.call {
   display: flex;
   gap: 10px;
-  align-items: baseline;
+  align-items: center;
   min-width: 0;
+  padding: 10px 14px;
+  font: 13px var(--mono);
+}
+
+.call pre {
+  margin: 0 12px 12px;
 }
 
 details > summary {
@@ -391,52 +444,96 @@ details > summary::-webkit-details-marker {
 }
 
 details.call > summary::after {
-  content: "›";
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
   margin-left: auto;
-  color: var(--faint);
+  border-right: 1.5px solid var(--text-3);
+  border-bottom: 1.5px solid var(--text-3);
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
 }
 
 details.call[open] > summary::after {
-  content: "⌄";
+  transform: rotate(45deg);
 }
 
-.thinking > summary {
-  color: var(--faint);
+details.call > summary:hover {
+  background: var(--surface-2);
 }
 
-.step {
-  width: 12px;
+.status {
   flex: none;
+  width: 14px;
+  text-align: center;
 }
 
 .tool {
+  flex: none;
   color: var(--text);
   font-weight: 500;
-  flex: none;
 }
 
 .target {
-  color: var(--dim);
+  min-width: 0;
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.flag,
+.stat {
+  flex: none;
+  font-size: 12px;
+}
+
+.stat {
+  margin-left: auto;
+}
+
+details.call > summary .stat {
+  margin-left: auto;
+  margin-right: 10px;
+}
+
+.thinking > summary {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.thinking > summary::before {
+  content: "›";
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s;
+}
+
+.thinking[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.thinking .text {
+  margin-top: 8px;
+  padding-left: 14px;
+  border-left: 2px solid var(--border);
+  color: var(--text-2);
+}
+
 .verified {
-  margin-top: 12px;
-  padding: 10px 14px;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--pass);
-  border-radius: 6px;
-  font-size: 12.5px;
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--pass) 35%, var(--border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--pass) 6%, var(--surface));
+  font-size: 13px;
 }
 
 .verified .label {
-  margin-bottom: 4px;
-  color: var(--faint);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  margin-bottom: 6px;
+  color: var(--pass);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .verified ul {
@@ -445,66 +542,88 @@ details.call[open] > summary::after {
   list-style: none;
 }
 
+.verified li + li {
+  margin-top: 4px;
+}
+
+.changes {
+  margin-top: 44px;
+}
+
 .changes h2 {
-  margin: 8px 0 12px;
-  font-size: 13px;
-  color: var(--dim);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 /* Footer */
 
 footer {
-  max-width: 880px;
-  margin: 40px auto 0;
-  padding: 40px 24px 64px;
-  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 780px;
+  margin: 56px auto 0;
+  padding: 44px 20px 64px;
+  border-top: 1px solid var(--border);
   text-align: center;
 }
 
-.art {
-  width: min(420px, 100%);
-  height: auto;
-  image-rendering: pixelated;
-  opacity: 0.9;
+footer .logo {
+  height: 28px;
 }
 
 .tagline {
-  margin: 12px 0 6px;
-  font-size: 18px;
-  font-weight: 700;
+  margin: 14px 0 0;
+  font-size: 17px;
+  font-weight: 600;
 }
 
 footer .muted {
-  margin: 0;
-  font-size: 12px;
+  margin: 0 0 14px;
+  font-size: 13px;
 }
 
 /* Empty and error states */
 
 .empty {
-  max-width: 560px;
+  max-width: 520px;
   margin: 0 auto;
-  padding: 22vh 24px 0;
+  padding: 24vh 20px 0;
 }
 
 .empty h1 {
   margin: 28px 0 8px;
   font-size: 22px;
+  font-weight: 600;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 640px) {
   .top {
-    padding: 0 16px;
+    padding: 0 14px;
+    gap: 12px;
   }
-  main {
-    padding: 28px 16px 16px;
-  }
-  .hero h1 {
-    font-size: 22px;
-  }
-  .quiet {
+  .crumb,
+  .button.ghost {
     display: none;
+  }
+  .thread {
+    padding: 32px 16px 24px;
+  }
+  .intro h1 {
+    font-size: 23px;
+  }
+  .bubble {
+    max-width: 88%;
+  }
+  .msg.rift {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
   }
 }

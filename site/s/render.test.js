@@ -198,6 +198,11 @@ describe("links in shared text", () => {
     expect(html).toContain("evil.example")
   })
 
+  test("a malformed link shows as plain text instead of breaking the page", () => {
+    expect(() => markdown("[x](https://) and [y](http://[bad)")).not.toThrow()
+    expect(markdown("[x](https://)")).not.toContain("<a ")
+  })
+
   test("drop direction-changing and invisible characters that can disguise text", () => {
     const html = markdown("run ‮gnp.exe‬ now​")
     expect(html).not.toContain("‮")
