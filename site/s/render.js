@@ -44,8 +44,7 @@ ${topbar(title, meta)}
 <main class="thread">
   <section class="intro">
     <h1>${title}</h1>
-    ${details(snap, messages, diffs)}
-    ${proof(checks)}
+    <div class="facts">${proof(checks)}${details(snap, messages, diffs)}</div>
     ${provenance(meta)}
   </section>
   <div class="messages">
@@ -85,14 +84,15 @@ function details(snap, messages, diffs) {
   return items.length ? `<p class="meta">${items.map((item) => `<span>${item}</span>`).join("")}</p>` : ""
 }
 
+// A small status pill; the sentence behind it is a tooltip, not a banner.
 function proof(checks) {
   if (!checks.length) {
-    return `<div class="proof none"><span class="dot">○</span><div><strong>No checks ran</strong><span>RIFT didn't run tests or type checks in this session.</span></div></div>`
+    return `<span class="proof none" title="RIFT didn't run tests or type checks in this session.">○ No checks ran</span>`
   }
   const failed = checks.filter((c) => c.status === "failed" || c.status === "timed_out").length
   const tone = failed ? "fail" : "pass"
-  const title = failed ? `${failed} of ${checks.length} checks failed` : `${checks.length} of ${checks.length} checks passed`
-  return `<div class="proof ${tone}"><span class="dot">${failed ? "✗" : "✓"}</span><div><strong>${title}</strong><span>RIFT ran these itself. The agent's word isn't taken for it.</span></div></div>`
+  const label = failed ? `${failed} of ${checks.length} checks failed` : `${checks.length} of ${checks.length} checks passed`
+  return `<span class="proof ${tone}" title="RIFT ran these checks itself instead of taking the agent's word for it.">${failed ? "✗" : "✓"} ${label}</span>`
 }
 
 function provenance(meta) {

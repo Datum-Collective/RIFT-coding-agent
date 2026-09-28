@@ -203,11 +203,20 @@ a:hover {
   letter-spacing: -0.02em;
 }
 
+/* One row of facts: the proof pill, then model, date, duration and changes. */
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
 .meta {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 0;
-  margin: 0 0 22px;
+  margin: 0;
   color: var(--text-3);
   font-size: 13px;
 }
@@ -217,53 +226,38 @@ a:hover {
   margin: 0 8px;
 }
 
-/* The verdict: what RIFT itself checked. */
+/* The verdict: a small pill for what RIFT itself checked. */
 
 .proof {
-  display: flex;
-  gap: 14px;
+  display: inline-flex;
   align-items: center;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--surface);
-}
-
-.proof .dot {
-  display: grid;
-  place-items: center;
+  gap: 6px;
   flex: none;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  font-weight: 700;
-  background: var(--surface-2);
+  height: 26px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px; /* unslop-ignore: the one pill on the page, for the proof status */
+  background: var(--surface);
   color: var(--text-3);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: help;
 }
 
-.proof strong {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.proof span:not(.dot) {
-  color: var(--text-2);
-  font-size: 13px;
-}
-
-.proof.pass .dot {
-  background: color-mix(in srgb, var(--pass) 16%, transparent);
+.proof.pass {
   color: var(--pass);
+  border-color: color-mix(in srgb, var(--pass) 40%, var(--border));
+  background: color-mix(in srgb, var(--pass) 10%, var(--surface));
 }
 
-.proof.fail .dot {
-  background: color-mix(in srgb, var(--fail) 16%, transparent);
+.proof.fail {
   color: var(--fail);
+  border-color: color-mix(in srgb, var(--fail) 40%, var(--border));
+  background: color-mix(in srgb, var(--fail) 10%, var(--surface));
 }
 
 .provenance {
-  margin: 14px 2px 0;
+  margin: 12px 2px 0;
   color: var(--text-3);
   font-size: 12.5px;
 }
