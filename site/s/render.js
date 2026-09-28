@@ -1,8 +1,13 @@
 // Renders a RIFT share snapshot to an HTML string. Anyone can create a gist and send a viewer link,
-// so every value from the snapshot is escaped before any markup is added around it.
+// so every value from the snapshot is escaped before any markup is added around it, and the page
+// says plainly who shared it.
+
+// Direction overrides and zero-width characters can make shared text read differently than it is.
+const INVISIBLE = /[​-‏‪-‮⁦-⁩﻿]/g
 
 export function escape(value) {
   return String(value ?? "")
+    .replace(INVISIBLE, "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -11,49 +16,94 @@ export function escape(value) {
 }
 
 const GLYPH = { passed: "✓", failed: "✗", timed_out: "✗", not_run: "○", queued: "●" }
+const TOOL_GLYPH = { completed: "✓", error: "✗", running: "●", pending: "○" }
+const HANDLE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
 
 // Counts come from the gist too; coercing them to numbers keeps them from carrying markup.
 const count = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0)
 const stat = (d) => `<span class="add">+${count(d.additions)}</span> <span class="del">−${count(d.deletions)}</span>`
 
-export function render(snap) {
+/**
+ * @param snap the rift-share snapshot from the gist
+ * @param meta what GitHub says about the gist, which the sharer can't forge: owner, gist URL, link
+ */
+export function render(snap, meta = {}) {
   const messages = snap.messages ?? []
-  const model = messages.findLast((m) => m.info.role === "assistant")?.info.modelID
   const diffs = snap.diffs ?? []
+  const checks = messages.flatMap((m) =>
+    m.parts.flatMap((p) => (Array.isArray(p.metadata?.rift_verification?.checks) ? p.metadata.rift_verification.checks : [])),
+  )
+  return `
+${topbar(meta)}
+<main>
+  <section class="hero">
+    <h1>${escape(snap.session.title || "Untitled session")}</h1>
+    ${chips(snap, messages, diffs)}
+    ${proof(checks)}
+    ${provenance(meta)}
+  </section>
+  <ol class="timeline">
+${messages.map(turn).filter(Boolean).join("\n")}
+  </ol>
+  ${diffs.length ? changes(diffs) : ""}
+</main>
+${footer()}`
+}
+
+function topbar(meta) {
+  const link = meta.link ? `<button class="copy" type="button" data-copy="rift import ${escape(meta.link)}">Copy import command</button>` : ""
+  return `<header class="top">
+  <a class="wordmark" href="https://github.com/Datum-Collective/RIFT-coding-agent" aria-label="RIFT on GitHub"><span class="mark" aria-hidden="true"></span>RIFT</a>
+  <nav>${link}<a class="quiet" href="https://github.com/Datum-Collective/RIFT-coding-agent">GitHub</a></nav>
+</header>`
+}
+
+function chips(snap, messages, diffs) {
+  const modelID = messages.findLast((m) => m.info.role === "assistant")?.info.modelID
+  const model = (snap.models ?? []).find((m) => m?.id === modelID)?.name ?? modelID
+  const version = snap.session.version && snap.session.version !== "local" ? `rift v${snap.session.version}` : ""
   const total = {
     additions: diffs.reduce((sum, d) => sum + count(d.additions), 0),
     deletions: diffs.reduce((sum, d) => sum + count(d.deletions), 0),
   }
-  const meta = [
-    model ? escape(model) : "",
-    escape(duration(snap.session.time)),
-    diffs.length ? `${diffs.length} ${diffs.length === 1 ? "file" : "files"} ${stat(total)}` : "",
-  ]
-    .filter(Boolean)
-    .join(" · ")
-
-  return `
-<header>
-  <div class="brand"><span class="mark"></span>RIFT</div>
-  <h1>${escape(snap.session.title || "Untitled session")}</h1>
-  <p class="meta">${meta}</p>
-</header>
-<main>
-${messages.map(message).join("\n")}
-${diffs.length ? changes(diffs) : ""}
-</main>
-<footer>
-  <p>Shared from <a href="https://github.com/Datum-Collective/RIFT-coding-agent">RIFT</a> · agents that prove it</p>
-  <p class="muted">Continue it locally: <code>rift import ${escape(snap.link ?? "<this link>")}</code></p>
-</footer>`
+  const items = [
+    version ? `<li class="version">${escape(version)}</li>` : "",
+    model ? `<li>${escape(model)}</li>` : "",
+    snap.session.time?.created ? `<li>${escape(date(snap.session.time.created))}</li>` : "",
+    duration(snap.session.time) ? `<li>${escape(duration(snap.session.time))}</li>` : "",
+    diffs.length ? `<li>${diffs.length} ${diffs.length === 1 ? "file" : "files"} ${stat(total)}</li>` : "",
+  ].filter(Boolean)
+  return items.length ? `<ul class="chips">${items.join("")}</ul>` : ""
 }
 
-function message(m) {
-  const who = m.info.role === "user" ? "you" : "rift"
-  const detail = m.info.role === "assistant" && m.info.agent ? `<span class="muted">${escape(m.info.agent)}</span>` : ""
+function proof(checks) {
+  if (!checks.length) {
+    return `<div class="proof none"><span class="glyph">○</span><div><strong>No checks ran</strong><span>RIFT didn't run tests or type checks in this session.</span></div></div>`
+  }
+  const failed = checks.filter((c) => c.status === "failed" || c.status === "timed_out").length
+  const tone = failed ? "fail" : "pass"
+  const title = failed ? `${failed} of ${checks.length} checks failed` : `${checks.length} of ${checks.length} checks passed`
+  return `<div class="proof ${tone}"><span class="glyph">${failed ? "✗" : "✓"}</span><div><strong>${title}</strong><span>RIFT ran these itself. The agent's word isn't taken for it.</span></div></div>`
+}
+
+function provenance(meta) {
+  const owner = HANDLE.test(meta.owner ?? "") ? meta.owner : undefined
+  const gist = String(meta.gist ?? "").startsWith("https://gist.github.com/") ? meta.gist : undefined
+  const who = owner
+    ? `Shared by <a href="https://github.com/${owner}" rel="nofollow noopener noreferrer">@${owner}</a>`
+    : "Shared from RIFT"
+  const source = gist ? ` · <a href="${escape(gist)}" rel="nofollow noopener noreferrer">view the gist</a>` : ""
+  return `<p class="provenance">${who}${source}. Everything below was written by the sharer and their agent; RIFT didn't write or review it.</p>`
+}
+
+function turn(m) {
   const body = m.parts.map(part).filter(Boolean).join("\n")
   if (!body) return ""
-  return `<section class="msg ${who}"><div class="who">${who} ${detail}</div>${body}</section>`
+  if (m.info.role === "user") {
+    return `<li class="turn user"><span class="glyph" aria-hidden="true">❯</span><div class="body">${body}</div></li>`
+  }
+  const agent = m.info.agent ? `<span class="agent">${escape(m.info.agent)}</span>` : ""
+  return `<li class="turn agent"><span class="glyph" aria-hidden="true">●</span><div class="body"><div class="who">rift ${agent}</div>${body}</div></li>`
 }
 
 function part(p) {
@@ -67,8 +117,8 @@ function part(p) {
     return `<details class="thinking"><summary>thinking</summary><div class="text">${markdown(p.text)}</div></details>`
   }
   if (p.type === "tool") return tool(p)
-  if (p.type === "file") return `<p class="muted">attached ${escape(p.filename ?? p.url)}</p>`
-  if (p.type === "subtask") return `<p class="muted">handed to @${escape(p.agent)}: ${escape(p.description)}</p>`
+  if (p.type === "file") return `<p class="note">attached ${escape(p.filename ?? p.url)}</p>`
+  if (p.type === "subtask") return `<p class="note">handed to @${escape(p.agent)}: ${escape(p.description)}</p>`
   return ""
 }
 
@@ -76,12 +126,13 @@ function tool(p) {
   const state = p.state ?? {}
   const input = state.input ?? {}
   const target = state.title || input.command || input.filePath || input.path || input.pattern || input.url || ""
-  const status =
-    state.status === "error" ? `<span class="del">failed</span>` : state.status === "completed" ? "" : `<span class="muted">${escape(state.status)}</span>`
+  const glyph = TOOL_GLYPH[state.status] ?? "○"
+  const tone = state.status === "error" ? "del" : state.status === "completed" ? "add" : "muted"
+  const failed = state.status === "error" ? ` <span class="del">failed</span>` : ""
   const diff = typeof state.metadata?.diff === "string" ? patch(state.metadata.diff) : ""
   const output = state.status === "error" ? state.error : state.output
   const body = diff || (output ? `<pre>${escape(output)}</pre>` : "")
-  const summary = `<span class="tool">${escape(p.tool)}</span> <span class="target">${escape(target)}</span> ${status}`
+  const summary = `<span class="${tone} step">${glyph}</span><span class="tool">${escape(p.tool)}</span><span class="target">${escape(target)}</span>${failed}`
   if (!body) return `<div class="call">${summary}</div>`
   return `<details class="call"><summary>${summary}</summary>${body}</details>`
 }
@@ -105,7 +156,15 @@ function changes(diffs) {
       return d.patch ? `<details class="call"><summary>${head}</summary>${patch(d.patch)}</details>` : `<div class="call">${head}</div>`
     })
     .join("\n")
-  return `<section class="changes"><div class="who">changes</div>${files}</section>`
+  return `<section class="changes"><h2>Changes</h2>${files}</section>`
+}
+
+function footer() {
+  return `<footer>
+  <img class="art" src="../banner.svg" alt="RIFT" width="576" height="192" />
+  <p class="tagline">Agents that prove it.</p>
+  <p class="muted">RIFT is an open-source coding agent that runs the checks before it says done. <a href="https://github.com/Datum-Collective/RIFT-coding-agent">Get RIFT</a></p>
+</footer>`
 }
 
 function patch(text) {
@@ -120,6 +179,12 @@ function patch(text) {
       return escape(line)
     })
   return `<pre class="diff">${lines.join("\n")}</pre>`
+}
+
+function date(ms) {
+  const d = new Date(Number(ms))
+  if (Number.isNaN(d.getTime())) return ""
+  return d.toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
 }
 
 function duration(time) {
@@ -151,7 +216,7 @@ function prose(text) {
       if (heading && lines.length === 1) return `<h${heading[1].length + 2}>${inline(heading[2])}</h${heading[1].length + 2}>`
       if (lines.every((l) => /^\s*[-*]\s+/.test(l))) return `<ul>${lines.map((l) => `<li>${inline(l.replace(/^\s*[-*]\s+/, ""))}</li>`).join("")}</ul>`
       if (lines.every((l) => /^\s*\d+[.)]\s+/.test(l))) return `<ol>${lines.map((l) => `<li>${inline(l.replace(/^\s*\d+[.)]\s+/, ""))}</li>`).join("")}</ol>`
-      if (lines.every((l) => l.startsWith(">"))) return `<blockquote>${inline(lines.map((l) => l.replace(/^>\s?/, "")).join(" "))}</blockquote>`
+      if (lines.every((l) => l.startsWith("&gt;") || l.startsWith(">"))) return `<blockquote>${inline(lines.map((l) => l.replace(/^>\s?/, "")).join(" "))}</blockquote>`
       return `<p>${lines.map(inline).join("<br>")}</p>`
     })
     .join("")
@@ -165,9 +230,15 @@ function inline(text) {
       return piece
         .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
         .replace(/(^|[^*\w])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>")
-        .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, label, href) =>
-          /^(https?:|mailto:)/i.test(href) ? `<a href="${href}" rel="noopener noreferrer">${label}</a>` : label,
-        )
+        .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, label, href) => link(label, href))
     })
     .join("")
+}
+
+// Shared text can dress a link up as anything, so every link shows where it really goes.
+function link(label, href) {
+  if (!/^(https?:|mailto:)/i.test(href)) return label
+  const host = /^https?:/i.test(href) ? new URL(href.replaceAll("&amp;", "&")).hostname : href.replace(/^mailto:/i, "")
+  const hint = label.includes(host) ? "" : ` <span class="host">${escape(host)}</span>`
+  return `<a href="${href}" rel="nofollow noopener noreferrer ugc" target="_blank" title="${href}">${label}</a>${hint}`
 }

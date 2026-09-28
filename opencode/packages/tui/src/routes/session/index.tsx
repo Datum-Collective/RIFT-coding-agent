@@ -511,7 +511,7 @@ export function Session() {
           const ok = await DialogConfirm.show(
             dialog,
             "Share session",
-            "RIFT saves this session as a secret GitHub Gist on your account. Anyone with the link can read it, code included.",
+            "RIFT saves this session as a secret GitHub Gist on your account, after removing the API keys, tokens and passwords it recognises. Anyone with the link can read the rest, code included.",
           )
           if (ok !== true) return
           kv.set("share_consent_gist", true)

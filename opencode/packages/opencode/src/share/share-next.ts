@@ -18,6 +18,7 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { EventV2 } from "@opencode-ai/core/event"
 import { GitHubToken } from "./github-token"
 import { RiftShare } from "./rift-share"
+import { homedir } from "os"
 
 const flag = (name: string) => process.env[name] === "true" || process.env[name] === "1"
 const disabled = flag("RIFT_DISABLE_SHARE") || flag("OPENCODE_DISABLE_SHARE")
@@ -102,12 +103,15 @@ const layer = Layer.effect(
         (item) => provider.getModel(ProviderV2.ID.make(item.providerID), ModelV2.ID.make(item.modelID)),
         { concurrency: 8 },
       )
-      return RiftShare.snapshot({
-        session: info as SDKSession,
-        messages: messages as unknown as RiftShare.Snapshot["messages"],
-        diffs: diffs as SnapshotFileDiff[],
-        models: models as unknown as Model[],
-      })
+      return RiftShare.snapshot(
+        {
+          session: info as SDKSession,
+          messages: messages as unknown as RiftShare.Snapshot["messages"],
+          diffs: diffs as SnapshotFileDiff[],
+          models: models as unknown as Model[],
+        },
+        { home: homedir() },
+      )
     })
 
     const files = (snap: RiftShare.Snapshot) => ({ [RiftShare.FILE]: { content: JSON.stringify(snap) } })

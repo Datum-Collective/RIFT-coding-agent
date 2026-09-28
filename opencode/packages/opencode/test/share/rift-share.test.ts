@@ -89,6 +89,54 @@ describe("RiftShare.snapshot", () => {
   })
 })
 
+describe("RiftShare.snapshot keeps secrets on your machine", () => {
+  const shared = (output: string) => {
+    const snap = RiftShare.snapshot(
+      { session, messages: [{ info: assistant, parts: [tool(output)] }], diffs: [], models: [] },
+      { home: "/Users/me" },
+    )
+    const part = snap.messages[0].parts[0] as ToolPart
+    return part.state.status === "completed" ? part.state.output : ""
+  }
+
+  test("removes API keys and tokens that show up in tool output", () => {
+    const out = shared(
+      [
+        "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz123456",
+        "export ANTHROPIC_API_KEY=sk-ant-api03-abcdefghijklmnopqrstuvwxyz",
+        "token: ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ",
+        "aws AKIAABCDEFGHIJKLMNOP",
+        "DATABASE_PASSWORD='hunter2hunter2'",
+      ].join("\n"),
+    )
+    expect(out).not.toContain("sk-proj-abcdefghijklmnop")
+    expect(out).not.toContain("sk-ant-api03")
+    expect(out).not.toContain("ghp_abcdefghij")
+    expect(out).not.toContain("AKIAABCDEFGHIJKLMNOP")
+    expect(out).not.toContain("hunter2hunter2")
+    expect(out).toContain("OPENAI_API_KEY=")
+    expect(out).toContain("[redacted")
+  })
+
+  test("removes private keys and passwords inside connection strings", () => {
+    const out = shared(
+      "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----\npostgres://app:s3cretpass@db.internal:5432/app",
+    )
+    expect(out).not.toContain("b3BlbnNzaC1rZXktdjEAAAAA")
+    expect(out).not.toContain("s3cretpass")
+    expect(out).toContain("postgres://app:")
+    expect(out).toContain("@db.internal")
+  })
+
+  test("replaces your home folder with ~ so your username isn't shared", () => {
+    expect(shared("error in /Users/me/work/app/src/index.ts")).toBe("error in ~/work/app/src/index.ts")
+  })
+
+  test("leaves ordinary output alone", () => {
+    expect(shared("12 passed, 0 failed in 4.1s")).toBe("12 passed, 0 failed in 4.1s")
+  })
+})
+
 describe("RiftShare links", () => {
   test("a share link opens the RIFT viewer with the gist id in the fragment", () => {
     expect(RiftShare.url("8f3a0c1d2e4b5a69788f")).toBe(

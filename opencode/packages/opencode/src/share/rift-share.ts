@@ -22,18 +22,56 @@ export type Snapshot = {
   models: Model[]
 }
 
-export function snapshot(input: Omit<Snapshot, "format" | "version">): Snapshot {
-  return {
-    format: "rift-share",
-    version: 1,
-    session: { ...input.session, directory: "", path: undefined, share: undefined },
-    messages: input.messages.map((message) => ({
-      info: message.info.role === "assistant" ? { ...message.info, path: { cwd: ".", root: "." } } : message.info,
-      parts: message.parts.map(trim),
-    })),
-    diffs: input.diffs,
-    models: input.models,
+// Share links are readable by anyone who has them, so recognisable secrets never leave the machine.
+// Each pattern replaces only the secret itself, keeping enough context to read the output.
+const SECRETS: Array<[RegExp, string]> = [
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[redacted private key]"],
+  [/\bsk-ant-[A-Za-z0-9_-]{16,}/g, "[redacted Anthropic key]"],
+  [/\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}/g, "[redacted API key]"],
+  [/\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})/g, "[redacted GitHub token]"],
+  [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, "[redacted AWS key]"],
+  [/\bxox[abposr]-[A-Za-z0-9-]{10,}/g, "[redacted Slack token]"],
+  [/\b[rs]k_(?:live|test)_[A-Za-z0-9]{16,}/g, "[redacted Stripe key]"],
+  [/\bAIza[0-9A-Za-z_-]{35}\b/g, "[redacted Google key]"],
+  [/\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, "[redacted token]"],
+  // NAME=value where the name says it's secret, as in .env files and exports.
+  [
+    /(\b[A-Za-z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|PRIVATE_KEY|ACCESS_KEY)[A-Za-z0-9_]*["']?\s*[=:]\s*["']?)(?!\[redacted)[^\s"'`,;]{6,}/gi,
+    "$1[redacted]",
+  ],
+  // The password in scheme://user:password@host.
+  [/(\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)[^\s@/]{3,}(@)/gi, "$1[redacted]$2"],
+]
+
+export function scrub(text: string, home?: string) {
+  const redacted = SECRETS.reduce((out, [pattern, replacement]) => out.replace(pattern, replacement), text)
+  return home && home.length > 1 ? redacted.replaceAll(home, "~") : redacted
+}
+
+export function snapshot(input: Omit<Snapshot, "format" | "version">, options: { home?: string } = {}): Snapshot {
+  return clean(
+    {
+      format: "rift-share",
+      version: 1,
+      session: { ...input.session, directory: "", path: undefined, share: undefined },
+      messages: input.messages.map((message) => ({
+        info: message.info.role === "assistant" ? { ...message.info, path: { cwd: ".", root: "." } } : message.info,
+        parts: message.parts.map(trim),
+      })),
+      diffs: input.diffs,
+      models: input.models,
+    },
+    options.home,
+  )
+}
+
+function clean<T>(value: T, home?: string): T {
+  if (typeof value === "string") return scrub(value, home) as T
+  if (Array.isArray(value)) return value.map((item) => clean(item, home)) as T
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, clean(item, home)])) as T
   }
+  return value
 }
 
 export function url(gistID: string) {
