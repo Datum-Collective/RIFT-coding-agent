@@ -33,6 +33,7 @@ const HEADERS = {
 }
 
 const Gist = Schema.Struct({ id: Schema.String })
+const isRiftShare = (url: string) => RiftShare.parse(url) !== undefined
 const decodeJson = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
 
 export class ShareError extends Schema.TaggedErrorClass<ShareError>()("ShareError", { reason: Schema.String }) {
@@ -131,6 +132,8 @@ const layer = Layer.effect(
           ),
         )
 
+        yield* forgetOpencodeShares()
+
         if (disabled) return cache
 
         const watch = <D extends EventV2.Definition>(def: D, fn: (data: EventV2.Data<D>) => Effect.Effect<void, unknown>) =>
@@ -151,6 +154,21 @@ const layer = Layer.effect(
       }),
     )
 
+    // Sessions shared before RIFT moved to gists still carry opencode's hosted links. Drop them, so
+    // the sidebar stops showing them and the next /share makes a RIFT gist.
+    const forgetOpencodeShares = Effect.fnUntraced(function* () {
+      const rows = yield* db.select().from(SessionShareTable).all().pipe(Effect.orDie)
+      const legacy = rows.filter((row) => !isRiftShare(row.url))
+      yield* Effect.forEach(legacy, (row) =>
+        Effect.gen(function* () {
+          const sessionID = row.session_id as SessionID
+          // Effect.exit, not Effect.ignore: setShare dies (not fails) when the session is already gone.
+          yield* Effect.exit(session.setShare({ sessionID, share: undefined }))
+          yield* db.delete(SessionShareTable).where(eq(SessionShareTable.session_id, sessionID)).run().pipe(Effect.orDie)
+        }),
+      )
+    })
+
     const get = Effect.fnUntraced(function* (sessionID: SessionID) {
       const s = yield* InstanceState.get(state)
       if (s.shared.has(sessionID)) return s.shared.get(sessionID) ?? undefined
@@ -160,7 +178,7 @@ const layer = Layer.effect(
         .where(eq(SessionShareTable.session_id, sessionID))
         .get()
         .pipe(Effect.orDie)
-      const share = row ? { id: row.id, secret: row.secret, url: row.url } : undefined
+      const share = row && isRiftShare(row.url) ? { id: row.id, secret: row.secret, url: row.url } : undefined
       s.shared.set(sessionID, share ?? null)
       return share
     })

@@ -121,6 +121,55 @@ describe("ShareNext", () => {
     }),
   )
 
+  it.live("a session shared through opencode's old service gets a RIFT gist, not its old link", () =>
+    provideTmpdirInstance(() => {
+      const posts: HttpClientRequest.HttpClientRequest[] = []
+      const client = HttpClient.make((req) => {
+        if (req.method === "POST") posts.push(req)
+        return Effect.succeed(json(req, { id: GIST }, 201))
+      })
+      return Effect.gen(function* () {
+        const session = yield* newSession("test")
+        const database = yield* Database.Service
+        yield* database.db
+          .insert(SessionShareTable)
+          .values({ session_id: session.id, id: "E8Kd7AR0", url: "https://opncd.ai/share/E8Kd7AR0", secret: "s" })
+          .run()
+          .pipe(Effect.orDie)
+        const share = yield* ShareNext.Service
+
+        const result = yield* share.create(session.id)
+
+        expect(result.url).toBe(RiftShare.url(GIST))
+        expect(posts).toHaveLength(1)
+        expect((yield* row(session.id))?.url).toBe(RiftShare.url(GIST))
+      }).pipe(Effect.provide(layer(client)))
+    }),
+  )
+
+  it.live("opencode share links left from before are cleared when sharing starts up", () =>
+    provideTmpdirInstance(() => {
+      const client = HttpClient.make(() => Effect.die("unexpected http call"))
+      return Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const session = yield* newSession("test")
+        yield* sessions.setShare({ sessionID: session.id, share: { url: "https://opncd.ai/share/E8Kd7AR0" } })
+        const database = yield* Database.Service
+        yield* database.db
+          .insert(SessionShareTable)
+          .values({ session_id: session.id, id: "E8Kd7AR0", url: "https://opncd.ai/share/E8Kd7AR0", secret: "s" })
+          .run()
+          .pipe(Effect.orDie)
+        const share = yield* ShareNext.Service
+
+        yield* share.init()
+
+        expect(yield* row(session.id)).toBeUndefined()
+        expect((yield* sessions.get(session.id)).share).toBeUndefined()
+      }).pipe(Effect.provide(layer(client)))
+    }),
+  )
+
   it.live("create explains how to sign in when there is no GitHub token", () =>
     provideTmpdirInstance(() => {
       const client = HttpClient.make(() => Effect.die("unexpected http call"))

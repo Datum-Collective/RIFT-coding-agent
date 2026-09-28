@@ -53,7 +53,8 @@ function sessionRow(info: SessionV1.SessionInfo): typeof SessionTable.$inferInse
     agent: info.agent,
     model: info.model,
     version: info.version,
-    share_url: info.share?.url,
+    // null, not undefined: drizzle skips undefined columns on update, so an unshare would never clear it.
+    share_url: info.share?.url ?? null,
     summary_additions: info.summary?.additions,
     summary_deletions: info.summary?.deletions,
     summary_files: info.summary?.files,
