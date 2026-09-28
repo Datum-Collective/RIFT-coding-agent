@@ -112,7 +112,8 @@ describe("render", () => {
         ]),
       ]),
     )
-    expect(html).not.toContain("<img")
+    expect(html).not.toContain("<img src=x")
+    expect(html).not.toContain('onerror="')
     expect(html).not.toContain("<script")
     expect(html).not.toContain("<b>t")
     expect(html).not.toContain('href="javascript:')
@@ -135,6 +136,77 @@ describe("render with hostile change counts", () => {
     })
     expect(html).toContain('<span class="add">+3</span>')
     expect(html).not.toContain("&lt;span")
+  })
+})
+
+const withChecks = (checks) =>
+  snapshot([assistant([{ id: "v", type: "text", text: "Done.", metadata: { rift_verification: { checks } } }])])
+
+describe("the proof verdict", () => {
+  test("says every check passed when they all did", () => {
+    const html = render(withChecks([{ command: "bun test", status: "passed" }, { command: "tsc", status: "passed" }]))
+    expect(html).toContain('class="proof pass"')
+    expect(html).toContain("2 of 2 checks passed")
+  })
+
+  test("says how many failed when any did", () => {
+    const html = render(withChecks([{ command: "bun test", status: "failed" }, { command: "tsc", status: "passed" }]))
+    expect(html).toContain('class="proof fail"')
+    expect(html).toContain("1 of 2 checks failed")
+  })
+
+  test("says plainly when nothing was checked", () => {
+    expect(render(snapshot([user("hi")]))).toContain("No checks ran")
+  })
+})
+
+describe("provenance", () => {
+  test("names the GitHub account that shared it and links to the gist", () => {
+    const html = render(snapshot([user("hi")]), { owner: "shiv207", gist: "https://gist.github.com/shiv207/abc" })
+    expect(html).toContain('href="https://github.com/shiv207"')
+    expect(html).toContain("@shiv207")
+    expect(html).toContain('href="https://gist.github.com/shiv207/abc"')
+    expect(html).toContain("RIFT didn't write or review it")
+  })
+
+  test("only links an owner that is a real GitHub handle", () => {
+    const html = render(snapshot([user("hi")]), { owner: '"><script>x</script>' })
+    expect(html).not.toContain("<script")
+    expect(html).not.toContain("github.com/%22")
+  })
+})
+
+describe("header", () => {
+  test("uses the model's display name and the RIFT version when the share carries them", () => {
+    const html = render(
+      snapshot([assistant([{ id: "t", type: "text", text: "ok" }])], {
+        models: [{ id: "claude-opus-5-5", name: "Claude Opus 5.5" }],
+        session: { id: "s", title: "t", version: "0.1.14", time: { created: Date.UTC(2026, 8, 28, 19, 22), updated: 0 } },
+      }),
+    )
+    expect(html).toContain("Claude Opus 5.5")
+    expect(html).toContain("rift v0.1.14")
+    expect(html).toContain("2026")
+  })
+})
+
+describe("links in shared text", () => {
+  test("open in a new tab without referrer, and show where they go", () => {
+    const html = markdown("see [the docs](https://evil.example/login)")
+    expect(html).toContain('rel="nofollow noopener noreferrer ugc"')
+    expect(html).toContain('target="_blank"')
+    expect(html).toContain("evil.example")
+  })
+
+  test("a malformed link shows as plain text instead of breaking the page", () => {
+    expect(() => markdown("[x](https://) and [y](http://[bad)")).not.toThrow()
+    expect(markdown("[x](https://)")).not.toContain("<a ")
+  })
+
+  test("drop direction-changing and invisible characters that can disguise text", () => {
+    const html = markdown("run ‮gnp.exe‬ now​")
+    expect(html).not.toContain("‮")
+    expect(html).not.toContain("​")
   })
 })
 
