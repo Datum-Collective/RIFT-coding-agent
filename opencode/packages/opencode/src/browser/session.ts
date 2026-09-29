@@ -147,6 +147,10 @@ export class BrowserSession {
     await this.cdp.command("Runtime.enable", {}, sessionId)
     await this.cdp.command("Log.enable", {}, sessionId)
     await this.cdp.command("Network.enable", {}, sessionId)
+    // The agent reopens a page to see its own edits. With the cache on, a dev server's
+    // Last-Modified header lets the browser keep serving the old CSS and JS, and the agent loops
+    // on fixes that already landed.
+    await this.cdp.command("Network.setCacheDisabled", { cacheDisabled: true }, sessionId)
     return sessionId
   }
 

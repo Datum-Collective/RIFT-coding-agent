@@ -16,7 +16,13 @@ const PAGES: Record<string, string> = {
   "/broken": `<!doctype html><title>Broken</title><h1>Broken</h1>
         <script>null.explode()</script>`,
   "/missing": "",
+  "/styled": `<!doctype html><link rel="stylesheet" href="/style.css"><p id="x">hi</p>
+        <script>document.title = getComputedStyle(document.getElementById("x")).color</script>`,
 }
+
+// Served like a typical dev server: Last-Modified and no Cache-Control, which lets a browser
+// cache it heuristically.
+let css = ""
 
 beforeAll(() => {
   server = Bun.serve({
@@ -24,6 +30,10 @@ beforeAll(() => {
     fetch(request) {
       const { pathname } = new URL(request.url)
       if (pathname === "/missing") return new Response("gone", { status: 404 })
+      if (pathname === "/style.css")
+        return new Response(css, {
+          headers: { "content-type": "text/css", "last-modified": new Date(Date.now() - 86_400_000).toUTCString() },
+        })
       const body = PAGES[pathname]
       if (body === undefined) return new Response("not found", { status: 404 })
       return new Response(body, { headers: { "content-type": "text/html" } })
@@ -53,6 +63,14 @@ suite("browser session", () => {
       expect(state.url).toBe(`${base}/`)
       expect(state.status).toBe(200)
       expect(state.console).toEqual([])
+    }))
+
+  test("reopening a page shows an edited stylesheet, not a cached one", async () =>
+    withSession(async (session) => {
+      css = "#x { color: rgb(255, 0, 0) }"
+      expect((await session.navigate(`${base}/styled`)).title).toBe("rgb(255, 0, 0)")
+      css = "#x { color: rgb(0, 0, 255) }"
+      expect((await session.navigate(`${base}/styled`)).title).toBe("rgb(0, 0, 255)")
     }))
 
   test("reports the HTTP status, so a broken route is not mistaken for a working page", async () =>

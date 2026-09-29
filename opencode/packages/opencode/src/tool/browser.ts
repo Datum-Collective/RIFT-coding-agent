@@ -13,7 +13,8 @@ export const Parameters = Schema.Struct({
     description: "What to do with the page",
   }),
   url: Schema.optional(Schema.String).annotate({
-    description: "URL to load: http(s)://, or file:// for a local page. Required for `open`",
+    description:
+      "URL to load: http(s)://, or file:// for a local page. Required for `open`; with `screenshot`, loads it first",
   }),
   selector: Schema.optional(Schema.String).annotate({
     description: "CSS selector. Required for `click` and `type`, optional for `text`",
@@ -100,7 +101,12 @@ export const BrowserTool = Tool.define(
 
           // Driving a browser can reach anything on the network, so it asks the same way the
           // URL-opening tool does rather than quietly acquiring a new capability.
-          const target = params.action === "open" ? required(params.url, "url", "open") : undefined
+          const target =
+            params.action === "open"
+              ? required(params.url, "url", "open")
+              : params.action === "screenshot"
+                ? params.url
+                : undefined
           if (target?.startsWith("file://")) {
             // A local page is a file read, so it asks exactly like the read tool does.
             const file = fileURLToPath(target)
@@ -171,12 +177,15 @@ export const BrowserTool = Tool.define(
               })
             }
             case "screenshot": {
+              // Loading and capturing in one call saves the agent a whole model turn per look.
+              const opened = target ? yield* Effect.promise(() => browser.navigate(target)) : undefined
               const data = yield* Effect.promise(() => browser.screenshot())
-              const state = yield* Effect.promise(() => browser.read())
+              const state = opened ?? (yield* Effect.promise(() => browser.read()))
+              const captured = `Captured a PNG of ${state.url} (${Math.round(data.length / 1024)} KB base64).`
               return reply({
                 title: `Browser screenshot ${state.url}`,
-                output: `Captured a PNG of ${state.url} (${Math.round(data.length / 1024)} KB base64).`,
-                metadata: { url: state.url },
+                output: opened ? [describePage(opened), captured].join("\n") : captured,
+                metadata: { url: state.url, status: opened?.status, console: opened?.console },
                 attachments: [
                   {
                     type: "file" as const,

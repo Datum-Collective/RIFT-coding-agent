@@ -10,7 +10,9 @@ Actions:
 - text:       the visible text of the page, or of one CSS selector.
 - click:      click the first element matching a CSS selector.
 - type:       set the value of an input matching a CSS selector.
-- screenshot: a PNG of the current page.
+- screenshot: a PNG of the current page. Pass `url` to load it first and get the title, status
+              and console errors too, in one call. After editing a page, this is the fastest way to
+              check it.
 
 The page stays open between calls in a session, so you can open once and then read, click and
 type against it. Selectors that match nothing are reported as errors rather than ignored.
