@@ -2009,6 +2009,7 @@ export type Config = {
   verify_timeout_ms?: number
   verify_scope_warn_files?: number
   verify_browser_url?: string
+  task_state?: boolean
   verify_claims?: boolean
   verify_claims_model?: string
   default_agent?: string

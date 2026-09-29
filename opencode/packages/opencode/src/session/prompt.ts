@@ -46,6 +46,7 @@ import { Process } from "@/util/process"
 import { Verify } from "./verify"
 import { Evidence } from "./evidence"
 import { EngineeringGraph } from "./engineering-graph"
+import { TaskState } from "./task-state"
 import { ShellID } from "@/tool/shell/id"
 import { Cause, Effect, Exit, Latch, Layer, Option, Scope, Context, Schema, Types } from "effect"
 import { InstanceState } from "@/effect/instance-state"
@@ -216,6 +217,7 @@ const layer = Layer.effect(
     const revert = yield* SessionRevert.Service
     const summary = yield* SessionSummary.Service
     const graph = yield* EngineeringGraph.Service
+    const taskState = yield* TaskState.Service
     const sys = yield* SystemPrompt.Service
     const llm = yield* LLM.Service
     const events = yield* EventV2Bridge.Service
@@ -2144,6 +2146,7 @@ const layer = Layer.effect(
         }
 
         yield* runVerification(sessionID, verifyBaseline, vibeModels?.planner)
+        if (!session.parentID) yield* taskState.save({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
         return yield* lastAssistant(sessionID)
       },
@@ -2431,6 +2434,7 @@ export const node = LayerNode.make({
     SessionSummary.node,
     SystemPrompt.node,
     EngineeringGraph.node,
+    TaskState.node,
     LLM.node,
     EventV2Bridge.node,
     RuntimeFlags.node,

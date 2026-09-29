@@ -170,6 +170,27 @@ Engineering graph
     └── ● Tools · build
 ```
 
+### It remembers the task after compaction
+
+Long sessions get compacted, and a model-written summary can drop the goal, a decision, or which
+files were touched. RIFT does not rely on it. It keeps the engineering context of each session in
+`.rift/tasks/<session>/`, refreshed after every turn:
+
+```
+.rift/tasks/<session>/
+├── state.json            goal, plan, decisions, touched files, git, verification
+├── plan.md
+├── decisions.md
+├── touched-files.json
+├── verification.json
+└── checkpoints/          the handoff written at each compaction
+```
+
+When a session compacts, RIFT writes a checkpoint first, then appends that handoff to the summary.
+It is built from what RIFT recorded (your requests, the plan, the engineering graph, `git status`,
+the last check results), not written by a model, so the agent picks up with the same goal, plan
+and decisions it had before. The folder is git-ignored. Set `"task_state": false` to turn it off.
+
 ### Vibe Mode
 
 A strong model plans and reviews each step while a cheaper one does the work, so you get good
