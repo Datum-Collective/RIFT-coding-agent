@@ -11,12 +11,18 @@ const show = (html) => {
   root.innerHTML = policy ? policy.createHTML(html) : html
 }
 
-function fail(title, detail) {
+function notice(title, detail) {
   document.title = `${title} · RIFT`
   show(
     `<div class="empty"><a class="brand" href="https://github.com/Datum-Collective/RIFT-coding-agent">${LOGO}</a><h1>${escape(title)}</h1><p class="muted">${escape(detail)}</p></div>`,
   )
 }
+const fail = notice
+
+// RIFT makes the link from a tiny placeholder and uploads the session right after, so a link
+// opened straight away can briefly find the placeholder. Check again for about half a minute.
+const PENDING_TRIES = 15
+const PENDING_WAIT = 2000
 
 async function load() {
   // GitHub Pages can't send frame-ancestors, so refuse to draw inside someone else's frame.
@@ -29,31 +35,50 @@ async function load() {
     return fail("No session here", "A RIFT share link ends in # and a gist id. Check the link you were sent.")
   }
 
-  const res = await fetch(`https://api.github.com/gists/${id}`, { headers: { accept: "application/vnd.github+json" } })
-  if (res.status === 404) return fail("This share is gone", "It was unshared, or the link is wrong.")
-  if (res.status === 403 || res.status === 429) {
-    return fail("GitHub is rate-limiting this page", "Try again in a few minutes.")
+  // A newer link (hash change) starts its own load; this one stops drawing.
+  const current = () => location.hash.slice(1) === id
+  for (let attempt = 0; attempt < PENDING_TRIES; attempt++) {
+    const result = await fetchShare(id)
+    if (!current()) return
+    if (result.error) return fail(...result.error)
+    if (!result.snap.pending) {
+      document.title = `${result.snap.session.title || "Session"} · RIFT`
+      return show(render(result.snap, { owner: result.gist.owner?.login, gist: result.gist.html_url, link: location.href }))
+    }
+    if (attempt === 0) notice("Still uploading this session", "It was shared a moment ago and will appear here by itself.")
+    await new Promise((resolve) => setTimeout(resolve, PENDING_WAIT))
+    if (!current()) return
   }
-  if (!res.ok) return fail("Couldn't load this share", `GitHub answered HTTP ${res.status}.`)
+  fail("This share didn't finish uploading", "RIFT may have closed mid-upload. Ask whoever sent it to share again.")
+}
+
+async function fetchShare(id) {
+  // GitHub's API caches anonymous gist responses for a minute; a unique query gets the current copy.
+  const res = await fetch(`https://api.github.com/gists/${id}?t=${Date.now()}`, {
+    headers: { accept: "application/vnd.github+json" },
+  })
+  if (res.status === 404) return { error: ["This share is gone", "It was unshared, or the link is wrong."] }
+  if (res.status === 403 || res.status === 429) {
+    return { error: ["GitHub is rate-limiting this page", "Try again in a few minutes."] }
+  }
+  if (!res.ok) return { error: ["Couldn't load this share", `GitHub answered HTTP ${res.status}.`] }
 
   const gist = await res.json()
   const file = gist.files?.[FILE]
-  if (!file) return fail("Not a RIFT session", "That gist exists, but RIFT didn't make it.")
-  if (file.size > MAX_BYTES) return fail("This share is too large to show", "Import it with rift instead.")
+  if (!file) return { error: ["Not a RIFT session", "That gist exists, but RIFT didn't make it."] }
+  if (file.size > MAX_BYTES) return { error: ["This share is too large to show", "Import it with rift instead."] }
 
   // GitHub truncates large files in the API response; the full copy lives at the raw URL.
   if (file.truncated && !String(file.raw_url).startsWith("https://gist.githubusercontent.com/")) {
-    return fail("Couldn't load this share", "GitHub didn't return the full session.")
+    return { error: ["Couldn't load this share", "GitHub didn't return the full session."] }
   }
   const raw = file.truncated ? await fetch(file.raw_url) : undefined
-  if (raw && !raw.ok) return fail("Couldn't load this share", `GitHub answered HTTP ${raw.status}.`)
+  if (raw && !raw.ok) return { error: ["Couldn't load this share", `GitHub answered HTTP ${raw.status}.`] }
   const snap = JSON.parse(raw ? await raw.text() : file.content)
   if (snap.format !== "rift-share" || snap.version !== 1) {
-    return fail("Not a RIFT session", "That gist exists, but RIFT didn't make it.")
+    return { error: ["Not a RIFT session", "That gist exists, but RIFT didn't make it."] }
   }
-
-  document.title = `${snap.session.title || "Session"} · RIFT`
-  show(render(snap, { owner: gist.owner?.login, gist: gist.html_url, link: location.href }))
+  return { gist, snap }
 }
 
 document.addEventListener("click", async (event) => {
