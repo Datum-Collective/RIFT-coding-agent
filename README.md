@@ -14,6 +14,7 @@
 <p align="center">
   <a href="#installation">Installation</a> ·
   <a href="#what-rift-adds">What RIFT adds</a> ·
+  <a href="#share-a-session">Sharing</a> ·
   <a href="#configuration">Configuration</a> ·
   <a href="#faq">FAQ</a> ·
   <a href="#credits">Credits</a>
@@ -65,8 +66,8 @@ cd your-project
 rift
 ```
 
-No Node, no Python, no build step — the installer drops a single self-contained binary (46–63 MB, depending on your platform)
-from [Releases](https://github.com/Datum-Collective/RIFT-coding-agent/releases). `opencode` starts it
+No Node, no Python, no build step — the installer drops a single self-contained binary (a 44–61 MB
+download, depending on your platform) from [Releases](https://github.com/Datum-Collective/RIFT-coding-agent/releases). `opencode` starts it
 too, so either command works.
 
 <details>
@@ -155,6 +156,20 @@ EXECUTION ───────────────────────�
 Dozens of tool calls collapse into the few states worth reading; the full transcript is one
 keystroke away.
 
+The sidebar keeps an engineering graph of what is being built, drawn as a tree, with the checks
+RIFT ran under each piece:
+
+```
+Engineering graph
+└── ● Product · build
+    ├── ● Authentication · build
+    │   ├── ✓ Database · build
+    │   ├── ○ API · build
+    │   │   waiting on: Frontend
+    │   └── ○ Frontend · build
+    └── ● Tools · build
+```
+
 ### Vibe Mode
 
 A strong model plans and reviews each step while a cheaper one does the work, so you get good
@@ -174,8 +189,27 @@ the hood it is a [Remotion](https://www.remotion.dev) engine that ships inside R
 `/video` in a project runs `rift video init`, which writes it to `video/` (or `.rift/video/` if
 that name is taken) and installs its dependencies. Rendering needs Node 20+; no paid services.
 
-Launches, explainers, terminal and code demos, charts, attention maps, captions: see the
-[engine README](video/README.md) for the scene catalog and how to extend it.
+![Frames from a 20-second /video short: one agent claims the tests pass, RIFT runs them](assets/releases/v0.1.13/video-versus.png)
+
+Launches, explainers, terminal and code demos, charts, attention maps, captions, manga panels and
+ANSI art: see the [engine README](video/README.md) for the scene catalog and how to extend it.
+
+### Share a session
+
+Type `/share` and a link is on your clipboard in about two seconds. It opens the session in the
+RIFT viewer: your prompts, RIFT's steps, the diffs, and the checks RIFT ran, with a pass or fail
+count up front.
+
+![A shared RIFT session in the viewer](assets/releases/v0.1.13/share-viewer.png)
+
+- **It is yours.** The session is saved as a secret Gist on your own GitHub account, through
+  `gh auth login` or `GITHUB_TOKEN`. `/unshare` deletes it.
+- **Only the link opens it.** The Gist id sits after the `#` in the link, which browsers never send
+  to a server, and secret Gists are unlisted. The viewer is kept out of search engines.
+- **Secrets stay on your machine.** Before upload RIFT removes the API keys, tokens, private keys,
+  passwords, home folder path and screenshots it recognises. Read what you share all the same.
+- **It works both ways.** `rift import <link>` brings a shared session into your own RIFT, and
+  `rift pr 42` opens a pull request together with the session linked in its description.
 
 ### Mission Control
 
@@ -188,16 +222,23 @@ rift                              # start in the current directory
 rift /path/to/project             # start somewhere else
 rift run "fix the failing test"   # non-interactive, for scripts and CI
 rift --continue                   # resume the last session
+rift import <share-link>          # bring a shared session into this project
 rift video init                   # set up the video engine in this project
 ```
+
+In a session, `/share` copies a link to it, `/unshare` takes it down, and `/video` makes a video.
 
 | Key         | Action                                        |
 | ----------- | --------------------------------------------- |
 | `<leader>v` | Switch between the task view and the full log |
 | `<leader>o` | Open Mission Control                          |
 | `<leader>d` | Review the diff                               |
+| `<leader>b` | Show or hide the sidebar                      |
+| `b`         | Close the sidebar, when you're not typing     |
 | `ctrl+p`    | Command palette                               |
 | `tab`       | Switch agent                                  |
+
+The leader key is `ctrl+x`.
 
 ## Agents
 
@@ -223,6 +264,9 @@ Config lives in `rift.json` in your project, or `~/.config/rift/rift.json` globa
   "executorModel": "anthropic/claude-haiku-4-5-20251001"
 }
 ```
+
+Set `"share": "disabled"` to turn sharing off for a project, or `RIFT_DISABLE_SHARE=1` to turn it
+off everywhere.
 
 Coming from OpenCode? Your existing `opencode.json`, auth and sessions keep working — RIFT reads
 both names and leaves your old directory where it is.
@@ -257,13 +301,22 @@ Only to the model provider you configure, the same as any other AI coding tool. 
 server of its own. Shell commands, edits and network access go through a permission system you
 control.
 
+A session leaves your machine only when you `/share` it, and then it goes to a secret Gist on your
+own GitHub account, with recognisable secrets and screenshots removed first.
+
+### Who can see a shared session?
+
+Anyone you give the link to, and no one else: the link is the only way in. It is not listed or
+indexed anywhere, and `rift github run` never posts one into a PR comment unless you set
+`SHARE=true`. `/unshare` deletes the Gist, and the link stops working.
+
 ## Credits
 
 **RIFT is a fork of [OpenCode](https://github.com/anomalyco/opencode) by
 [Anomaly](https://github.com/anomalyco), and the overwhelming majority of this codebase is their
 work.** The agent loop, provider layer, tool system, LSP and MCP integration, permissions, config
 system and the TUI foundation are all OpenCode's. RIFT rebuilds the interface around tasks and
-adds the verification layer described above.
+adds the verification layer, sharing and video described above.
 
 OpenCode is MIT licensed, and so is RIFT. If you like what is here, a great deal of the credit
 belongs upstream — [give them a star](https://github.com/anomalyco/opencode).
