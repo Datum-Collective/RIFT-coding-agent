@@ -33,7 +33,7 @@ import { setTimeout as sleep } from "node:timers/promises"
 import { Process } from "@/util/process"
 import { parseGitHubRemote } from "@/util/repository"
 import { Effect } from "effect"
-import { extractResponseText, formatPromptTooLargeError } from "./github.shared"
+import { extractResponseText, formatPromptTooLargeError, shouldShareSession } from "./github.shared"
 
 type GitHubAuthor = {
   login: string
@@ -428,14 +428,13 @@ export const githubRun = Effect.fn("Cli.github.run")(function* (args: { event?: 
         ? (payload as IssueCommentEvent | IssuesEvent).issue.number
         : (payload as PullRequestEvent | PullRequestReviewCommentEvent).pull_request.number
     const runUrl = `/${owner}/${repo}/actions/runs/${runId}`
-    const shareBaseUrl = isMock ? "https://dev.opencode.ai" : "https://opencode.ai"
 
     let appToken: string
     let octoRest: Octokit
     let octoGraph: typeof graphql
     let gitConfig: string
     let session: { id: SessionID; title: string; version: string }
-    let shareId: string | undefined
+    let shareUrl: string | undefined
     let exitCode = 0
     let githubClientReady = false
     type PromptFiles = Awaited<ReturnType<typeof getUserPrompt>>["promptFiles"]
@@ -512,11 +511,16 @@ export const githubRun = Effect.fn("Cli.github.run")(function* (args: { event?: 
         }),
       )
       await subscribeSessionEvents()
-      shareId = await (async () => {
-        if (share === false) return
-        if (!share && repoData.data.private) return
-        await runLocalEffect(sessionShare.share(session.id))
-        return session.id.slice(-8)
+      shareUrl = await (async () => {
+        if (!shouldShareSession(share)) return
+        // Shares are gists; an Actions GITHUB_TOKEN usually can't create them, so a failed share
+        // only drops the link from the comment instead of failing the run.
+        return runLocalEffect(sessionShare.share(session.id))
+          .then((result) => result.url || undefined)
+          .catch((error) => {
+            console.log("Skipping the session link: sharing failed.", error instanceof Error ? error.message : error)
+            return undefined
+          })
       })()
       console.log("opencode session", session.id)
 
@@ -547,7 +551,7 @@ export const githubRun = Effect.fn("Cli.github.run")(function* (args: { event?: 
             repoData.data.default_branch,
             branch,
             summary,
-            `${response}\n\nTriggered by ${triggerType}${footer({ image: true })}`,
+            `${response}\n\nTriggered by ${triggerType}${footer()}`,
           )
           if (pr) {
             console.log(`Created PR #${pr}`)
@@ -576,8 +580,7 @@ export const githubRun = Effect.fn("Cli.github.run")(function* (args: { event?: 
             const summary = await summarize(response)
             await pushToLocalBranch(summary, uncommittedChanges)
           }
-          const hasShared = prData.comments.nodes.some((c) => c.body.includes(`${shareBaseUrl}/s/${shareId}`))
-          await createComment(`${response}${footer({ image: !hasShared })}`)
+          await createComment(`${response}${footer()}`)
           await removeReaction(commentType)
         }
         // Fork PR
@@ -594,8 +597,7 @@ export const githubRun = Effect.fn("Cli.github.run")(function* (args: { event?: 
             const summary = await summarize(response)
             await pushToForkBranch(summary, prData, uncommittedChanges)
           }
-          const hasShared = prData.comments.nodes.some((c) => c.body.includes(`${shareBaseUrl}/s/${shareId}`))
-          await createComment(`${response}${footer({ image: !hasShared })}`)
+          await createComment(`${response}${footer()}`)
           await removeReaction(commentType)
         }
       }
@@ -610,7 +612,7 @@ export const githubRun = Effect.fn("Cli.github.run")(function* (args: { event?: 
         if (switched) {
           // Agent switched branches (likely created its own branch/PR).
           // Don't push the stale infrastructure branch — just comment.
-          await createComment(`${response}${footer({ image: true })}`)
+          await createComment(`${response}${footer()}`)
           await removeReaction(commentType)
         } else if (dirty) {
           const summary = await summarize(response)
@@ -619,16 +621,16 @@ export const githubRun = Effect.fn("Cli.github.run")(function* (args: { event?: 
             repoData.data.default_branch,
             branch,
             summary,
-            `${response}\n\nCloses #${issueId}${footer({ image: true })}`,
+            `${response}\n\nCloses #${issueId}${footer()}`,
           )
           if (pr) {
-            await createComment(`Created PR #${pr}${footer({ image: true })}`)
+            await createComment(`Created PR #${pr}${footer()}`)
           } else {
-            await createComment(`${response}${footer({ image: true })}`)
+            await createComment(`${response}${footer()}`)
           }
           await removeReaction(commentType)
         } else {
-          await createComment(`${response}${footer({ image: true })}`)
+          await createComment(`${response}${footer()}`)
           await removeReaction(commentType)
         }
       }
@@ -1351,18 +1353,9 @@ export const githubRun = Effect.fn("Cli.github.run")(function* (args: { event?: 
       }
     }
 
-    function footer(opts?: { image?: boolean }) {
-      const image = (() => {
-        if (!shareId) return ""
-        if (!opts?.image) return ""
-
-        const titleAlt = encodeURIComponent(session.title.substring(0, 50))
-        const title64 = Buffer.from(session.title.substring(0, 700), "utf8").toString("base64")
-
-        return `<a href="${shareBaseUrl}/s/${shareId}"><img width="200" alt="${titleAlt}" src="https://social-cards.sst.dev/opencode-share/${title64}.png?model=${providerID}/${modelID}&version=${session.version}&id=${shareId}" /></a>\n`
-      })()
-      const shareUrl = shareId ? `[opencode session](${shareBaseUrl}/s/${shareId})&nbsp;&nbsp;|&nbsp;&nbsp;` : ""
-      return `\n\n${image}${shareUrl}[github run](${runUrl})`
+    function footer() {
+      const link = shareUrl ? `[RIFT session](${shareUrl})&nbsp;&nbsp;|&nbsp;&nbsp;` : ""
+      return `\n\n${link}[github run](${runUrl})`
     }
 
     async function fetchRepo() {

@@ -6,6 +6,7 @@ import { CliError, effectCmd } from "../effect-cmd"
 import { Database } from "@opencode-ai/core/database/database"
 import { SessionTable, MessageTable, PartTable } from "@opencode-ai/core/session/sql"
 import { InstanceRef } from "@/effect/instance-ref"
+import { RiftShare } from "@/share/rift-share"
 import { ShareNext } from "@/share/share-next"
 import { EOL } from "os"
 import path from "path"
@@ -15,28 +16,6 @@ import type { InstanceContext } from "@/project/instance-context"
 
 const decodeMessageInfo = Schema.decodeUnknownSync(SessionV1.Info)
 const decodePart = Schema.decodeUnknownSync(SessionV1.Part)
-
-/** Discriminated union returned by the ShareNext API (GET /api/shares/:id/data) */
-export type ShareData =
-  | { type: "session"; data: SDKSession }
-  | { type: "message"; data: Message }
-  | { type: "part"; data: Part }
-  | { type: "session_diff"; data: unknown }
-  | { type: "model"; data: unknown }
-
-/** Extract share ID from a share URL like https://opncd.ai/share/abc123 */
-export function parseShareUrl(url: string): string | null {
-  const match = url.match(/^https?:\/\/[^/]+\/share\/([a-zA-Z0-9_-]+)$/)
-  return match ? match[1] : null
-}
-
-export function shouldAttachShareAuthHeaders(shareUrl: string, accountBaseUrl: string): boolean {
-  try {
-    return new URL(shareUrl).origin === new URL(accountBaseUrl).origin
-  } catch {
-    return false
-  }
-}
 
 export function formatImportFileError(file: string, error: FSUtil.Error) {
   if (error._tag === "PlatformError") {
@@ -49,54 +28,14 @@ export function formatImportFileError(file: string, error: FSUtil.Error) {
   return `Invalid JSON in ${file}: ${detail}`
 }
 
-/**
- * Transform ShareNext API response (flat array) into the nested structure for local file storage.
- *
- * The API returns a flat array: [session, message, message, part, part, ...]
- * Local storage expects: { info: session, messages: [{ info: message, parts: [part, ...] }, ...] }
- *
- * This groups parts by their messageID to reconstruct the hierarchy before writing to disk.
- */
-export function transformShareData(shareData: ShareData[]): {
-  info: SDKSession
-  messages: Array<{ info: Message; parts: Part[] }>
-} | null {
-  const sessionItem = shareData.find((d) => d.type === "session")
-  if (!sessionItem) return null
-
-  const messageMap = new Map<string, Message>()
-  const partMap = new Map<string, Part[]>()
-
-  for (const item of shareData) {
-    if (item.type === "message") {
-      messageMap.set(item.data.id, item.data)
-    } else if (item.type === "part") {
-      if (!partMap.has(item.data.messageID)) {
-        partMap.set(item.data.messageID, [])
-      }
-      partMap.get(item.data.messageID)!.push(item.data)
-    }
-  }
-
-  if (messageMap.size === 0) return null
-
-  return {
-    info: sessionItem.data,
-    messages: Array.from(messageMap.values()).map((msg) => ({
-      info: msg,
-      parts: partMap.get(msg.id) ?? [],
-    })),
-  }
-}
-
 type ExportData = { info: SDKSession; messages: Array<{ info: Message; parts: Part[] }> }
 
 export const ImportCommand = effectCmd({
   command: "import <file>",
-  describe: "import session data from JSON file or URL",
+  describe: "import a session from a JSON file or a RIFT share link",
   builder: (yargs) =>
     yargs.positional("file", {
-      describe: "path to JSON file or share URL",
+      describe: "path to JSON file, or a RIFT share link",
       type: "string",
       demandOption: true,
     }),
@@ -108,62 +47,30 @@ export const ImportCommand = effectCmd({
 })
 
 const runImport = Effect.fn("Cli.import.body")(function* (file: string, ctx: InstanceContext) {
-  const share = yield* ShareNext.Service
   const fs = yield* FSUtil.Service
   const { db } = yield* Database.Service
 
   let exportData: ExportData | undefined
 
   const isUrl = file.startsWith("http://") || file.startsWith("https://")
+  const gistID = RiftShare.parse(file)
 
-  if (isUrl) {
-    const slug = parseShareUrl(file)
-    if (!slug) {
-      const baseUrl = yield* Effect.orDie(share.url())
-      process.stdout.write(`Invalid URL format. Expected: ${baseUrl}/share/<slug>`)
+  if (isUrl && !gistID) {
+    process.stdout.write(`Not a RIFT share link. Expected: ${RiftShare.url("<gist-id>")}`)
+    process.stdout.write(EOL)
+    return
+  }
+
+  if (gistID) {
+    const share = yield* ShareNext.Service
+    exportData = yield* share
+      .download(gistID)
+      .pipe(Effect.mapError((e) => new CliError({ message: `Failed to download share: ${e instanceof Error ? e.message : String(e)}` })))
+    if (!exportData) {
+      process.stdout.write(`Not a RIFT share: ${gistID}`)
       process.stdout.write(EOL)
       return
     }
-
-    const baseUrl = new URL(file).origin
-    const req = yield* Effect.orDie(share.request())
-    const headers = shouldAttachShareAuthHeaders(file, req.baseUrl) ? req.headers : {}
-
-    const tryFetch = (url: string) =>
-      Effect.tryPromise({
-        try: () => fetch(url, { headers }),
-        catch: (e) =>
-          new CliError({
-            message: `Failed to fetch share data: ${e instanceof Error ? e.message : String(e)}`,
-          }),
-      })
-
-    const dataPath = req.api.data(slug)
-    let response = yield* tryFetch(`${baseUrl}${dataPath}`)
-
-    if (!response.ok && dataPath !== `/api/share/${slug}/data`) {
-      response = yield* tryFetch(`${baseUrl}/api/share/${slug}/data`)
-    }
-
-    if (!response.ok) {
-      process.stdout.write(`Failed to fetch share data: ${response.statusText}`)
-      process.stdout.write(EOL)
-      return
-    }
-
-    const shareData = yield* Effect.tryPromise({
-      try: () => response.json() as Promise<ShareData[]>,
-      catch: () => new CliError({ message: "Share data was not valid JSON" }),
-    })
-    const transformed = transformShareData(shareData)
-
-    if (!transformed) {
-      process.stdout.write(`Share not found or empty: ${slug}`)
-      process.stdout.write(EOL)
-      return
-    }
-
-    exportData = transformed
   } else {
     exportData = (yield* fs
       .readJson(file)

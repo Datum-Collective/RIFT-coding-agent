@@ -235,7 +235,7 @@ const TIPS: Tip[] = [
     return `Use ${items.map(shortcutText).join(" / ")} to move between a session and its subagents`
   },
   "{highlight}/review{/highlight} reviews uncommitted changes, branches or PRs. It doesn't know it's 2am, and it doesn't care",
-  "{highlight}/share{/highlight} makes a public link to this session. Read it once before sending",
+  "{highlight}/share{/highlight} saves the session as a secret Gist and copies a link. Read it once before sending",
 
   // Models, looks, navigation
   (shortcuts) => `Use ${commandText("/models", shortcuts.modelList())} to switch models. The bug will still be there`,

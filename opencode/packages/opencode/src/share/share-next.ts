@@ -1,278 +1,109 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
-import type * as SDK from "@opencode-ai/sdk/v2"
+import type { Model, SnapshotFileDiff, UserMessage, Session as SDKSession } from "@opencode-ai/sdk/v2"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
-import { Effect, Exit, Layer, Option, Schema, Scope, Context, Stream } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
-import { Account } from "@/account/account"
+import { Context, Deferred, Effect, Exit, Layer, Option, Schema, Scope, Semaphore } from "effect"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { Provider } from "@/provider/provider"
-
 import { Session } from "@/session/session"
 import { MessageV2 } from "@/session/message-v2"
 import type { SessionID } from "@/session/schema"
 import { Database } from "@opencode-ai/core/database/database"
 import { eq } from "drizzle-orm"
-import { Config } from "@/config/config"
 import { SessionShareTable } from "@opencode-ai/core/share/sql"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { EventV2 } from "@opencode-ai/core/event"
+import { GitHubToken } from "./github-token"
+import { RiftShare } from "./rift-share"
+import { homedir } from "os"
 
-const disabled = process.env["OPENCODE_DISABLE_SHARE"] === "true" || process.env["OPENCODE_DISABLE_SHARE"] === "1"
+const flag = (name: string) => process.env[name] === "true" || process.env[name] === "1"
+const disabled = flag("RIFT_DISABLE_SHARE") || flag("OPENCODE_DISABLE_SHARE")
 
-export type Api = {
-  create: string
-  sync: (shareID: string) => string
-  remove: (shareID: string) => string
-  data: (shareID: string) => string
+// GitHub caps content-creating requests at roughly 500 an hour, and a streaming session changes
+// many times a second, so edits to a shared session are batched before the gist is rewritten.
+const DEBOUNCE = "5 seconds"
+// Creating or deleting a gist answers in a second or two; an upload of a trimmed session in a few.
+const REQUEST_TIMEOUT = "12 seconds"
+const UPLOAD_TIMEOUT = "60 seconds"
+
+const HEADERS = {
+  accept: "application/vnd.github+json",
+  "user-agent": "rift",
+  "x-github-api-version": "2022-11-28",
 }
 
-export type Req = {
-  headers: Record<string, string>
-  api: Api
-  baseUrl: string
+const Gist = Schema.Struct({ id: Schema.String })
+const isRiftShare = (url: string) => RiftShare.parse(url) !== undefined
+const decodeJson = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
+
+export class ShareError extends Schema.TaggedErrorClass<ShareError>()("ShareError", { reason: Schema.String }) {
+  override get message() {
+    return this.reason
+  }
 }
 
-const ShareSchema = Schema.Struct({
-  id: Schema.String,
-  url: Schema.String,
-  secret: Schema.String,
-})
-export type Share = typeof ShareSchema.Type
+export type Share = { id: string; url: string; secret: string }
 
 type State = {
-  queue: Map<SessionID, Map<string, Data>>
   scope: Scope.Closeable
   shared: Map<SessionID, Share | null>
+  pending: Set<SessionID>
+  // One gist write at a time, so a slow update can never land after a newer one.
+  writes: Semaphore.Semaphore
+  // Shares being created right now, so a second /share waits for the first.
+  creating: Map<SessionID, Deferred.Deferred<Share, unknown>>
 }
-
-type Data =
-  | {
-      type: "session"
-      data: SDK.Session
-    }
-  | {
-      type: "message"
-      data: SDK.Message
-    }
-  | {
-      type: "part"
-      data: SDK.Part
-    }
-  | {
-      type: "session_diff"
-      data: SDK.SnapshotFileDiff[]
-    }
-  | {
-      type: "model"
-      data: SDK.Model[]
-    }
 
 export interface Interface {
   readonly init: () => Effect.Effect<void, unknown>
-  readonly url: () => Effect.Effect<string, unknown>
-  readonly request: () => Effect.Effect<Req, unknown>
   readonly create: (sessionID: SessionID) => Effect.Effect<Share, unknown>
   readonly remove: (sessionID: SessionID) => Effect.Effect<void, unknown>
+  /** A shared session by gist id, ready for `rift import`; undefined when the gist isn't a RIFT share. */
+  readonly download: (gistID: string) => Effect.Effect<ReturnType<typeof RiftShare.toSession>, unknown>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/ShareNext") {}
 
 export const use = serviceUse(Service)
 
-function api(resource: string): Api {
-  return {
-    create: `/api/${resource}`,
-    sync: (shareID) => `/api/${resource}/${shareID}/sync`,
-    remove: (shareID) => `/api/${resource}/${shareID}`,
-    data: (shareID) => `/api/${resource}/${shareID}/data`,
-  }
-}
-
-const legacyApi = api("share")
-const consoleApi = api("shares")
-
-function key(item: Data) {
-  switch (item.type) {
-    case "session":
-      return "session"
-    case "message":
-      return `message/${item.data.id}`
-    case "part":
-      return `part/${item.data.messageID}/${item.data.id}`
-    case "session_diff":
-      return "session_diff"
-    case "model":
-      return "model"
-  }
-}
-
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const account = yield* Account.Service
     const events = yield* EventV2Bridge.Service
-    const cfg = yield* Config.Service
     const { db } = yield* Database.Service
     const http = yield* HttpClient.HttpClient
-    const httpOk = HttpClient.filterStatusOk(http)
     const provider = yield* Provider.Service
     const session = yield* Session.Service
+    const github = yield* GitHubToken.Service
 
-    function sync(sessionID: SessionID, data: Data[]) {
-      return Effect.gen(function* () {
-        if (disabled) return
-        const share = yield* getCached(sessionID)
-        if (!share) return
-
-        const s = yield* InstanceState.get(state)
-        const existing = s.queue.get(sessionID)
-        if (existing) {
-          for (const item of data) {
-            existing.set(key(item), item)
-          }
-          return
-        }
-
-        const next = new Map(data.map((item) => [key(item), item]))
-        s.queue.set(sessionID, next)
-        yield* flush(sessionID).pipe(
-          Effect.delay(1000),
-          Effect.catchCause((cause) => Effect.logError("share flush failed", { sessionID: sessionID, cause: cause })),
-          Effect.forkIn(s.scope),
-        )
-      })
-    }
-
-    const state: InstanceState.InstanceState<State> = yield* InstanceState.make<State>(
-      Effect.fn("ShareNext.state")(function* (_ctx) {
-        const cache: State = { queue: new Map(), scope: yield* Scope.make(), shared: new Map() }
-
-        yield* Effect.addFinalizer(() =>
-          Scope.close(cache.scope, Exit.void).pipe(
-            Effect.andThen(
-              Effect.sync(() => {
-                cache.queue.clear()
-                cache.shared.clear()
-              }),
-            ),
-          ),
-        )
-
-        if (disabled) return cache
-
-        const watch = <D extends EventV2.Definition>(
-          def: D,
-          fn: (data: EventV2.Data<D>) => Effect.Effect<void, unknown>,
-        ) =>
-          events.listen((event) => {
-            if (event.type !== def.type || event.location?.directory !== _ctx.directory) return Effect.void
-            return fn(event.data as EventV2.Data<D>).pipe(
-              Effect.catchCause((cause) =>
-                Effect.logError("share subscriber failed", { type: def.type, cause: cause }),
-              ),
-            )
-          })
-
-        yield* watch(Session.Event.Updated, (data) =>
-          Effect.gen(function* () {
-            const info = data.info
-            yield* sync(info.id, [{ type: "session", data: structuredClone(info) as SDK.Session }])
-          }),
-        )
-        yield* watch(MessageV2.Event.Updated, (data) =>
-          Effect.gen(function* () {
-            const info = data.info
-            yield* sync(info.sessionID, [{ type: "message", data: structuredClone(info) as SDK.Message }])
-            if (info.role !== "user") return
-            const model = yield* provider.getModel(info.model.providerID, info.model.modelID)
-            yield* sync(info.sessionID, [{ type: "model", data: [model] }])
-          }),
-        )
-        yield* watch(MessageV2.Event.PartUpdated, (data) =>
-          sync(data.part.sessionID, [{ type: "part", data: structuredClone(data.part) as SDK.Part }]),
-        )
-        yield* watch(Session.Event.Diff, (data) =>
-          sync(data.sessionID, [{ type: "session_diff", data: structuredClone(data.diff) as SDK.SnapshotFileDiff[] }]),
-        )
-        yield* watch(Session.Event.Deleted, (data) => remove(data.sessionID))
-
-        return cache
-      }),
-    )
-
-    const request = Effect.fn("ShareNext.request")(function* () {
-      const headers: Record<string, string> = {}
-      const active = yield* account.active()
-      if (Option.isNone(active) || !active.value.active_org_id) {
-        const baseUrl = (yield* cfg.get()).enterprise?.url ?? "https://opncd.ai"
-        return { headers, api: legacyApi, baseUrl } satisfies Req
-      }
-
-      const token = yield* account.token(active.value.id)
-      if (Option.isNone(token)) {
-        throw new Error("No active account token available for sharing")
-      }
-
-      headers.authorization = `Bearer ${token.value}`
-      headers["x-org-id"] = active.value.active_org_id
-      return { headers, api: consoleApi, baseUrl: active.value.url } satisfies Req
-    })
-
-    const get = Effect.fnUntraced(function* (sessionID: SessionID) {
-      const row = yield* db
-        .select()
-        .from(SessionShareTable)
-        .where(eq(SessionShareTable.session_id, sessionID))
-        .get()
-        .pipe(Effect.orDie)
-      if (!row) return
-      return { id: row.id, secret: row.secret, url: row.url } satisfies Share
-    })
-
-    const getCached = Effect.fnUntraced(function* (sessionID: SessionID) {
-      const s = yield* InstanceState.get(state)
-      if (s.shared.has(sessionID)) {
-        const cached = s.shared.get(sessionID)
-        return cached === null ? undefined : cached
-      }
-
-      const share = yield* get(sessionID)
-      s.shared.set(sessionID, share ?? null)
-      return share
-    })
-
-    const flush = Effect.fn("ShareNext.flush")(function* (sessionID: SessionID) {
-      if (disabled) return
-      const s = yield* InstanceState.get(state)
-      const queued = s.queue.get(sessionID)
-      if (!queued) return
-
-      s.queue.delete(sessionID)
-
-      const share = yield* getCached(sessionID)
-      if (!share) return
-
-      const req = yield* request()
-      const res = yield* HttpClientRequest.post(`${req.baseUrl}${req.api.sync(share.id)}`).pipe(
-        HttpClientRequest.setHeaders(req.headers),
-        HttpClientRequest.bodyJson({ secret: share.secret, data: Array.from(queued.values()) }),
-        Effect.flatMap((r) => http.execute(r)),
+    const githubRequest = Effect.fn("ShareNext.githubRequest")(function* (
+      method: "POST" | "PATCH" | "DELETE",
+      path: string,
+      body?: object,
+    ) {
+      const token = yield* github.get()
+      const request = HttpClientRequest.make(method)(`${RiftShare.GITHUB_API}${path}`).pipe(
+        HttpClientRequest.setHeaders({ ...HEADERS, authorization: `Bearer ${token}` }),
       )
-
-      if (res.status >= 400) {
-        yield* Effect.logWarning("failed to sync share", {
-          sessionID: sessionID,
-          shareID: share.id,
-          status: res.status,
-        })
-      }
+      // A connection can stall with GitHub never answering (seen on real uploads), and nothing
+      // else would ever end the wait. Deletes are safe to repeat, so one that stalls is retried.
+      const send = http.execute(body ? HttpClientRequest.bodyJsonUnsafe(request, body) : request).pipe(
+        Effect.timeoutOrElse({
+          duration: method === "PATCH" ? UPLOAD_TIMEOUT : REQUEST_TIMEOUT,
+          orElse: () =>
+            Effect.fail(new ShareError({ reason: "GitHub didn't answer in time. Check your connection and try again." })),
+        }),
+      )
+      const res = yield* method === "DELETE" ? send.pipe(Effect.retry({ times: 1 })) : send
+      if (res.status === 401) yield* github.forget()
+      return res
     })
 
-    const full = Effect.fn("ShareNext.full")(function* (sessionID: SessionID) {
-      yield* Effect.logInfo("full sync", { sessionID: sessionID })
+    const snapshot = Effect.fn("ShareNext.snapshot")(function* (sessionID: SessionID) {
       const info = yield* session.get(sessionID)
       const diffs = yield* session.diff(sessionID)
       const messages = yield* session.messages({ sessionID })
@@ -281,21 +112,127 @@ const layer = Layer.effect(
           new Map(
             messages
               .filter((msg) => msg.info.role === "user")
-              .map((msg) => (msg.info as SDK.UserMessage).model)
+              .map((msg) => (msg.info as UserMessage).model)
               .map((item) => [`${item.providerID}/${item.modelID}`, item] as const),
           ).values(),
         ),
         (item) => provider.getModel(ProviderV2.ID.make(item.providerID), ModelV2.ID.make(item.modelID)),
         { concurrency: 8 },
       )
+      return RiftShare.snapshot(
+        {
+          session: info as SDKSession,
+          messages: messages as unknown as RiftShare.Snapshot["messages"],
+          diffs: diffs as SnapshotFileDiff[],
+          models: models as unknown as Model[],
+        },
+        { home: homedir() },
+      )
+    })
 
-      yield* sync(sessionID, [
-        { type: "session", data: info },
-        ...messages.map((item) => ({ type: "message" as const, data: item.info })),
-        ...messages.flatMap((item) => item.parts.map((part) => ({ type: "part" as const, data: part }))),
-        { type: "session_diff", data: diffs },
-        { type: "model", data: models },
-      ])
+    const files = (snap: RiftShare.Snapshot) => ({ [RiftShare.FILE]: { content: JSON.stringify(snap) } })
+
+    const state: InstanceState.InstanceState<State> = yield* InstanceState.make<State>(
+      Effect.fn("ShareNext.state")(function* (ctx) {
+        const cache: State = {
+          scope: yield* Scope.make(),
+          shared: new Map(),
+          pending: new Set(),
+          writes: Semaphore.makeUnsafe(1),
+          creating: new Map(),
+        }
+
+        yield* Effect.addFinalizer(() =>
+          Scope.close(cache.scope, Exit.void).pipe(
+            Effect.andThen(
+              Effect.sync(() => {
+                cache.shared.clear()
+                cache.pending.clear()
+              }),
+            ),
+          ),
+        )
+
+        yield* forgetOpencodeShares()
+
+        if (disabled) return cache
+
+        const watch = <D extends EventV2.Definition>(def: D, fn: (data: EventV2.Data<D>) => Effect.Effect<void, unknown>) =>
+          events.listen((event) => {
+            if (event.type !== def.type || event.location?.directory !== ctx.directory) return Effect.void
+            return fn(event.data as EventV2.Data<D>).pipe(
+              Effect.catchCause((cause) => Effect.logError("share subscriber failed", { type: def.type, cause })),
+            )
+          })
+
+        yield* watch(Session.Event.Updated, (data) => scheduleUpdate(data.info.id))
+        yield* watch(MessageV2.Event.Updated, (data) => scheduleUpdate(data.info.sessionID))
+        yield* watch(MessageV2.Event.PartUpdated, (data) => scheduleUpdate(data.part.sessionID))
+        yield* watch(Session.Event.Diff, (data) => scheduleUpdate(data.sessionID))
+        yield* watch(Session.Event.Deleted, (data) => remove(data.sessionID))
+
+        return cache
+      }),
+    )
+
+    // Sessions shared before RIFT moved to gists still carry opencode's hosted links. Drop them, so
+    // the sidebar stops showing them and the next /share makes a RIFT gist.
+    const forgetOpencodeShares = Effect.fnUntraced(function* () {
+      const rows = yield* db.select().from(SessionShareTable).all().pipe(Effect.orDie)
+      const legacy = rows.filter((row) => !isRiftShare(row.url))
+      yield* Effect.forEach(legacy, (row) =>
+        Effect.gen(function* () {
+          const sessionID = row.session_id as SessionID
+          // Effect.exit, not Effect.ignore: setShare dies (not fails) when the session is already gone.
+          yield* Effect.exit(session.setShare({ sessionID, share: undefined }))
+          yield* db.delete(SessionShareTable).where(eq(SessionShareTable.session_id, sessionID)).run().pipe(Effect.orDie)
+        }),
+      )
+    })
+
+    const get = Effect.fnUntraced(function* (sessionID: SessionID) {
+      const s = yield* InstanceState.get(state)
+      if (s.shared.has(sessionID)) return s.shared.get(sessionID) ?? undefined
+      const row = yield* db
+        .select()
+        .from(SessionShareTable)
+        .where(eq(SessionShareTable.session_id, sessionID))
+        .get()
+        .pipe(Effect.orDie)
+      const share = row && isRiftShare(row.url) ? { id: row.id, secret: row.secret, url: row.url } : undefined
+      s.shared.set(sessionID, share ?? null)
+      return share
+    })
+
+    // The first change in a burst schedules one rewrite of the gist; later changes ride along.
+    const scheduleUpdate = Effect.fnUntraced(function* (sessionID: SessionID) {
+      if (disabled || !(yield* get(sessionID))) return
+      const s = yield* InstanceState.get(state)
+      if (s.pending.has(sessionID)) return
+      s.pending.add(sessionID)
+      yield* update(sessionID).pipe(
+        Effect.delay(DEBOUNCE),
+        Effect.catchCause((cause) => Effect.logError("share update failed", { sessionID, cause })),
+        Effect.forkIn(s.scope),
+      )
+    })
+
+    const update = Effect.fn("ShareNext.update")(function* (sessionID: SessionID) {
+      const s = yield* InstanceState.get(state)
+      yield* s.writes.withPermits(1)(
+        Effect.gen(function* () {
+          s.pending.delete(sessionID)
+          const share = yield* get(sessionID)
+          if (!share) return
+          const started = Date.now()
+          const res = yield* githubRequest("PATCH", `/gists/${share.id}`, { files: files(yield* snapshot(sessionID)) })
+          if (res.status >= 400) {
+            yield* Effect.logWarning("failed to update share gist", { sessionID, status: res.status })
+            return
+          }
+          yield* Effect.logInfo("share gist updated", { sessionID, ms: Date.now() - started })
+        }),
+      )
     })
 
     const init = Effect.fn("ShareNext.init")(function* () {
@@ -303,69 +240,104 @@ const layer = Layer.effect(
       yield* InstanceState.get(state)
     })
 
-    const url = Effect.fn("ShareNext.url")(function* () {
-      return (yield* request()).baseUrl
-    })
-
-    const create = Effect.fn("ShareNext.create")(function* (sessionID: SessionID) {
-      if (disabled) return { id: "", url: "", secret: "" }
-      yield* Effect.logInfo("creating share", { sessionID: sessionID })
-      const req = yield* request()
-      const result = yield* HttpClientRequest.post(`${req.baseUrl}${req.api.create}`).pipe(
-        HttpClientRequest.setHeaders(req.headers),
-        HttpClientRequest.bodyJson({ sessionID }),
-        Effect.flatMap((r) => httpOk.execute(r)),
-        Effect.flatMap(HttpClientResponse.schemaBodyJson(ShareSchema)),
-      )
+    // GitHub takes a second or more to create any gist, and several for a big one. The link only
+    // needs the gist to exist, so it is made from a tiny placeholder and the full session is
+    // uploaded straight after, in the background.
+    const createGist = Effect.fn("ShareNext.createGist")(function* (sessionID: SessionID) {
+      const started = Date.now()
+      yield* Effect.logInfo("creating share", { sessionID })
+      const snap = RiftShare.placeholder((yield* session.get(sessionID)) as SDKSession, { home: homedir() })
+      const res = yield* githubRequest("POST", "/gists", {
+        description: `RIFT session · ${snap.session.title}`,
+        public: false,
+        files: files(snap),
+      })
+      const gist = yield* HttpClientResponse.filterStatusOk(res).pipe(Effect.flatMap(HttpClientResponse.schemaBodyJson(Gist)))
+      const result: Share = { id: gist.id, url: RiftShare.url(gist.id), secret: "" }
       yield* db
         .insert(SessionShareTable)
-        .values({ session_id: sessionID, id: result.id, secret: result.secret, url: result.url })
-        .onConflictDoUpdate({
-          target: SessionShareTable.session_id,
-          set: { id: result.id, secret: result.secret, url: result.url },
-        })
+        .values({ session_id: sessionID, ...result })
+        .onConflictDoUpdate({ target: SessionShareTable.session_id, set: result })
         .run()
         .pipe(Effect.orDie)
       const s = yield* InstanceState.get(state)
       s.shared.set(sessionID, result)
-      yield* full(sessionID).pipe(
-        Effect.catchCause((cause) => Effect.logError("share full sync failed", { sessionID: sessionID, cause: cause })),
+      yield* Effect.logInfo("share link created", { sessionID, ms: Date.now() - started })
+      yield* update(sessionID).pipe(
+        Effect.catchCause((cause) => Effect.logError("share upload failed", { sessionID, cause })),
         Effect.forkIn(s.scope),
       )
       return result
     })
 
-    const remove = Effect.fn("ShareNext.remove")(function* (sessionID: SessionID) {
-      if (disabled) return
-      yield* Effect.logInfo("removing share", { sessionID: sessionID })
+    const create = Effect.fn("ShareNext.create")(function* (sessionID: SessionID) {
+      if (disabled) return yield* new ShareError({ reason: "Sharing is turned off by RIFT_DISABLE_SHARE." })
+      const existing = yield* get(sessionID)
+      if (existing) return existing
       const s = yield* InstanceState.get(state)
-      const share = yield* getCached(sessionID)
-      if (!share) {
-        s.shared.delete(sessionID)
-        s.queue.delete(sessionID)
-        return
-      }
-
-      const req = yield* request()
-      yield* HttpClientRequest.delete(`${req.baseUrl}${req.api.remove(share.id)}`).pipe(
-        HttpClientRequest.setHeaders(req.headers),
-        HttpClientRequest.bodyJson({ secret: share.secret }),
-        Effect.flatMap((r) => httpOk.execute(r)),
+      // A second /share while the first is still creating waits for the same gist instead of
+      // making another. The work runs in the instance scope, so a caller that gives up waiting
+      // can't leave a gist created on GitHub but never recorded here.
+      return yield* Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function* () {
+          const running = s.creating.get(sessionID)
+          if (running) return yield* restore(Deferred.await(running))
+          const deferred = Deferred.makeUnsafe<Share, unknown>()
+          s.creating.set(sessionID, deferred)
+          yield* Effect.exit(createGist(sessionID)).pipe(
+            Effect.tap(() => Effect.sync(() => s.creating.delete(sessionID))),
+            Effect.flatMap((exit) => Deferred.done(deferred, exit)),
+            Effect.forkIn(s.scope, { startImmediately: true }),
+          )
+          return yield* restore(Deferred.await(deferred))
+        }),
       )
-
-      yield* db.delete(SessionShareTable).where(eq(SessionShareTable.session_id, sessionID)).run().pipe(Effect.orDie)
-      s.shared.delete(sessionID)
-      s.queue.delete(sessionID)
     })
 
-    return Service.of({ init, url, request, create, remove })
+    const remove = Effect.fn("ShareNext.remove")(function* (sessionID: SessionID) {
+      if (disabled) return
+      yield* Effect.logInfo("removing share", { sessionID })
+      const s = yield* InstanceState.get(state)
+      const share = yield* get(sessionID)
+      if (share) {
+        const res = yield* githubRequest("DELETE", `/gists/${share.id}`)
+        // Already gone on GitHub is the outcome we wanted.
+        if (res.status >= 400 && res.status !== 404) {
+          return yield* new ShareError({ reason: `GitHub refused to delete the share gist (HTTP ${res.status}).` })
+        }
+        yield* db.delete(SessionShareTable).where(eq(SessionShareTable.session_id, sessionID)).run().pipe(Effect.orDie)
+      }
+      s.shared.delete(sessionID)
+      s.pending.delete(sessionID)
+    })
+
+    const download = Effect.fn("ShareNext.download")(function* (gistID: string) {
+      const text = Effect.fnUntraced(function* (url: string) {
+        const res = yield* http.execute(HttpClientRequest.get(url).pipe(HttpClientRequest.setHeaders(HEADERS)))
+        if (res.status === 404) return undefined
+        if (res.status >= 400) return yield* new ShareError({ reason: `GitHub answered HTTP ${res.status}.` })
+        return yield* res.text
+      })
+      const gist = yield* text(`${RiftShare.GITHUB_API}/gists/${gistID}`)
+      const located = gist === undefined ? undefined : RiftShare.fromGist(Option.getOrUndefined(decodeJson(gist)))
+      if (!located) return
+      const content = "content" in located ? located.content : yield* text(located.raw)
+      if (content === undefined) return
+      const snap = Option.getOrUndefined(decodeJson(content))
+      if ((snap as Partial<RiftShare.Snapshot> | undefined)?.pending) {
+        return yield* new ShareError({ reason: "This share is still uploading. Try again in a few seconds." })
+      }
+      return RiftShare.toSession(snap)
+    })
+
+    return Service.of({ init, create, remove, download })
   }),
 )
 
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Account.node, EventV2Bridge.node, Config.node, Database.node, httpClient, Provider.node, Session.node],
+  deps: [EventV2Bridge.node, Database.node, httpClient, Provider.node, Session.node, GitHubToken.node],
 })
 
 export * as ShareNext from "./share-next"

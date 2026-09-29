@@ -54,7 +54,7 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   })
     .pipe(Schema.optional)
     .annotate({
-      description: "Enterprise sharing service configuration",
+      description: "@deprecated No longer used: RIFT shares sessions as GitHub Gists.",
     }),
   username: Schema.String.pipe(Schema.optional).annotate({
     description: "Username displayed in conversations and used for telemetry identity",

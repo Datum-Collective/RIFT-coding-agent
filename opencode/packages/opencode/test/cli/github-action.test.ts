@@ -1,6 +1,6 @@
 import { test, expect, describe } from "bun:test"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
-import { extractResponseText, formatPromptTooLargeError } from "../../src/cli/cmd/github"
+import { extractResponseText, formatPromptTooLargeError, shouldShareSession } from "../../src/cli/cmd/github"
 import type { MessageV2 } from "../../src/session/message-v2"
 import { SessionID, MessageID, PartID } from "../../src/session/schema"
 
@@ -195,5 +195,22 @@ describe("formatPromptTooLargeError", () => {
     expect(result).toInclude("img1.png (3 KB)")
     expect(result).toInclude("img2.jpg (6 KB)")
     expect(result).toInclude("img3.gif (9 KB)")
+  })
+})
+
+describe("shouldShareSession", () => {
+  test("shares only when explicitly requested", () => {
+    expect(shouldShareSession(true)).toBe(true)
+  })
+
+  test("never shares by default, on a public repo or otherwise", () => {
+    // A comment notifies every subscriber by email and is public on a public repo, so posting
+    // a share link there is not something an automated run should do without being asked —
+    // repo visibility has no say in this, only an explicit request does.
+    expect(shouldShareSession(undefined)).toBe(false)
+  })
+
+  test("never shares when explicitly turned off", () => {
+    expect(shouldShareSession(false)).toBe(false)
   })
 })

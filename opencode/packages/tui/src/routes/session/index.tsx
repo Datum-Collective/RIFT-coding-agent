@@ -498,31 +498,37 @@ export function Session() {
         const copy = (url: string) =>
           clipboard
             .write?.(url)
-            .then(() => toast.show({ message: "Share URL copied to clipboard!", variant: "success" }))
-            .catch(() => toast.show({ message: "Failed to copy URL to clipboard", variant: "error" }))
+            .then(() => toast.show({ message: "Share link copied. It opens in the RIFT viewer.", variant: "success" }))
+            .catch(() => toast.show({ message: `Couldn't copy the link: ${url}`, variant: "error" }))
         const url = session()?.share?.url
         if (url) {
           await copy(url)
           dialog.clear()
           return
         }
-        if (!kv.get("share_consent", false)) {
-          const ok = await DialogConfirm.show(dialog, "Share Session", "Are you sure you want to share it?")
+        // A new key, so people who agreed to the old hosted share are asked again about gists.
+        if (!kv.get("share_consent_gist", false)) {
+          const ok = await DialogConfirm.show(
+            dialog,
+            "Share session",
+            "RIFT saves this session as a secret GitHub Gist on your account, after removing the API keys, tokens and passwords it recognises. Anyone with the link can read the rest, code included.",
+          )
           if (ok !== true) return
-          kv.set("share_consent", true)
+          kv.set("share_consent_gist", true)
         }
+        // GitHub takes a second or two to create the gist; close the menu and say so right away.
+        dialog.clear()
+        toast.show({ message: "Creating share link…", variant: "info" })
         await sdk.client.session
-          .share({
-            sessionID: route.sessionID,
-          })
-          .then((res) => copy(res.data!.share!.url))
-          .catch((error) => {
+          .share({ sessionID: route.sessionID }, { throwOnError: true })
+          .then((res) => copy(res.data.share!.url))
+          .catch(() => {
             toast.show({
-              message: error instanceof Error ? error.message : "Failed to share session",
+              message:
+                "Couldn't share this session. It's saved as a GitHub Gist, so if you're not signed in, run `gh auth login` or set GITHUB_TOKEN.",
               variant: "error",
             })
           })
-        dialog.clear()
       },
     },
     {
@@ -616,13 +622,11 @@ export function Session() {
       },
       run: async () => {
         await sdk.client.session
-          .unshare({
-            sessionID: route.sessionID,
-          })
-          .then(() => toast.show({ message: "Session unshared successfully", variant: "success" }))
-          .catch((error) => {
+          .unshare({ sessionID: route.sessionID }, { throwOnError: true })
+          .then(() => toast.show({ message: "Unshared. The gist is deleted.", variant: "success" }))
+          .catch(() => {
             toast.show({
-              message: error instanceof Error ? error.message : "Failed to unshare session",
+              message: "Couldn't unshare. Deleting the gist needs GitHub, so check you're signed in with `gh auth login`.",
               variant: "error",
             })
           })

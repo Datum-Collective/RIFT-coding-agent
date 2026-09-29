@@ -301,10 +301,10 @@ Options:
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode import --help 1`] = `
 "opencode import <file>
 
-import session data from JSON file or URL
+import a session from a JSON file or a RIFT share link
 
 Positionals:
-  file  path to JSON file or share URL                                           [string] [required]
+  file  path to JSON file, or a RIFT share link                                  [string] [required]
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -334,7 +334,7 @@ Options:
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode pr --help 1`] = `
 "opencode pr <number>
 
-fetch and checkout a GitHub PR branch, then run opencode
+fetch and checkout a GitHub PR branch, then run RIFT
 
 Positionals:
   number  PR number to checkout                                                  [number] [required]
