@@ -27,6 +27,8 @@ const GIST_ID = "[0-9a-f]{20,40}"
 
 // Gists truncate files over 1 MB in API responses; long tool outputs are the usual culprit.
 const MAX_OUTPUT = 20_000
+// Tool inputs the viewer shows are short (a command, a path); a long one is file content.
+const MAX_INPUT = 4_000
 
 export type Snapshot = {
   format: "rift-share"
@@ -35,6 +37,8 @@ export type Snapshot = {
   messages: Array<{ info: Message; parts: Part[] }>
   diffs: SnapshotFileDiff[]
   models: Model[]
+  /** Set while the full session is still uploading; the viewer waits and import refuses it. */
+  pending?: true
 }
 
 // Share links are readable by anyone who has them, so recognisable secrets never leave the machine.
@@ -78,6 +82,14 @@ export function snapshot(input: Omit<Snapshot, "format" | "version">, options: {
     },
     options.home,
   )
+}
+
+/**
+ * What the gist starts as. GitHub takes seconds to create a gist and longer the bigger it is, so
+ * the link is made from this tiny version first and the full session follows as an update.
+ */
+export function placeholder(session: Session, options: { home?: string } = {}): Snapshot {
+  return { ...snapshot({ session, messages: [], diffs: [], models: [] }, options), pending: true }
 }
 
 function clean<T>(value: T, home?: string): T {
@@ -124,15 +136,36 @@ export function toSession(value: unknown): { info: Session; messages: Snapshot["
   if (!value || typeof value !== "object") return
   const snap = value as Partial<Snapshot>
   if (snap.format !== "rift-share" || snap.version !== 1 || !snap.session || !Array.isArray(snap.messages)) return
+  if (snap.pending) return
   return { info: snap.session, messages: snap.messages }
 }
 
+// A share is a readable record, not a backup. What a reader never sees stays on the machine:
+// image attachments (base64 screenshots and frames, often hundreds of KB each), tool metadata
+// other than the diff, and the full bodies of huge inputs and outputs. That keeps even a long
+// session to a small upload, and keeps screenshots of someone's work out of the link.
 function trim(part: Part): Part {
-  if (part.type !== "tool" || part.state.status !== "completed") return part
-  const output = part.state.output
-  if (output.length <= MAX_OUTPUT) return part
-  const cut = `${output.slice(0, MAX_OUTPUT)}\n… ${output.length - MAX_OUTPUT} more characters`
-  return { ...part, state: { ...part.state, output: cut } }
+  if (part.type === "file") return part.url.startsWith("data:") ? { ...part, url: "" } : part
+  if (part.type === "reasoning") return { ...part, text: cut(part.text) }
+  if (part.type !== "tool") return part
+  const state = part.state
+  const input = Object.fromEntries(
+    Object.entries(state.input ?? {}).map(([key, value]) => [key, typeof value === "string" ? cut(value, MAX_INPUT) : value]),
+  )
+  const diff = state.status !== "pending" && typeof state.metadata?.diff === "string" ? cut(state.metadata.diff) : undefined
+  const metadata = diff === undefined ? {} : { diff }
+  if (state.status === "completed") {
+    const { attachments: _, ...rest } = state
+    return { ...part, state: { ...rest, input, output: cut(state.output), metadata } }
+  }
+  if (state.status === "error") return { ...part, state: { ...state, input, error: cut(state.error), metadata } }
+  if (state.status === "running") return { ...part, state: { ...state, input, metadata } }
+  return { ...part, state: { ...state, input, raw: cut(state.raw, MAX_INPUT) } }
+}
+
+function cut(text: string, max = MAX_OUTPUT) {
+  if (text.length <= max) return text
+  return `${text.slice(0, max)}\n… ${text.length - max} more characters`
 }
 
 export * as RiftShare from "./rift-share"

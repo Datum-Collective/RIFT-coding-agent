@@ -2,7 +2,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
 import type { Model, SnapshotFileDiff, UserMessage, Session as SDKSession } from "@opencode-ai/sdk/v2"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
-import { Effect, Exit, Layer, Option, Schema, Scope, Semaphore, Context } from "effect"
+import { Context, Deferred, Effect, Exit, Layer, Option, Schema, Scope, Semaphore } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstanceState } from "@/effect/instance-state"
@@ -26,6 +26,9 @@ const disabled = flag("RIFT_DISABLE_SHARE") || flag("OPENCODE_DISABLE_SHARE")
 // GitHub caps content-creating requests at roughly 500 an hour, and a streaming session changes
 // many times a second, so edits to a shared session are batched before the gist is rewritten.
 const DEBOUNCE = "5 seconds"
+// Creating or deleting a gist answers in a second or two; an upload of a trimmed session in a few.
+const REQUEST_TIMEOUT = "12 seconds"
+const UPLOAD_TIMEOUT = "60 seconds"
 
 const HEADERS = {
   accept: "application/vnd.github+json",
@@ -51,6 +54,8 @@ type State = {
   pending: Set<SessionID>
   // One gist write at a time, so a slow update can never land after a newer one.
   writes: Semaphore.Semaphore
+  // Shares being created right now, so a second /share waits for the first.
+  creating: Map<SessionID, Deferred.Deferred<Share, unknown>>
 }
 
 export interface Interface {
@@ -84,7 +89,18 @@ const layer = Layer.effect(
       const request = HttpClientRequest.make(method)(`${RiftShare.GITHUB_API}${path}`).pipe(
         HttpClientRequest.setHeaders({ ...HEADERS, authorization: `Bearer ${token}` }),
       )
-      return yield* http.execute(body ? HttpClientRequest.bodyJsonUnsafe(request, body) : request)
+      // A connection can stall with GitHub never answering (seen on real uploads), and nothing
+      // else would ever end the wait. Deletes are safe to repeat, so one that stalls is retried.
+      const send = http.execute(body ? HttpClientRequest.bodyJsonUnsafe(request, body) : request).pipe(
+        Effect.timeoutOrElse({
+          duration: method === "PATCH" ? UPLOAD_TIMEOUT : REQUEST_TIMEOUT,
+          orElse: () =>
+            Effect.fail(new ShareError({ reason: "GitHub didn't answer in time. Check your connection and try again." })),
+        }),
+      )
+      const res = yield* method === "DELETE" ? send.pipe(Effect.retry({ times: 1 })) : send
+      if (res.status === 401) yield* github.forget()
+      return res
     })
 
     const snapshot = Effect.fn("ShareNext.snapshot")(function* (sessionID: SessionID) {
@@ -123,6 +139,7 @@ const layer = Layer.effect(
           shared: new Map(),
           pending: new Set(),
           writes: Semaphore.makeUnsafe(1),
+          creating: new Map(),
         }
 
         yield* Effect.addFinalizer(() =>
@@ -207,8 +224,13 @@ const layer = Layer.effect(
           s.pending.delete(sessionID)
           const share = yield* get(sessionID)
           if (!share) return
+          const started = Date.now()
           const res = yield* githubRequest("PATCH", `/gists/${share.id}`, { files: files(yield* snapshot(sessionID)) })
-          if (res.status >= 400) yield* Effect.logWarning("failed to update share gist", { sessionID, status: res.status })
+          if (res.status >= 400) {
+            yield* Effect.logWarning("failed to update share gist", { sessionID, status: res.status })
+            return
+          }
+          yield* Effect.logInfo("share gist updated", { sessionID, ms: Date.now() - started })
         }),
       )
     })
@@ -218,12 +240,13 @@ const layer = Layer.effect(
       yield* InstanceState.get(state)
     })
 
-    const create = Effect.fn("ShareNext.create")(function* (sessionID: SessionID) {
-      if (disabled) return yield* new ShareError({ reason: "Sharing is turned off by RIFT_DISABLE_SHARE." })
-      const existing = yield* get(sessionID)
-      if (existing) return existing
+    // GitHub takes a second or more to create any gist, and several for a big one. The link only
+    // needs the gist to exist, so it is made from a tiny placeholder and the full session is
+    // uploaded straight after, in the background.
+    const createGist = Effect.fn("ShareNext.createGist")(function* (sessionID: SessionID) {
+      const started = Date.now()
       yield* Effect.logInfo("creating share", { sessionID })
-      const snap = yield* snapshot(sessionID)
+      const snap = RiftShare.placeholder((yield* session.get(sessionID)) as SDKSession, { home: homedir() })
       const res = yield* githubRequest("POST", "/gists", {
         description: `RIFT session · ${snap.session.title}`,
         public: false,
@@ -239,9 +262,36 @@ const layer = Layer.effect(
         .pipe(Effect.orDie)
       const s = yield* InstanceState.get(state)
       s.shared.set(sessionID, result)
-      // Edits made while the gist was being created aren't in it yet.
-      yield* scheduleUpdate(sessionID)
+      yield* Effect.logInfo("share link created", { sessionID, ms: Date.now() - started })
+      yield* update(sessionID).pipe(
+        Effect.catchCause((cause) => Effect.logError("share upload failed", { sessionID, cause })),
+        Effect.forkIn(s.scope),
+      )
       return result
+    })
+
+    const create = Effect.fn("ShareNext.create")(function* (sessionID: SessionID) {
+      if (disabled) return yield* new ShareError({ reason: "Sharing is turned off by RIFT_DISABLE_SHARE." })
+      const existing = yield* get(sessionID)
+      if (existing) return existing
+      const s = yield* InstanceState.get(state)
+      // A second /share while the first is still creating waits for the same gist instead of
+      // making another. The work runs in the instance scope, so a caller that gives up waiting
+      // can't leave a gist created on GitHub but never recorded here.
+      return yield* Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function* () {
+          const running = s.creating.get(sessionID)
+          if (running) return yield* restore(Deferred.await(running))
+          const deferred = Deferred.makeUnsafe<Share, unknown>()
+          s.creating.set(sessionID, deferred)
+          yield* Effect.exit(createGist(sessionID)).pipe(
+            Effect.tap(() => Effect.sync(() => s.creating.delete(sessionID))),
+            Effect.flatMap((exit) => Deferred.done(deferred, exit)),
+            Effect.forkIn(s.scope, { startImmediately: true }),
+          )
+          return yield* restore(Deferred.await(deferred))
+        }),
+      )
     })
 
     const remove = Effect.fn("ShareNext.remove")(function* (sessionID: SessionID) {
@@ -272,7 +322,12 @@ const layer = Layer.effect(
       const located = gist === undefined ? undefined : RiftShare.fromGist(Option.getOrUndefined(decodeJson(gist)))
       if (!located) return
       const content = "content" in located ? located.content : yield* text(located.raw)
-      return content === undefined ? undefined : RiftShare.toSession(Option.getOrUndefined(decodeJson(content)))
+      if (content === undefined) return
+      const snap = Option.getOrUndefined(decodeJson(content))
+      if ((snap as Partial<RiftShare.Snapshot> | undefined)?.pending) {
+        return yield* new ShareError({ reason: "This share is still uploading. Try again in a few seconds." })
+      }
+      return RiftShare.toSession(snap)
     })
 
     return Service.of({ init, create, remove, download })

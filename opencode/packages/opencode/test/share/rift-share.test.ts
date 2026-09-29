@@ -77,6 +77,43 @@ describe("RiftShare.snapshot", () => {
     expect(output).toContain("30000 more characters")
   })
 
+  test("drops image attachments and keeps only the diff from tool metadata, so big sessions stay small", () => {
+    const heavy = {
+      ...tool("frame read"),
+      state: {
+        status: "completed",
+        input: { filePath: "out/frames/01.png" },
+        output: "frame read",
+        title: "out/frames/01.png",
+        metadata: { diff: "@@ -1 +1 @@\n-a\n+b", display: "x".repeat(20_000), filediff: { before: "y".repeat(50_000) } },
+        attachments: [{ type: "file", mime: "image/png", url: `data:image/png;base64,${"A".repeat(800_000)}` }],
+        time: { start: 1, end: 2 },
+      },
+    } as unknown as ToolPart
+    const snap = RiftShare.snapshot({
+      session,
+      messages: [{ info: assistant, parts: Array.from({ length: 50 }, () => heavy) }],
+      diffs: [],
+      models: [],
+    })
+    const part = snap.messages[0].parts[0] as ToolPart
+    expect(part.state.status === "completed" && part.state.attachments).toBeFalsy()
+    expect(part.state.status === "completed" && part.state.metadata).toEqual({ diff: "@@ -1 +1 @@\n-a\n+b" })
+    // 50 reads of an 800 KB image used to mean a 40 MB upload.
+    expect(JSON.stringify(snap).length).toBeLessThan(100_000)
+  })
+
+  test("trims huge tool inputs, like a whole file passed to write", () => {
+    const write = {
+      ...tool("ok"),
+      state: { status: "completed", input: { filePath: "a.ts", content: "z".repeat(60_000) }, output: "ok", title: "a.ts", metadata: {}, time: { start: 1, end: 2 } },
+    } as unknown as ToolPart
+    const snap = RiftShare.snapshot({ session, messages: [{ info: assistant, parts: [write] }], diffs: [], models: [] })
+    const input = (snap.messages[0].parts[0] as ToolPart).state.input as { filePath: string; content: string }
+    expect(input.filePath).toBe("a.ts")
+    expect(input.content.length).toBeLessThan(5_000)
+  })
+
   test("leaves a normal tool output alone", () => {
     const snap = RiftShare.snapshot({
       session,
@@ -134,6 +171,25 @@ describe("RiftShare.snapshot keeps secrets on your machine", () => {
 
   test("leaves ordinary output alone", () => {
     expect(shared("12 passed, 0 failed in 4.1s")).toBe("12 passed, 0 failed in 4.1s")
+  })
+})
+
+describe("RiftShare.placeholder", () => {
+  test("is a tiny pending share, so the link can be made before the upload", () => {
+    const snap = RiftShare.placeholder(session)
+    expect(snap.format).toBe("rift-share")
+    expect(snap.pending).toBe(true)
+    expect(snap.messages).toEqual([])
+    expect(JSON.stringify(snap).length).toBeLessThan(1_000)
+  })
+
+  test("scrubs the title like any other share", () => {
+    const snap = RiftShare.placeholder({ ...session, title: "rotate sk-ant-api03-abcdefghijklmnopqrstuvwxyz" })
+    expect(snap.session.title).not.toContain("sk-ant-api03")
+  })
+
+  test("can't be imported until the full session has been uploaded", () => {
+    expect(RiftShare.toSession(JSON.parse(JSON.stringify(RiftShare.placeholder(session))))).toBeUndefined()
   })
 })
 

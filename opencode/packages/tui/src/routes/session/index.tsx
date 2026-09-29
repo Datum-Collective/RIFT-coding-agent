@@ -516,6 +516,9 @@ export function Session() {
           if (ok !== true) return
           kv.set("share_consent_gist", true)
         }
+        // GitHub takes a second or two to create the gist; close the menu and say so right away.
+        dialog.clear()
+        toast.show({ message: "Creating share link…", variant: "info" })
         await sdk.client.session
           .share({ sessionID: route.sessionID }, { throwOnError: true })
           .then((res) => copy(res.data.share!.url))
@@ -526,7 +529,6 @@ export function Session() {
               variant: "error",
             })
           })
-        dialog.clear()
       },
     },
     {

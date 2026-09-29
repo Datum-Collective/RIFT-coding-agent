@@ -33,10 +33,13 @@ const json = (req: Parameters<typeof HttpClientResponse.fromWeb>[0], body: unkno
 const body = (req: HttpClientRequest.HttpClientRequest) =>
   req.body._tag === "Uint8Array" ? JSON.parse(new TextDecoder().decode(req.body.body)) : undefined
 
-const signedIn = Layer.succeed(GitHubToken.Service, GitHubToken.Service.of({ get: () => Effect.succeed("ghp_test") }))
+const signedIn = Layer.succeed(
+  GitHubToken.Service,
+  GitHubToken.Service.of({ get: () => Effect.succeed("ghp_test"), forget: () => Effect.void }),
+)
 const signedOut = Layer.succeed(
   GitHubToken.Service,
-  GitHubToken.Service.of({ get: () => Effect.fail(new GitHubToken.MissingTokenError()) }),
+  GitHubToken.Service.of({ get: () => Effect.fail(new GitHubToken.MissingTokenError()), forget: () => Effect.void }),
 )
 
 function layer(client: HttpClient.HttpClient, token = signedIn) {
@@ -97,6 +100,59 @@ describe("ShareNext", () => {
         const snap = JSON.parse(sent.files[RiftShare.FILE].content)
         expect(snap.format).toBe("rift-share")
         expect(snap.session.id).toBe(session.id)
+      }).pipe(Effect.provide(layer(client)))
+    }),
+  )
+
+  it.live("the link comes from a tiny placeholder, and the full session uploads right after", () =>
+    provideTmpdirInstance(() => {
+      const seen: HttpClientRequest.HttpClientRequest[] = []
+      const client = HttpClient.make((req) => {
+        seen.push(req)
+        return Effect.succeed(json(req, { id: GIST }, req.method === "POST" ? 201 : 200))
+      })
+      return Effect.gen(function* () {
+        const session = yield* newSession("Big session")
+        const share = yield* ShareNext.Service
+
+        yield* share.create(session.id)
+
+        // Only the placeholder has gone out when the link comes back.
+        const created = JSON.parse(body(seen[0]).files[RiftShare.FILE].content)
+        expect(created.pending).toBe(true)
+        expect(created.messages).toEqual([])
+
+        // The full session follows without waiting for the edit debounce.
+        yield* pollWithTimeout(
+          Effect.sync(() => (seen.some((req) => req.method === "PATCH") ? true : undefined)),
+          "the full session was never uploaded",
+          "3 seconds",
+        )
+        const full = JSON.parse(body(seen.find((req) => req.method === "PATCH")!).files[RiftShare.FILE].content)
+        expect(full.pending).toBeUndefined()
+        expect(full.session.id).toBe(session.id)
+      }).pipe(Effect.provide(layer(client)))
+    }),
+  )
+
+  it.live("pressing share twice while the first is still creating makes one gist, not two", () =>
+    provideTmpdirInstance(() => {
+      const posts: HttpClientRequest.HttpClientRequest[] = []
+      const client = HttpClient.make((req) => {
+        if (req.method === "POST") posts.push(req)
+        // GitHub is slow to create gists; the second press lands while the first is in flight.
+        return Effect.succeed(json(req, { id: GIST }, 201)).pipe(Effect.delay(req.method === "POST" ? "200 millis" : "0 millis"))
+      })
+      return Effect.gen(function* () {
+        const session = yield* newSession("test")
+        const share = yield* ShareNext.Service
+
+        const [first, second] = yield* Effect.all([share.create(session.id), share.create(session.id)], {
+          concurrency: "unbounded",
+        })
+
+        expect(second.url).toBe(first.url)
+        expect(posts).toHaveLength(1)
       }).pipe(Effect.provide(layer(client)))
     }),
   )
@@ -186,6 +242,77 @@ describe("ShareNext", () => {
     }),
   )
 
+  it.live("a token GitHub rejects is dropped, so signing in again works without a restart", () =>
+    provideTmpdirInstance(() => {
+      let forgotten = 0
+      const stale = Layer.succeed(
+        GitHubToken.Service,
+        GitHubToken.Service.of({
+          get: () => Effect.succeed("ghp_revoked"),
+          forget: () =>
+            Effect.sync(() => {
+              forgotten++
+            }),
+        }),
+      )
+      const client = HttpClient.make((req) => Effect.succeed(json(req, { message: "Bad credentials" }, 401)))
+      return Effect.gen(function* () {
+        const session = yield* newSession("test")
+        const share = yield* ShareNext.Service
+
+        yield* Effect.exit(share.create(session.id))
+
+        expect(forgotten).toBe(1)
+      }).pipe(Effect.provide(layer(client, stale)))
+    }),
+  )
+
+  it.live(
+    "a GitHub request that never answers fails with a clear message instead of hanging",
+    () =>
+      provideTmpdirInstance(() => {
+        const client = HttpClient.make(() => Effect.never)
+        return Effect.gen(function* () {
+          const session = yield* newSession("test")
+          const share = yield* ShareNext.Service
+
+          const exit = yield* Effect.exit(share.create(session.id))
+
+          expect(Exit.isFailure(exit)).toBe(true)
+          expect(String(exit)).toContain("didn't answer in time")
+          expect(yield* row(session.id)).toBeUndefined()
+        }).pipe(Effect.provide(layer(client)))
+      }),
+    // The request limit is the behaviour under test, and it is longer than bun's default timeout.
+    30_000,
+  )
+
+  it.live(
+    "unshare still finishes when GitHub deleted the gist but the answer got lost",
+    () =>
+      provideTmpdirInstance(() => {
+        let deletes = 0
+        const client = HttpClient.make((req) => {
+          if (req.method === "POST") return Effect.succeed(json(req, { id: GIST }, 201))
+          if (req.method !== "DELETE") return Effect.succeed(json(req, { id: GIST }))
+          deletes++
+          // The first delete lands on GitHub but its answer never arrives; the retry sees it gone.
+          return deletes === 1 ? Effect.never : Effect.succeed(json(req, { message: "Not Found" }, 404))
+        })
+        return Effect.gen(function* () {
+          const session = yield* newSession("test")
+          const share = yield* ShareNext.Service
+
+          yield* share.create(session.id)
+          yield* share.remove(session.id)
+
+          expect(deletes).toBe(2)
+          expect(yield* row(session.id)).toBeUndefined()
+        }).pipe(Effect.provide(layer(client)))
+      }),
+    30_000,
+  )
+
   it.live("create fails on a GitHub error and does not persist a share", () =>
     provideTmpdirInstance(() => {
       const client = HttpClient.make((req) => Effect.succeed(json(req, { message: "Bad credentials" }, 401)))
@@ -260,6 +387,20 @@ describe("ShareNext", () => {
         const out = yield* share.download(GIST)
 
         expect(out?.info.id).toBe("ses_shared")
+      }).pipe(Effect.provide(layer(client)))
+    }),
+  )
+
+  it.live("download says a share is still uploading instead of calling it not a RIFT share", () =>
+    provideTmpdirInstance(() => {
+      const pending = RiftShare.placeholder({ id: "ses_p", title: "p", time: { created: 1, updated: 1 } } as never)
+      const client = HttpClient.make((req) =>
+        Effect.succeed(json(req, { id: GIST, files: { [RiftShare.FILE]: { content: JSON.stringify(pending) } } })),
+      )
+      return Effect.gen(function* () {
+        const share = yield* ShareNext.Service
+        const exit = yield* Effect.exit(share.download(GIST))
+        expect(String(exit)).toContain("still uploading")
       }).pipe(Effect.provide(layer(client)))
     }),
   )
