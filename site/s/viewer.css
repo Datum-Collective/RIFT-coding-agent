@@ -221,7 +221,7 @@ a:hover {
   font-size: 13px;
 }
 
-.meta span + span::before {
+.meta > span + span::before {
   content: "·";
   margin: 0 8px;
 }
@@ -475,6 +475,11 @@ details.call > summary:hover {
 details.call > summary .stat {
   margin-left: auto;
   margin-right: 10px;
+}
+
+/* The stat already takes the free space; the chevron sits right after it. */
+details.call > summary:has(.stat)::after {
+  margin-left: 0;
 }
 
 .thinking > summary {
