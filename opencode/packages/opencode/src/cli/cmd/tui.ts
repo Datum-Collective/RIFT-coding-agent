@@ -192,7 +192,6 @@ export const TuiThreadCommand = cmd({
 
     const unguard = win32InstallCtrlCGuard()
     try {
-      const { TuiConfig } = await import("@/config/tui")
       if (args.fork && !args.continue && !args.session) {
         UI.error("--fork requires --continue or --session")
         process.exitCode = 1
@@ -211,6 +210,8 @@ export const TuiThreadCommand = cmd({
       }
       const cwd = Filesystem.resolve(process.cwd())
 
+      // The worker boots the engine on its own thread. Start it before anything else is imported so
+      // that work overlaps with loading the TUI modules on this one.
       const worker = new Worker(file, {
         env: Object.fromEntries(
           Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
@@ -230,6 +231,13 @@ export const TuiThreadCommand = cmd({
         await withTimeout(client.call("shutdown", undefined), 5000).catch(() => {})
         worker.terminate()
       }
+
+      const [{ TuiConfig }, { Effect }, { run }, { createLegacyTuiPluginHost }] = await Promise.all([
+        import("@/config/tui"),
+        import("effect"),
+        import("../tui/layer"),
+        import("@/plugin/tui/runtime"),
+      ])
 
       const prompt = await input(args.prompt)
       const config = await TuiConfig.get()
@@ -271,9 +279,6 @@ export const TuiThreadCommand = cmd({
       }, 1000).unref?.()
 
       try {
-        const { Effect } = await import("effect")
-        const { run } = await import("../tui/layer")
-        const { createLegacyTuiPluginHost } = await import("@/plugin/tui/runtime")
         await Effect.runPromise(
           run({
             url: transport.url,

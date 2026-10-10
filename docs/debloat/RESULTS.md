@@ -60,3 +60,40 @@ fallout, the failures left are the ones already failing on the untouched baselin
 `test/cli/run/run-process.test.ts` and 3 in `attention.test.ts`. `packages/tui`: 264 pass.
 Test harness change: child processes now get `--preload @opentui/solid/preload`, because the
 removed React-based packages had been satisfying a JSX runtime fallback by accident.
+
+## Phase 2: lazy startup
+
+| Metric | Before (Phase 1) | After | Target |
+|---|---|---|---|
+| `--version` wall time | 0.42 s | 0.03 s (0.03 to 0.04) | < 0.1 s, met |
+| `--version` max RSS | 172 MB | 34.7 MB | < 60 MB, met |
+| TUI first paint (pty, >3 KB of output) | 1.10 to 1.20 s | 1.08 to 1.18 s | < 0.3 s, **not met** |
+| `rift run "reply with pong"` | 3.9 s | 3.9 s | n/a |
+| Binary | 105.5 MB | 105.5 MB | |
+
+What changed:
+
+- `src/cli/commands.ts` is a table of command name, aliases, description and a loader.
+  `src/index.ts` imports only the selected command; the others are registered as description-only
+  stubs so `--help` is unchanged (help snapshots pass). `commands.test.ts` checks every stub
+  against the real module so the two cannot drift.
+- `--version` and `-v` print the release without loading yargs commands, Effect or the engine.
+- TUI: the worker is started before the TUI modules are imported, so the engine boots while the
+  main thread loads the UI; `AppNodeBuilder` (which imports every engine service) is no longer
+  pulled in for `TuiConfig` and the TUI layer.
+
+What was tried and rejected:
+
+- `bytecode: true` in the Bun compile: first paint 0.80 s, but the binary grows from 105 MB to
+  280 MB. It works against the size target, so it was reverted.
+
+Why first paint stays near 1 s: a trace of the compiled binary shows 0.21 s before the command
+handler runs, about 0.5 s loading the config, plugin and TUI module graph (including the OpenTUI
+native library load), and about 0.3 s for the first render and data sync. The remaining cost is
+module evaluation of the TUI and its dependencies, which only shrinks with fewer or lazier modules
+(Phase 3 removes dependencies) or bytecode. Not claimed as met.
+
+Not done: lazy loading of LSP, MCP, share, video and browser inside the engine. They are already
+initialised lazily by their own services ("all LSPs are disabled" appears at bootstrap, share and
+video do nothing until used); I did not find a measurable cost to remove in the `rift run` trace,
+so I left the engine bootstrap alone rather than change behaviour for no measured gain.
