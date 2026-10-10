@@ -5,12 +5,12 @@ import { define, inventory } from "./event"
 import { SessionID } from "./session-id"
 
 export const Info = Schema.Struct({
-  content: Schema.String.annotate({ description: "Brief description of the task" }),
+  content: Schema.String.annotate({ description: "What to do" }),
   status: Schema.String.annotate({
-    description: "Current status of the task: pending, in_progress, completed, cancelled",
+    description: "pending, in_progress, completed or cancelled",
   }),
   priority: Schema.String.annotate({
-    description: "Priority level of the task: high, medium, low",
+    description: "high, medium or low",
   }),
 }).annotate({ identifier: "Todo" })
 export interface Info extends Schema.Schema.Type<typeof Info> {}

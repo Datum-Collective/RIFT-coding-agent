@@ -73,21 +73,13 @@ describe("tool.registry", () => {
     }),
   )
 
-  it.instance("does not expose execute unless code mode is enabled", () =>
+  it.instance("folds browser_open into the browser tool", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
       const ids = yield* registry.ids()
 
-      expect(ids).not.toContain("execute")
-    }),
-  )
-
-  it.instance("exposes browser_open", () =>
-    Effect.gen(function* () {
-      const registry = yield* ToolRegistry.Service
-      const ids = yield* registry.ids()
-
-      expect(ids).toContain("browser_open")
+      expect(ids).toContain("browser")
+      expect(ids).not.toContain("browser_open")
     }),
   )
 

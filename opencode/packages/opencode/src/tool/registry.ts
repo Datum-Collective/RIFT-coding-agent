@@ -15,7 +15,6 @@ import { TodoWriteTool } from "./todo"
 import { GraphWriteTool } from "./graph"
 import { WebFetchTool } from "./webfetch"
 import { BrowserTool } from "./browser"
-import { BrowserOpenTool } from "./browser_open"
 import { WriteTool } from "./write"
 import { InvalidTool } from "./invalid"
 import { SkillTool } from "./skill"
@@ -111,7 +110,6 @@ const layer = Layer.effect(
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
-    const browseropen = yield* BrowserOpenTool
     const browser = yield* BrowserTool
     const websearch = yield* WebSearchTool
     const shell = yield* ShellTool
@@ -221,7 +219,6 @@ const layer = Layer.effect(
           write: Tool.init(writetool),
           task: Tool.init(task),
           fetch: Tool.init(webfetch),
-          browseropen: Tool.init(browseropen),
           browser: Tool.init(browser),
           todo: Tool.init(todo),
           graph: Tool.init(graph),
@@ -246,7 +243,6 @@ const layer = Layer.effect(
             tool.write,
             tool.task,
             tool.fetch,
-            tool.browseropen,
             tool.browser,
             tool.todo,
             tool.graph,

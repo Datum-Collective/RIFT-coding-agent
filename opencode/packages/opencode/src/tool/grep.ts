@@ -8,12 +8,12 @@ import DESCRIPTION from "./grep.txt"
 import * as Tool from "./tool"
 
 export const Parameters = Schema.Struct({
-  pattern: Schema.String.annotate({ description: "The regex pattern to search for in file contents" }),
+  pattern: Schema.String.annotate({ description: "Regex to search for" }),
   path: Schema.optional(Schema.String).annotate({
-    description: "The directory to search in. Defaults to the current working directory.",
+    description: "Directory to search; defaults to the working directory",
   }),
   include: Schema.optional(Schema.String).annotate({
-    description: 'File pattern to include in the search (e.g. "*.js", "*.{ts,tsx}")',
+    description: 'Files to include, e.g. "*.{ts,tsx}"',
   }),
 })
 

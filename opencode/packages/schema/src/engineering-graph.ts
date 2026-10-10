@@ -38,17 +38,17 @@ export const Check = Schema.Struct({
 export interface Check extends Schema.Schema.Type<typeof Check> {}
 
 export const Info = Schema.Struct({
-  id: Schema.String.annotate({ description: "Stable id for this node, e.g. 'auth.api'" }),
+  id: Schema.String.annotate({ description: "Stable id, e.g. 'auth.api'" }),
   parent_id: optional(Schema.String).annotate({
-    description: "Id of the parent node. Omit only for the single root ('Product') node.",
+    description: "Parent id; omit only for the root",
   }),
-  title: Schema.String.annotate({ description: "Short human-readable name for this node" }),
+  title: Schema.String.annotate({ description: "Short name" }),
   status: Status,
   owner: Schema.String.annotate({ description: "Agent that owns this node" }),
-  dependencies: Schema.Array(Schema.String).annotate({ description: "Ids of nodes this node depends on" }),
-  files: Schema.Array(Schema.String).annotate({ description: "Files that implement this node" }),
-  checks: Schema.Array(Check).annotate({ description: "How RIFT should prove this node works" }),
-  decisions: Schema.Array(Schema.String).annotate({ description: "Key decisions made for this node" }),
+  dependencies: Schema.Array(Schema.String).annotate({ description: "Ids this node depends on" }),
+  files: Schema.Array(Schema.String).annotate({ description: "Implementing files" }),
+  checks: Schema.Array(Check).annotate({ description: "How RIFT proves this node" }),
+  decisions: Schema.Array(Schema.String).annotate({ description: "Key decisions" }),
 }).annotate({ identifier: "EngineeringGraphNode" })
 export interface Info extends Schema.Schema.Type<typeof Info> {}
 

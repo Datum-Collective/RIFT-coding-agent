@@ -7,7 +7,7 @@ import type { Command } from "effect/unstable/process/ChildProcess"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Agent } from "../../src/agent/agent"
 import { Truncate } from "@/tool/truncate"
-import { BrowserOpenTool } from "../../src/tool/browser_open"
+import { BrowserTool } from "../../src/tool/browser"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { Tool } from "@/tool/tool"
 import { testEffect } from "../lib/effect"
@@ -61,27 +61,18 @@ const ctx = {
   ask: () => Effect.void,
 }
 
-const exec = Effect.fn("BrowserOpenToolTest.exec")(function* (args: Tool.InferParameters<typeof BrowserOpenTool>) {
-  const info = yield* BrowserOpenTool
+const exec = Effect.fn("BrowserExternalToolTest.exec")(function* (args: Tool.InferParameters<typeof BrowserTool>) {
+  const info = yield* BrowserTool
   const tool = yield* info.init()
   return yield* tool.execute(args, ctx)
 })
 
-describe("tool.browser_open", () => {
-  it.effect("registers with the browser_open id", () =>
-    provideTmpdirInstance(() =>
-      Effect.gen(function* () {
-        const info = yield* BrowserOpenTool
-        expect(info.id).toBe("browser_open")
-      }),
-    ),
-  )
-
+describe("tool.browser external", () => {
   it.effect("opens https urls with the platform launcher", () =>
     provideTmpdirInstance(() =>
       Effect.gen(function* () {
         spawned.length = 0
-        const result = yield* exec({ url: "https://example.com" })
+        const result = yield* exec({ action: "external", url: "https://example.com" })
         expect(result.output).toBe("Opened https://example.com in the default browser.")
         expect(spawned.length).toBe(1)
         if (process.platform === "darwin") {
@@ -99,7 +90,7 @@ describe("tool.browser_open", () => {
     provideTmpdirInstance(() =>
       Effect.gen(function* () {
         spawned.length = 0
-        const result = yield* exec({ url: "http://example.com" })
+        const result = yield* exec({ action: "external", url: "http://example.com" })
         expect(result.output).toBe("Opened https://example.com in the default browser.")
         expect(spawned).toEqual([
           {
@@ -118,7 +109,7 @@ describe("tool.browser_open", () => {
     provideTmpdirInstance(() =>
       Effect.gen(function* () {
         spawned.length = 0
-        const exit = yield* exec({ url: "ftp://example.com" }).pipe(Effect.exit)
+        const exit = yield* exec({ action: "external", url: "ftp://example.com" }).pipe(Effect.exit)
         expect(Exit.isFailure(exit)).toBe(true)
         if (Exit.isFailure(exit)) {
           expect(Cause.prettyErrors(exit.cause).join("\n")).toContain("URL must start with http:// or https://")
@@ -128,3 +119,4 @@ describe("tool.browser_open", () => {
     ),
   )
 })
+

@@ -4,7 +4,7 @@ import DESCRIPTION_WRITE from "./todowrite.txt"
 import { Todo } from "../session/todo"
 
 export const Parameters = Schema.Struct({
-  todos: Schema.mutable(Schema.Array(Todo.Info)).annotate({ description: "The updated todo list" }),
+  todos: Schema.mutable(Schema.Array(Todo.Info)).annotate({ description: "The full todo list" }),
 })
 
 type Metadata = {

@@ -84,32 +84,18 @@ const it = testEffect(
 )
 
 describe("session.system", () => {
-  test("selects the Meta prompt for Muse Spark model IDs", () => {
-    for (const id of ["meta/muse-spark-preview", "muse-spark-1.1", "muse-spark-1.2"]) {
-      const prompt = SystemPrompt.provider({ api: { id } } as Provider.Model)[0]
-      expect(prompt).toContain("powered by Muse Spark,")
-      expect(prompt).toContain("using Meta Muse Spark.")
-      expect(prompt).not.toContain("{{MODEL_NAME}}")
+  test("uses one compact prompt for every model family", () => {
+    const ids = ["claude-opus-5", "gpt-5.5", "gpt-5.3-codex", "gemini-3.5-flash", "muse-spark-1.2", "kimi-k3", "trinity-large"]
+    const prompts = ids.map((id) => SystemPrompt.provider({ providerID: "test", api: { id } } as Provider.Model))
+    for (const prompt of prompts) {
+      expect(prompt).toHaveLength(1)
+      expect(prompt[0]).toBe(prompts[0][0])
     }
+    // The old per-family prompts were 7 to 15 KB each.
+    expect(prompts[0][0].length).toBeLessThan(3000)
   })
 
-  test("selects the Meta prompt for Muse Glimmer model IDs", () => {
-    for (const id of ["meta/muse-glimmer", "meta/muse-glimmer-30b", "muse-glimmer-30b"]) {
-      const prompt = SystemPrompt.provider({ api: { id } } as Provider.Model)[0]
-      expect(prompt).toContain("powered by Muse Glimmer,")
-      expect(prompt).toContain("using Meta Muse Glimmer.")
-      expect(prompt).not.toContain("{{MODEL_NAME}}")
-    }
-  })
-
-  test("selects the Kimi prompt for official provider model IDs", () => {
-    for (const providerID of ["kimi-for-coding", "moonshotai", "moonshotai-cn"]) {
-      const prompt = SystemPrompt.provider({ providerID, api: { id: "k3" } } as Provider.Model)[0]
-      expect(prompt).toContain("# Prompt and Tool Use")
-    }
-  })
-
-  it.effect("skills output is sorted by name and stable across calls", () =>
+  it.effect("skills output lists names only, sorted, and is stable across calls", () =>
     Effect.gen(function* () {
       const prompt = yield* SystemPrompt.Service
       const first = yield* prompt.skills(build)
@@ -118,9 +104,9 @@ describe("session.system", () => {
 
       expect(first).toBe(second)
 
-      const alpha = output.indexOf("<name>alpha-skill</name>")
-      const middle = output.indexOf("<name>middle-skill</name>")
-      const zeta = output.indexOf("<name>zeta-skill</name>")
+      const alpha = output.indexOf("alpha-skill")
+      const middle = output.indexOf("middle-skill")
+      const zeta = output.indexOf("zeta-skill")
 
       expect(alpha).toBeGreaterThan(-1)
       expect(middle).toBeGreaterThan(alpha)

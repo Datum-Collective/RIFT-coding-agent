@@ -7,7 +7,7 @@ const Node = Schema.Struct({
   id: EngineeringGraph.Info.fields.id,
   // Models often send null for the root's parent rather than leaving it out.
   parent_id: Schema.optional(Schema.NullOr(Schema.String)).annotate({
-    description: "Id of the parent node. Omit or null only for the single root ('Product') node.",
+    description: "Parent id; omit only for the root",
   }),
   title: EngineeringGraph.Info.fields.title,
   status: EngineeringGraph.Info.fields.status,
@@ -18,7 +18,7 @@ const Node = Schema.Struct({
 })
 
 export const Parameters = Schema.Struct({
-  nodes: Schema.mutable(Schema.Array(Node)).annotate({ description: "The updated engineering graph node list" }),
+  nodes: Schema.mutable(Schema.Array(Node)).annotate({ description: "The full node list" }),
 })
 
 type Metadata = {

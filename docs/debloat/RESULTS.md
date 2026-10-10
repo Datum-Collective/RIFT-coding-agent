@@ -150,3 +150,53 @@ those providers are gone.
 Tests: `packages/opencode` 3333 pass, 12 fail (the same 12 that fail on the untouched baseline:
 9 run-process timeouts and 3 attention-sound tests). `packages/core` 957 pass, `packages/llm` 298
 pass. Tests for removed providers were deleted with them.
+
+## Phase 4: prompt diet
+
+Measured with `bun script/prompt-tokens.ts opencode/space-bunny-free` (o200k tokenizer, hermetic
+home with no user skills), first request of `rift run`.
+
+| Metric | Before | After | Target |
+|---|---|---|---|
+| System prompt | 2,148 tokens | 415 | |
+| Tool definitions | 6,576 tokens (14 tools) | 2,550 (13 tools) | |
+| **Fixed total** | **8,724** | **2,966** | < 3,000, met (hermetic) |
+| Binary | 98.6 MB | 98.5 MB | |
+
+What changed:
+
+- One system prompt (`session/prompt/rift.txt`, 1.9 KB) replaces the ten model-specific prompts
+  (7 to 15 KB each). No per-family addendum was kept: nothing here could test a prompt against each
+  model family, and the behaviours that differ by family (apply_patch for GPT, edit and write for
+  others) are handled by the tool layer, which is unchanged. If a family regresses, the place to add
+  a short addendum is `SystemPrompt.provider`.
+- Every tool description rewritten to the behaviour that matters. Parameter descriptions shortened;
+  parameter names, types and required fields are unchanged (the schema wire-shape snapshots only
+  differ in description strings).
+- `browser_open` is folded into `browser` as the `external` action (opens the user's own browser).
+  Same permission (`browser_open`), same URL rules, same spawn. One tool fewer in every request.
+- Skills: the prompt lists names only, capped at 40 with an "and N more" suffix; the body loads
+  through the skill tool. The built-in `customize-opencode` skill and its 4 KB body are gone.
+- Plan-mode and build-switch reminders shortened; title prompt cut from 2.1 KB to 0.6 KB.
+- The graph paragraph in the environment block is one sentence instead of a paragraph; the
+  `graphwrite` tool description carries the rules.
+
+Not changed:
+
+- `invalid` tool: it is already excluded from the tool list sent to the model (it only receives
+  repaired calls), so removing it saves no tokens and it stays.
+- Plan enter/exit tools: gated behind `experimentalPlanMode`, not sent by default.
+
+Caveats:
+
+- With a real skills directory the number is higher: 40 names add roughly 200 tokens, so a user with
+  50 or more skills sees about 3.2k. MCP tool schemas are on top of this and are Phase 5.
+- Tokens are counted with a GPT-family tokenizer; the free models' own tokenizers will differ
+  somewhat.
+- Request guard snapshots are unchanged. A live `rift run` (pong, and a tool call that listed a
+  directory) works against Zen with the new prompt, and the opt-in smoke test passes.
+- `test/guard/prompt-budget.test.ts` fails if the system prompt or tool definitions grow past the
+  budget.
+
+Tests: `packages/opencode` 3328 pass, 13 fail: the same 12 as baseline, plus one smoke test
+(`providers list`) that timed out under load in the full run and passes alone.

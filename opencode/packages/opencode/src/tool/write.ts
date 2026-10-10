@@ -18,9 +18,9 @@ import * as Bom from "@/util/bom"
 const MAX_PROJECT_DIAGNOSTICS_FILES = 5
 
 export const Parameters = Schema.Struct({
-  content: Schema.String.annotate({ description: "The content to write to the file" }),
+  content: Schema.String.annotate({ description: "File content" }),
   filePath: Schema.String.annotate({
-    description: "The absolute path to the file to write (must be absolute, not relative)",
+    description: "Absolute file path",
   }),
 })
 

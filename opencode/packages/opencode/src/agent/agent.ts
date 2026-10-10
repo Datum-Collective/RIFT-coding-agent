@@ -192,7 +192,7 @@ const layer = Layer.effect(
           },
           general: {
             name: "general",
-            description: `General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel.`,
+            description: `General-purpose agent for research and multi-step work; run several in parallel.`,
             permission: Permission.merge(
               defaults,
               Permission.fromConfig({
@@ -221,7 +221,7 @@ const layer = Layer.effect(
               }),
               user,
             ),
-            description: `Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. "src/components/**/*.tsx"), search code for keywords (eg. "API endpoints"), or answer questions about the codebase (eg. "how do API endpoints work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "very thorough" for comprehensive analysis across multiple locations and naming conventions.`,
+            description: `Fast read-only codebase explorer: find files, search code, answer questions. State the thoroughness: quick, medium or very thorough.`,
             prompt: PROMPT_EXPLORE,
             options: {},
             mode: "subagent",

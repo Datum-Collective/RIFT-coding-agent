@@ -45,13 +45,13 @@ function lock(filePath: string) {
 }
 
 export const Parameters = Schema.Struct({
-  filePath: Schema.String.annotate({ description: "The absolute path to the file to modify" }),
-  oldString: Schema.String.annotate({ description: "The text to replace" }),
+  filePath: Schema.String.annotate({ description: "Absolute file path" }),
+  oldString: Schema.String.annotate({ description: "Exact text to replace" }),
   newString: Schema.String.annotate({
-    description: "The text to replace it with (must be different from oldString)",
+    description: "Replacement text",
   }),
   replaceAll: Schema.optional(Schema.Boolean).annotate({
-    description: "Replace all occurrences of oldString (default false)",
+    description: "Replace every occurrence",
   }),
 })
 
