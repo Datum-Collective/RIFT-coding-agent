@@ -14,6 +14,7 @@ export type Captured = {
 }
 
 const root = path.resolve(import.meta.dir, "../..")
+const solidPreload = Bun.fileURLToPath(import.meta.resolve("@opentui/solid/preload"))
 export const fixtureModels = path.join(import.meta.dir, "fixtures", "models.json")
 
 export async function capture(input: {
@@ -57,7 +58,7 @@ export async function capture(input: {
   writeFileSync(path.join(project, "README.md"), "# capture\n")
   try {
     const proc = Bun.spawn(
-      ["bun", "run", input.entry ?? path.join(root, "src/index.ts"), ...(input.args ?? []), "run", "--model", input.model, input.prompt ?? "reply with pong"],
+      ["bun", "run", "--preload", solidPreload, input.entry ?? path.join(root, "src/index.ts"), ...(input.args ?? []), "run", "--model", input.model, input.prompt ?? "reply with pong"],
       {
         cwd: project,
         stdout: "pipe",

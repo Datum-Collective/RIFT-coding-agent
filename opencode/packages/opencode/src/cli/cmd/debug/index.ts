@@ -5,32 +5,12 @@ import os from "os"
 import { Duration, Effect } from "effect"
 import { effectCmd } from "../../effect-cmd"
 import { cmd } from "../cmd"
-import { ConfigCommand } from "./config"
-import { FileCommand } from "./file"
-import { LSPCommand } from "./lsp"
-import { RipgrepCommand } from "./ripgrep"
-import { ScrapCommand } from "./scrap"
-import { SkillCommand } from "./skill"
-import { SnapshotCommand } from "./snapshot"
-import { AgentCommand } from "./agent"
-import { StartupCommand } from "./startup"
-import { V2Command } from "./v2"
 
 export const DebugCommand = cmd({
   command: "debug",
-  describe: "debugging and troubleshooting tools",
+  describe: "version and path information",
   builder: (yargs) =>
     yargs
-      .command(ConfigCommand)
-      .command(LSPCommand)
-      .command(RipgrepCommand)
-      .command(FileCommand)
-      .command(ScrapCommand)
-      .command(SkillCommand)
-      .command(SnapshotCommand)
-      .command(StartupCommand)
-      .command(AgentCommand)
-      .command(V2Command)
       .command(InfoCommand)
       .command(PathsCommand)
       .command(WaitCommand)

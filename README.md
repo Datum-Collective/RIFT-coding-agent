@@ -292,7 +292,7 @@ off everywhere.
 Coming from OpenCode? Your existing `opencode.json`, auth and sessions keep working — RIFT reads
 both names and leaves your old directory where it is.
 
-Full reference: [configuration docs](opencode/packages/web/src/content/docs/config.mdx).
+Full reference: the config schema in [opencode/packages/core/src/v1/config/config.ts](opencode/packages/core/src/v1/config/config.ts).
 
 ## FAQ
 
