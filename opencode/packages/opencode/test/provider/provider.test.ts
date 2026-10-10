@@ -1326,52 +1326,8 @@ it.instance(
   },
 )
 
-it.instance(
-  "hosted nvidia provider adds billing origin header",
-  Effect.gen(function* () {
-    const providers = yield* list
-    expect(providers[ProviderV2.ID.make("nvidia")].options.headers).toEqual({
-      "HTTP-Referer": "https://opencode.ai/",
-      "X-Title": "opencode",
-      "X-BILLING-INVOKE-ORIGIN": "OpenCode",
-    })
-  }),
-  { config: { provider: { nvidia: { options: { apiKey: "test-api-key" } } } } },
-)
 
-it.instance(
-  "custom nvidia baseURL adds billing origin header",
-  Effect.gen(function* () {
-    const providers = yield* list
-    expect(providers[ProviderV2.ID.make("nvidia")].options.headers).toEqual({
-      "HTTP-Referer": "https://opencode.ai/",
-      "X-Title": "opencode",
-      "X-BILLING-INVOKE-ORIGIN": "OpenCode",
-    })
-  }),
-  { config: { provider: { nvidia: { options: { apiKey: "test-api-key", baseURL: "http://localhost:8000/v1" } } } } },
-)
 
-it.instance(
-  "explicit nvidia billing origin header is preserved",
-  Effect.gen(function* () {
-    const providers = yield* list
-    expect(providers[ProviderV2.ID.make("nvidia")].options.headers["X-BILLING-INVOKE-ORIGIN"]).toBe("CustomOrigin")
-  }),
-  {
-    config: {
-      provider: {
-        nvidia: {
-          options: {
-            apiKey: "test-api-key",
-            baseURL: "http://localhost:8000/v1",
-            headers: { "X-BILLING-INVOKE-ORIGIN": "CustomOrigin" },
-          },
-        },
-      },
-    },
-  },
-)
 
 it.instance(
   "custom model inherits npm package from models.dev provider config",
@@ -1912,79 +1868,10 @@ it.instance(
   },
 )
 
-it.instance("Google Vertex: uses REP endpoint for Claude continental multi-regions", () =>
-  Effect.gen(function* () {
-    yield* set("GOOGLE_CLOUD_PROJECT", "test-project")
-    yield* set("VERTEX_LOCATION", "eu")
-    const provider = yield* Provider.Service
-    const model = yield* provider.getModel(
-      ProviderV2.ID.make("google-vertex"),
-      ModelV2.ID.make("claude-sonnet-4-6@default"),
-    )
-    const language = yield* provider.getLanguage(model)
-    expect(languageBaseURL(language)).toBe(
-      "https://aiplatform.eu.rep.googleapis.com/v1/projects/test-project/locations/eu/publishers/anthropic/models",
-    )
-  }),
-)
 
-it.instance("Google Vertex Anthropic: uses REP endpoint for continental multi-regions", () =>
-  Effect.gen(function* () {
-    yield* set("GOOGLE_CLOUD_PROJECT", "test-project")
-    yield* set("VERTEX_LOCATION", "us")
-    const provider = yield* Provider.Service
-    const model = yield* provider.getModel(
-      ProviderV2.ID.make("google-vertex-anthropic"),
-      ModelV2.ID.make("claude-sonnet-4-6@default"),
-    )
-    const language = yield* provider.getLanguage(model)
-    expect(languageBaseURL(language)).toBe(
-      "https://aiplatform.us.rep.googleapis.com/v1/projects/test-project/locations/us/publishers/anthropic/models",
-    )
-  }),
-)
 
-it.instance("Google Vertex: keeps regional Claude endpoints unchanged", () =>
-  Effect.gen(function* () {
-    yield* set("GOOGLE_CLOUD_PROJECT", "test-project")
-    yield* set("VERTEX_LOCATION", "europe-west1")
-    const provider = yield* Provider.Service
-    const model = yield* provider.getModel(
-      ProviderV2.ID.make("google-vertex"),
-      ModelV2.ID.make("claude-sonnet-4-6@default"),
-    )
-    const language = yield* provider.getLanguage(model)
-    expect(languageBaseURL(language)).toBe(
-      "https://europe-west1-aiplatform.googleapis.com/v1/projects/test-project/locations/europe-west1/publishers/anthropic/models",
-    )
-  }),
-)
 
-it.instance("Google Vertex: uses REP endpoint for Gemini continental multi-regions", () =>
-  Effect.gen(function* () {
-    yield* set("GOOGLE_CLOUD_PROJECT", "test-project")
-    yield* set("VERTEX_LOCATION", "eu")
-    const provider = yield* Provider.Service
-    const model = yield* provider.getModel(ProviderV2.ID.make("google-vertex"), ModelV2.ID.make("gemini-3.5-flash"))
-    const language = yield* provider.getLanguage(model)
-    expect(languageBaseURL(language)).toBe(
-      "https://aiplatform.eu.rep.googleapis.com/v1beta1/projects/test-project/locations/eu/publishers/google",
-    )
-  }),
-)
 
-it.instance("Google Vertex: keeps regional Gemini endpoints unchanged", () =>
-  Effect.gen(function* () {
-    yield* set("GOOGLE_CLOUD_PROJECT", "test-project")
-    yield* set("VERTEX_LOCATION", "europe-west1")
-    const provider = yield* Provider.Service
-    const model = yield* provider.getModel(ProviderV2.ID.make("google-vertex"), ModelV2.ID.make("gemini-3.5-flash"))
-    const language = yield* provider.getLanguage(model)
-    expect(languageBaseURL(language)).toBe(
-      "https://europe-west1-aiplatform.googleapis.com/v1beta1/projects/test-project/locations/europe-west1/publishers/google",
-    )
-  }),
-)
 
 it.instance("cloudflare-ai-gateway loads with env variables", () =>
   Effect.gen(function* () {

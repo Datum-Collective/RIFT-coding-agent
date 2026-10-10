@@ -385,8 +385,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     })
   }
 
-  if (flags.experimentalCodeMode) return tools
-
   for (const [key, entry] of Object.entries(yield* mcp.tools())) {
     const item = McpCatalog.convertTool(entry.def, entry.client, entry.timeout)
     const execute = item.execute
@@ -579,18 +577,15 @@ export const definitions = Effect.fn("SessionTools.definitions")(function* (inpu
     })
   }
 
-  if (!flags.experimentalCodeMode) {
-    for (const [key, entry] of Object.entries(yield* mcp.tools())) {
-      const converted = McpCatalog.convertTool(entry.def, entry.client, entry.timeout)
-      const schema = yield* Effect.promise(() => Promise.resolve(asSchema(converted.inputSchema).jsonSchema))
-      const transformed = ProviderTransform.schema(input.model, { ...schema, properties: schema.properties ?? {} })
-      tools[key] = tool({
-        description: converted.description,
-        inputSchema: jsonSchema(transformed),
-      })
-    }
+  for (const [key, entry] of Object.entries(yield* mcp.tools())) {
+    const converted = McpCatalog.convertTool(entry.def, entry.client, entry.timeout)
+    const schema = yield* Effect.promise(() => Promise.resolve(asSchema(converted.inputSchema).jsonSchema))
+    const transformed = ProviderTransform.schema(input.model, { ...schema, properties: schema.properties ?? {} })
+    tools[key] = tool({
+      description: converted.description,
+      inputSchema: jsonSchema(transformed),
+    })
   }
-
   return tools
 })
 

@@ -97,3 +97,56 @@ Not done: lazy loading of LSP, MCP, share, video and browser inside the engine. 
 initialised lazily by their own services ("all LSPs are disabled" appears at bootstrap, share and
 video do nothing until used); I did not find a measurable cost to remove in the `rift run` trace,
 so I left the engine bootstrap alone rather than change behaviour for no measured gain.
+
+## Phase 3: trim providers and dependencies
+
+| Metric | Before (Phase 2) | After |
+|---|---|---|
+| Binary | 105.5 MB | 98.6 MB (98,616,674 bytes) |
+| JS bundled from inputs (`bundle-report`) | 28.0 MB at baseline, ~23 MB after Phase 1 | 17.1 MB |
+| `--version` | 0.03 s, 34.7 MB | 0.03 s, 34 MB |
+| Shipped TS/TSX, no tests | ~173k lines | ~162k lines |
+| Fixed prompt tokens | 8,724 | 8,724 (prompt work is Phase 4) |
+| Request guard snapshots | baseline | unchanged (4 snapshots, 5 tests pass) |
+
+Removed:
+
+- Provider plugins in `core/src/plugin/provider`: alibaba, amazon-bedrock, azure (+ cognitive
+  services), cerebras, cloudflare-ai-gateway, cloudflare-workers-ai, cohere, deepinfra, gateway,
+  gitlab, google-vertex (+ anthropic), kilo, llmgateway, nvidia, perplexity, sap-ai-core,
+  snowflake-cortex, togetherai, venice, vercel, xai, zenmux.
+- Auth plugins in `opencode/src/plugin`: azure, cerebras, cloudflare, digitalocean,
+  snowflake-cortex, xai, modal, and the gitlab and poe auth packages.
+- Custom loaders and bundled-SDK entries for those providers in `provider/provider.ts`, the
+  GitLab workflow model handling in `session/llm.ts`.
+- OpenTelemetry: tracer wiring in `session/llm.ts` and `agent/agent.ts`, the trace exporter in
+  `core/src/observability/otlp.ts`, and the `@opentelemetry/*` and `@effect/opentelemetry`
+  packages. The `experimental.openTelemetry` config key is still accepted and now does nothing.
+  OTLP log export (Effect's own logger) is unchanged.
+- The `codemode` package, the `execute` tool and `OPENCODE_EXPERIMENTAL_CODE_MODE`.
+- Dependencies: 22 `@ai-sdk/*` and provider SDK packages, AWS credential providers, GitLab auth,
+  google-auth-library, ai-gateway-provider, venice, octokit (3), the ACP SDK. Lockfile shrank by
+  about 6k lines across Phases 1 and 3.
+- Patches for packages that are gone (xai, gcp-metadata, dnd-kit, pierre trees, tanstack virtual).
+
+Kept, and why:
+
+- `@ai-sdk/mistral`: one Zen model (`opencode/mistral-large-4`) declares it as its transport, so
+  removing it would change a Zen request. The transport rule is frozen.
+- `@ai-sdk/google`: used by Zen's Gemini models as well as the google provider.
+- `llm` package (including its bedrock/azure/cloudflare protocol files): frozen by the plan.
+- `bonjour-service`: still used by `--mdns` server discovery in `src/server/mdns.ts`.
+- `@ai-sdk/amazon-bedrock` and `@ai-sdk/google-vertex` as **dev** dependencies only: the
+  `transform.test.ts` suite exercises their wire format. Nothing in `src` imports them and they
+  are not in the binary.
+- `models.dev` embedded snapshot (4.8 MB of the bundle): part of the frozen models path.
+- `core` provider-option schema keys for removed providers: they are config compatibility, not code.
+
+Behaviour change to be aware of: providers that were bundled are no longer. A user who configures,
+for example, `xai` or `azure` still gets the dynamic path (the package is installed from npm on first
+use through the dynamic provider plugin), but the special-cased login flows and header tweaks for
+those providers are gone.
+
+Tests: `packages/opencode` 3333 pass, 12 fail (the same 12 that fail on the untouched baseline:
+9 run-process timeouts and 3 attention-sound tests). `packages/core` 957 pass, `packages/llm` 298
+pass. Tests for removed providers were deleted with them.
