@@ -409,6 +409,9 @@ Measured on the compiled binary, headless server, fresh instance, full models.de
 | `/provider`, first | 283, 292 ms | 301, 305 ms |
 | `/provider`, repeat | 285, 287 ms | 137, 150 ms |
 
+End to end (compiled binary, pty, time until the composer is ready, full catalogue): 2.42 to
+2.44 s before, 1.95 to 1.97 s after (warm runs; first runs 2.44 s and 2.08 s).
+
 - The model validator is built once instead of on every call (`toPublicInfo`).
 - The provider state copies a catalogue entry only when that provider is touched, instead of
   deep-cloning all 226 up front.
@@ -418,3 +421,28 @@ Measured on the compiled binary, headless server, fresh instance, full models.de
 
 Request guard snapshots unchanged; provider/guard/server tests 959 pass (the 2 failures are the
 pre-existing "opencode loader keeps paid models" tests); `packages/tui` passes.
+
+## Phase 6: shrink `rift run`
+
+`rift run` was already a plain streaming printer in `run.ts`; the 18.5k lines in `src/cli/cmd/run/`
+were a second interactive interface (`rift --mini`, split-footer mode, demo commands, replay)
+duplicating the TUI. Removed it and kept the printer.
+
+| Metric | Before | After |
+|---|---|---|
+| `src/cli/cmd/run/` | 18,531 lines (36 files) | gone; `run-print.ts` 120 lines |
+| Shipped source in `packages/opencode/src` | | 144 lines added, 18,851 removed |
+| Tests | | 9,800 lines of tests for the removed mode deleted |
+| Binary | 98.52 MB | 98.25 MB (98,253,410 bytes) |
+| `rift run` with a 5-step scripted model, compiled | 2.65 to 3.18 s | 2.67 to 2.74 s |
+| Full `packages/opencode` suite | 12 to 14 failures | 5 failures |
+
+- Removed: `rift --mini` and its flags (`--replay`, `--no-replay`, `--replay-limit`, `--demo`), and
+  `rift run --interactive`/`--mini`/`--replay`/`--replay-limit`/`--demo`.
+- Kept: `--model`, `--agent`, `--variant`, permission flags (`--auto`, `--yolo`,
+  `--dangerously-skip-permissions`), `--format json`, `--command`, `--continue`/`--session`/`--fork`,
+  `--attach`, `--file`, `--share`, `--title`, `--thinking`, piped stdin.
+- Output contract unchanged: the reply on stdout, one line (or a short block for shell output and
+  plans) per tool call on stderr, exit code non-zero on error.
+- The 9 `run-process` tests that timed out on every run since the baseline now pass. The remaining
+  5 failures (2 provider-loader, 3 attention-sound) fail the same way on the untouched baseline.
