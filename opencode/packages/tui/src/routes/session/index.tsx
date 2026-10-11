@@ -20,7 +20,7 @@ import { useRoute, useRouteData } from "../../context/route"
 import { useProject } from "../../context/project"
 import { useSync } from "../../context/sync"
 import { useEvent } from "../../context/event"
-import { EmptyBorder } from "../../ui/border"
+import { EmptyBorder, RoundedBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { Spinner, SPINNER_FRAMES } from "../../component/spinner"
 import { createSyntaxStyleMemo, generateSubtleSyntax, selectedForeground, useTheme } from "../../context/theme"
@@ -182,24 +182,36 @@ function use() {
 }
 
 /** Width of the context rail beside the transcript. */
-const RAIL_WIDTH = 36
+const RAIL_WIDTH = 42
 
-/** First line of every transcript: what this is, which model, where. Scrolls away with the work. */
+/** The top of every transcript: a small card saying what this is, which model, and where. */
 function SessionIntro() {
   const { theme } = useTheme()
-  const sync = useSync()
   const local = useLocal()
   const directory = useDirectory()
   return (
-    <box paddingTop={1} paddingBottom={1} flexShrink={0}>
-      <text fg={theme.textMuted} wrapMode="none">
-        <span style={{ fg: theme.primary, bold: true }}>◆ RIFT</span>
-        <span style={{ fg: theme.border }}> {RiftVersion}</span>
-        {"  "}
-        {local.model.parsed().model}
-        {"  "}
-        <span style={{ fg: theme.border }}>{directory()}</span>
-      </text>
+    <box paddingTop={1} paddingBottom={1} flexShrink={0} flexDirection="row">
+      <box
+        border
+        customBorderChars={RoundedBorder}
+        borderColor={theme.borderSubtle}
+        paddingLeft={1}
+        paddingRight={2}
+        flexShrink={1}
+      >
+        <text fg={theme.textMuted} wrapMode="none">
+          <span style={{ fg: theme.primary, bold: true }}>◆ RIFT</span>
+          <span style={{ fg: theme.border }}> {RiftVersion}</span>
+          <span style={{ fg: theme.textMuted }}>{"   "}the coding agent that checks its own work</span>
+        </text>
+        <text fg={theme.textMuted} wrapMode="none">
+          {"  "}
+          <span style={{ fg: theme.text }}>{local.model.parsed().model}</span>
+          <span style={{ fg: theme.border }}> {local.model.parsed().provider}</span>
+          {"   "}
+          {directory()}
+        </text>
+      </box>
     </box>
   )
 }
@@ -301,8 +313,8 @@ export function Session() {
   const [viewMode, setViewMode] = kv.signal<"task" | "log">("view_mode", "log")
   const task = useTask(() => route.sessionID)
 
-  // The rail docks beside the transcript only when both still have room to breathe.
-  const wide = createMemo(() => dimensions().width >= 140)
+  // The panel docks beside the transcript only when both still have room to breathe.
+  const wide = createMemo(() => dimensions().width >= 130)
   const sidebarVisible = createMemo(() => {
     if (session()?.parentID) return false
     if (sidebarOpen()) return true
@@ -310,7 +322,7 @@ export function Session() {
     return false
   })
   const showTimestamps = createMemo(() => timestamps() === "show")
-  const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() && wide() ? RAIL_WIDTH + 1 : 0) - 3)
+  const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() && wide() ? RAIL_WIDTH : 0) - 4)
   const providers = createMemo(() => Model.index(sync.data.provider))
 
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
@@ -1259,7 +1271,7 @@ export function Session() {
         }}
       >
         <box flexDirection="row" flexGrow={1} minHeight={0}>
-          <box flexGrow={1} minHeight={0} paddingLeft={1} paddingRight={1}>
+          <box flexGrow={1} minHeight={0} paddingLeft={2} paddingRight={2}>
             <Show when={session()}>
               <scrollbox
                 ref={(r) => (scroll = r)}
@@ -1472,7 +1484,10 @@ function UserMessage(props: {
           onMouseOver={() => setHover(true)}
           onMouseOut={() => setHover(false)}
           onMouseUp={props.onMouseUp}
-          backgroundColor={hover() ? theme.backgroundElement : undefined}
+          backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
+          paddingTop={1}
+          paddingBottom={1}
+          paddingRight={2}
         >
           <box flexDirection="row">
             <text width={2} flexShrink={0} fg={queued() ? theme.textMuted : theme.primary} attributes={TextAttributes.BOLD}>
@@ -2005,15 +2020,7 @@ function OutputBlock(props: { text: string; color?: RGBA; lines?: number }) {
   const collapsed = createMemo(() => collapseToolOutput(props.text, max(), max() * Math.max(20, ctx.width - 8)))
   const hidden = () => Math.max(0, lines().length - max())
   return (
-    <box
-      marginLeft={INLINE_TOOL_ICON_WIDTH}
-      paddingLeft={1}
-      border={["left"]}
-      borderColor={theme.border}
-      customBorderChars={{ ...EmptyBorder, vertical: "│" }}
-      flexShrink={0}
-      onMouseUp={() => collapsed().overflow && setExpanded((value) => !value)}
-    >
+    <box flexShrink={0} onMouseUp={() => collapsed().overflow && setExpanded((value) => !value)}>
       <text fg={props.color ?? theme.textMuted}>
         {expanded() || !collapsed().overflow ? props.text : collapsed().output.replace(/\n…$/, "")}
       </text>
@@ -2256,7 +2263,19 @@ function BlockTool(props: {
           {props.header}
         </text>
       </box>
-      {props.children}
+      <Show when={props.children}>
+        {/* The body sits in a soft card under its header, like a code block in a document. */}
+        <box
+          marginLeft={INLINE_TOOL_ICON_WIDTH}
+          marginTop={1}
+          backgroundColor={theme.backgroundPanel}
+          paddingLeft={1}
+          paddingRight={1}
+          flexShrink={0}
+        >
+          {props.children}
+        </box>
+      </Show>
       <Show when={error()}>
         <box paddingLeft={INLINE_TOOL_ICON_WIDTH}>
           <text fg={theme.error}>{error()}</text>
@@ -2351,7 +2370,7 @@ function DiffBody(props: { diff: string; filePath: string }) {
   const rows = createMemo(() => props.diff.split("\n").filter((line) => !/^(---|\+\+\+|Index:|=+$|diff )/.test(line)).length)
   const tall = () => rows() > DIFF_PREVIEW_ROWS
   return (
-    <box paddingLeft={INLINE_TOOL_ICON_WIDTH} flexShrink={0}>
+    <box flexShrink={0}>
       <box maxHeight={tall() && !expanded() ? DIFF_PREVIEW_ROWS : undefined} overflow="hidden">
         <diff
           diff={props.diff}
@@ -2405,7 +2424,7 @@ function Write(props: ToolProps) {
             </>
           }
         >
-          <box paddingLeft={INLINE_TOOL_ICON_WIDTH}>
+          <box>
             <line_number fg={theme.diffLineNumber} minWidth={3} paddingRight={1}>
               <code
                 conceal={false}
@@ -2702,7 +2721,7 @@ function Execute(props: ToolProps) {
     >
       <For each={calls()}>
         {(call) => (
-          <box paddingLeft={INLINE_TOOL_ICON_WIDTH}>
+          <box>
             <text fg={call.status === "error" ? theme.error : theme.textMuted}>
               {call.tool} {input(call.input ?? {})}
               {call.status === "error" ? " · failed" : ""}
@@ -2816,7 +2835,7 @@ function TodoWrite(props: ToolProps) {
             </>
           }
         >
-          <box paddingLeft={INLINE_TOOL_ICON_WIDTH}>
+          <box>
             <For each={todos()}>{(todo) => <TodoItem status={todo.status} content={todo.content} />}</For>
           </box>
         </BlockTool>
@@ -2851,7 +2870,7 @@ function Question(props: ToolProps) {
         >
           <For each={questions()}>
             {(q, i) => (
-              <box paddingLeft={INLINE_TOOL_ICON_WIDTH}>
+              <box>
                 <text fg={theme.textMuted}>{q.question}</text>
                 <text fg={theme.text}>
                   <span style={{ fg: theme.primary }}>› </span>

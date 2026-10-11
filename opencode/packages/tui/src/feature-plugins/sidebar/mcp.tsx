@@ -33,14 +33,12 @@ function View(props: { api: TuiPluginApi }) {
           <Show when={list().length > 2}>
             <text fg={theme().border}>{open() ? "▾" : "▸"}</text>
           </Show>
-          <text fg={theme().textMuted}>
-            mcp
-            <Show when={!open()}>
-              <span style={{ fg: theme().border }}>
-                {"  "}
-                {on()} on{bad() > 0 ? ` · ${bad()} failing` : ""}
-              </span>
-            </Show>
+          <text fg={theme().text}>
+            <b>MCP</b>
+            <span style={{ fg: theme().textMuted }}>
+              {"  "}
+              {on()} on{bad() > 0 ? ` · ${bad()} failing` : ""}
+            </span>
           </text>
         </box>
         <Show when={list().length <= 2 || open()}>

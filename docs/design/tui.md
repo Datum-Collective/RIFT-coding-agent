@@ -2,20 +2,26 @@
 
 The design system for the TUI. Read this before changing a screen; every component follows it.
 
+Direction (revision 2): Claude's polish (warm neutrals, soft surfaces, rounded cards, generous
+spacing, quiet typography) over OpenCode's depth (a rich side panel, framed composer, floating
+dialogs, status everywhere it helps), with RIFT's own identity: the block-art logo, the azure accent
+that comes from it, the glyph gutter and the verification-first content.
+
 ## Principles
 
 1. **The transcript is the product.** One column of work, read top to bottom like a terminal
    session. Panels, chrome and decoration only appear when they carry information.
-2. **Terminal-native.** RIFT sits on the terminal's own background and font. No painted canvas,
-   no rounded boxes around the input, no backdrop dimming. Things look like what a developer
-   already reads all day: a prompt, a `$ command`, its output, a diff.
+2. **Soft surfaces.** A warm canvas, and one step up from it a panel tone for the things you work
+   in: the composer, tool output, the side panel, dialogs. Rounded corners on cards, never on rules.
+   Content still looks like what a developer reads all day: a prompt, a `$ command`, a diff.
 3. **One glyph per kind of thing.** The left gutter tells you what a line is before you read it.
 4. **Color is information.** Neutrals for text, one accent for "this is RIFT / this is focused",
    and status colors only for status. If removing a color loses no meaning, remove it.
 5. **Dense, not cramped.** One line per tool call, blank lines only between turns and blocks.
    Long output collapses with a count; nothing scrolls the transcript sideways.
 6. **Keyboard first, mouse welcome.** Every action has a key; clicks expand and select.
-7. **Same layout everywhere.** Home is an empty session: the composer never moves.
+7. **An opening that says RIFT.** The home screen leads with the logo and tagline, then the
+   composer at the logo's width, then a welcome card (recent sessions, keys worth knowing) and a tip.
 
 ## Influences, and where RIFT differs
 
@@ -31,9 +37,12 @@ screen; the indigo accent.
 ## Layout
 
 ```
- ◆ RIFT 0.1.13 · Coder 1 · ~/proj (master)          ← intro line, scrolls with the transcript
+ ╭──────────────────────────────────────────────╮
+ │ ◆ RIFT 0.1.13   the coding agent that checks… │   ← intro card, scrolls with the transcript
+ │   Coder 1   ~/proj:master                     │
+ ╰──────────────────────────────────────────────╯
 
- ❯ fix the flaky retry test                          ← user turn
+ ❯ fix the flaky retry test                          ← user turn, on a panel band
 
    ∴ thought 1.2s · look at the retry helper          ← reasoning, collapsed
    · Explored  read src/retry.ts · grep retry( (1)    ← grouped read/grep/glob/list
@@ -48,16 +57,18 @@ screen; the indigo accent.
    ─ 1.6s · Coder 1                                   ← turn footer
 
  ⠙ Working 12s · esc to stop                          ← activity line (only while busy)
- ────────────────────────────────────────────────────
- ❯ _
-   Build · Coder 1  Fake               ~/proj  master · 9% · ? keys
+ ╭──────────────────────────────────────────────────╮
+ │ ❯ _                                              │ ← composer card
+ │   build Coder 1 Fake                             │
+ ╰──────────────────────────────────────────────────╯
+  ~/proj   ● 2 MCP          18.6K (9%)  ctrl+p commands  ? keys
 ```
 
 - Gutter: 1 column margin, then a 2-column glyph cell, then content. Answers and tool detail
   indent to column 3.
 - Transcript text wraps at the terminal width minus the rail. Prose is not re-centred.
-- Context rail: 36 columns on the right, separated by a faint `│`, shown at 140+ columns and
-  toggled with the sidebar key. Below that width it opens as an overlay.
+- Side panel: 42 columns on the right on the panel tone, shown at 130+ columns and toggled with
+  the sidebar key. Below that width it opens as an overlay.
 
 ## Glyphs
 
@@ -78,19 +89,21 @@ screen; the indigo accent.
 
 ## Color
 
-Tokens, dark / light. Background is the terminal's own (transparent).
+Tokens, dark / light, warm neutrals with the logo's azure as the accent.
 
 | Token | Dark | Light | Use |
 |---|---|---|---|
-| text | `#E4E5E9` | `#1F2328` | body |
-| textMuted | `#8B909A` | `#656D76` | secondary text, targets, hints |
-| border (faint) | `#3B3E45` | `#D0D7DE` | rules, gutters, done glyphs |
-| primary / accent | `#7C83FF` | `#3D46F2` | RIFT, focus, `❯ $ ± ☰`, selection |
-| success | `#6CCB8B` | `#1A7F37` | done, additions |
-| warning | `#E5B567` | `#9A6700` | needs you, retries |
-| error | `#F07178` | `#CF222E` | failures, deletions |
-| backgroundPanel | `#16171C` | `#F6F8FA` | sheets (pickers, approvals), only where text must sit on a solid surface |
-| backgroundElement | `#24262D` | `#EAEEF2` | hover, the composer's focused line |
+| background | `#1A1917` | `#FAF9F5` | the canvas |
+| backgroundPanel | `#22211E` | `#F2F0E8` | composer, tool bodies, user turns, side panel, dialogs |
+| backgroundElement | `#2D2B27` | `#E8E5DA` | hover, the selected row |
+| borderSubtle | `#3A3732` | `#DDD9CE` | card frames, rules, empty bar track |
+| border (faint ink) | `#5E5A53` | `#A8A398` | gutters, done glyphs, metadata |
+| text | `#EDEBE5` | `#2A2824` | body |
+| textMuted | `#A39F96` | `#6F6B63` | secondary text, targets, hints |
+| primary / accent | `#7C83FF` | `#4349E0` | RIFT, focus, `❯ $ ± ≡`, selection, progress |
+| success | `#86C795` | `#2F7D4A` | done, additions |
+| warning | `#E2B56E` | `#93650E` | needs you, retries, approval frames |
+| error | `#E8806F` | `#C2412D` | failures, deletions |
 
 Syntax colors stay in the same family: keywords indigo, strings green, numbers amber, types cyan,
 comments faint italic.
@@ -103,17 +116,21 @@ reasoning. No all-caps headings; section labels are lowercase muted words (`plan
 
 ## Components
 
-- **Composer**: borderless. A faint full-width rule above it, `❯` prompt, one status line below
-  (agent and model left; directory, branch, context and `? keys` right). While busy, an activity
-  line sits above the rule with the spinner, elapsed time, retry countdown and `esc to stop`.
-- **Sheets** (every picker and dialog): open at the bottom of the screen above the composer,
-  full width, on `backgroundPanel`, with a top rule carrying the title and `esc`. The selected row
-  is marked with an accent `›` and bold text, not a filled bar. Filter text is typed straight in.
-- **Approvals**: a sheet with what is being asked (command, or diff), then numbered choices
-  `1 allow once  2 always  3 reject`; keys 1 to 3 or arrows and enter.
+- **Composer**: a rounded card on the panel tone; its frame turns accent while the agent works.
+  Inside: `❯` and the input, then agent and model. Under it: directory, MCP and approval status,
+  context and cost, and the palette and `?` keys. While busy, an activity line above the card shows
+  the spinner, elapsed time, retry countdown and `esc to stop`.
+- **Dialogs** (every picker): a rounded card floating in the upper middle over a lightly dimmed
+  backdrop. The selected row gets the element tone, an accent `›` and bold text. Categories are
+  bold muted labels.
+- **Approvals**: a rounded card framed in amber (questions in accent, rejections in red): what is
+  asked, then numbered choices; keys 1 to 3 or arrows and enter.
+- **Side panel**: 42 columns on the panel tone. Session title over a rule, then sections with a
+  bold title and a quiet count: status, Context (bar, tokens, cost), Plan (progress bar, steps),
+  Changes, Checks, Graph, MCP, LSP; RIFT and the version at the foot.
 - **Autocomplete** (`/`, `@`): the same list style as sheets, directly above the composer.
 - **Shortcut sheet**: `?` on an empty composer; three columns (compose, session, navigate).
-- **Toasts**: one line, top right, muted unless it is an error.
+- **Toasts**: a small rounded card at the top right, framed in the status colour.
 
 ## Motion
 

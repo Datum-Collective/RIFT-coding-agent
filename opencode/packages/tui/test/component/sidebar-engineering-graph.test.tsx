@@ -71,7 +71,7 @@ test("shows a graph built from the plan when the agent declared none", async () 
     "build",
   )
   const out = await frame(nodes)
-  expect(out).toContain("graph")
+  expect(out).toContain("Graph")
   expect(out).not.toContain("No nodes yet")
   expect(out).toContain("Datum site")
   expect(out).toContain("Research Datum Collective")

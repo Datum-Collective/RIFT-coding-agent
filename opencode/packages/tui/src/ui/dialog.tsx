@@ -1,8 +1,8 @@
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { batch, createContext, createEffect, onCleanup, Show, useContext, type JSX, type ParentProps } from "solid-js"
 import { useTheme } from "../context/theme"
-import { MouseButton, Renderable } from "@opentui/core"
-import { EmptyBorder } from "./border"
+import { MouseButton, Renderable, RGBA } from "@opentui/core"
+import { RoundedBorder } from "./border"
 import { createStore } from "solid-js/store"
 import { useToast } from "./toast"
 import { Flag } from "@opencode-ai/core/flag/flag"
@@ -10,8 +10,8 @@ import { useBindings, useOpencodeModeStack } from "../keymap"
 import { useClipboard } from "../context/clipboard"
 
 /**
- * Every dialog is a sheet docked at the bottom of the screen, over the composer: full width, on a
- * solid surface, under a faint rule. The transcript above stays readable; nothing is dimmed.
+ * Dialogs float as a rounded card in the upper middle of the screen, over a lightly dimmed backdrop.
+ * The card is one step up from the canvas, so it reads as its own surface without a heavy frame.
  */
 export function Dialog(
   props: ParentProps<{
@@ -24,11 +24,10 @@ export function Dialog(
   const renderer = useRenderer()
 
   let dismiss = false
-  // Wider content (diffs, timelines) gets more of the screen; lists stay at a readable measure.
-  const maxWidth = () => {
-    if (props.size === "xlarge") return dimensions().width
-    if (props.size === "large") return Math.min(dimensions().width, 140)
-    return Math.min(dimensions().width, 110)
+  const width = () => {
+    if (props.size === "xlarge") return 118
+    if (props.size === "large") return 90
+    return 64
   }
 
   return (
@@ -45,11 +44,13 @@ export function Dialog(
       }}
       width={dimensions().width}
       height={dimensions().height}
-      justifyContent="flex-end"
+      alignItems="center"
       position="absolute"
       zIndex={3000}
+      paddingTop={Math.floor(dimensions().height / 5)}
       left={0}
       top={0}
+      backgroundColor={RGBA.fromInts(0, 0, 0, 110)}
     >
       <box
         onMouseUp={(e: { stopPropagation(): void }) => {
@@ -59,17 +60,16 @@ export function Dialog(
           dismiss = false
           e.stopPropagation()
         }}
-        width={dimensions().width}
-        maxHeight={Math.max(8, dimensions().height - 2)}
+        width={width()}
+        maxWidth={dimensions().width - 4}
+        maxHeight={Math.max(8, dimensions().height - Math.floor(dimensions().height / 5) - 2)}
         backgroundColor={theme.backgroundPanel}
-        border={["top"]}
-        borderColor={theme.border}
-        customBorderChars={{ ...EmptyBorder, horizontal: "─" }}
+        border
+        customBorderChars={RoundedBorder}
+        borderColor={theme.borderSubtle}
         paddingTop={1}
       >
-        <box width="100%" maxWidth={maxWidth()}>
-          {props.children}
-        </box>
+        {props.children}
       </box>
     </box>
   )

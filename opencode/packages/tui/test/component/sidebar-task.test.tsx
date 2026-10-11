@@ -85,26 +85,26 @@ test("shows state, plan progress, changes and checks", async () => {
       },
     }),
   )
-  expect(out).toContain("working")
+  expect(out).toContain("Working")
   expect(out).toContain("Editing src/client.ts")
-  expect(out).toContain("plan")
+  expect(out).toContain("Plan")
   expect(out).toContain("1/3")
   expect(out).toContain("Add backoff")
-  expect(out).toContain("changes")
+  expect(out).toContain("Changes")
   expect(out).toContain("+12")
   expect(out).toContain("bun test")
 })
 
 test("says when it is waiting on you", async () => {
   const out = await frame(makeTask({ state: "blocked", blocked: { permissions: 2, questions: 0 } }))
-  expect(out).toContain("waiting on you")
+  expect(out).toContain("Waiting on you")
   expect(out).toContain("2 requests need your answer")
 })
 
 test("stays quiet when there is nothing to show", async () => {
   const out = await frame(makeTask({ state: "idle" }))
-  expect(out).toContain("idle")
-  expect(out).not.toContain("plan")
-  expect(out).not.toContain("changes")
-  expect(out).not.toContain("checks")
+  expect(out).toContain("Idle")
+  expect(out).not.toContain("Plan")
+  expect(out).not.toContain("Changes")
+  expect(out).not.toContain("Checks")
 })

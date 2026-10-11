@@ -17,7 +17,7 @@ import { fileURLToPath } from "url"
 import { useLocal } from "../../context/local"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { useTheme } from "../../context/theme"
-import { EmptyBorder } from "../../ui/border"
+import { RoundedBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { useClipboard } from "../../context/clipboard"
 import { Spinner, SPINNER_FRAMES } from "../spinner"
@@ -275,6 +275,10 @@ export function Prompt(props: PromptProps) {
     if (!started || status().type === "idle") return 0
     return Math.max(0, Math.floor((now() - started) / 1000))
   })
+
+  const mcpConnected = createMemo(() => Object.values(sync.data.mcp).filter((item) => item.status === "connected").length)
+  const mcpFailing = createMemo(() => Object.values(sync.data.mcp).some((item) => item.status === "failed"))
+  const pendingApprovals = createMemo(() => (props.sessionID ? (sync.data.permission[props.sessionID]?.length ?? 0) : 0))
 
   const usage = createMemo(() => {
     if (!props.sessionID) return
@@ -1471,12 +1475,15 @@ export function Prompt(props: PromptProps) {
             </text>
           </box>
         </Show>
-        {/* The composer is a prompt line under a faint rule: no frame, no fill. */}
+        {/* The composer: a soft rounded card. Its frame takes the accent while the agent works. */}
         <box
           width="100%"
-          border={["top"]}
-          borderColor={leader() ? theme.primary : theme.border}
-          customBorderChars={{ ...EmptyBorder, horizontal: "─" }}
+          border
+          customBorderChars={RoundedBorder}
+          borderColor={leader() || status().type !== "idle" ? theme.primary : theme.borderSubtle}
+          backgroundColor={theme.backgroundPanel}
+          paddingLeft={1}
+          paddingRight={1}
           flexShrink={0}
         >
           <box flexDirection="row" width="100%">
@@ -1594,7 +1601,16 @@ export function Prompt(props: PromptProps) {
                 )}
               </Show>
             </box>
-            <box flexDirection="row" gap={2} flexShrink={0}>
+            <Show when={hasRightContent()}>
+              <box flexDirection="row" gap={1} alignItems="center" flexShrink={0}>
+                {props.right}
+              </box>
+            </Show>
+          </box>
+        </box>
+        {/* Under the card: where you are and what it has cost, then the keys worth knowing. */}
+        <box flexDirection="row" flexShrink={0} paddingLeft={1} paddingRight={1} gap={2} justifyContent="space-between">
+            <box flexDirection="row" gap={2} flexGrow={1} flexShrink={1}>
               <Switch>
                 <Match when={workspace.notice()}>{(notice) => <text fg={theme.accent}>{notice()}</text>}</Match>
                 <Match when={workspace.label()}>
@@ -1637,20 +1653,26 @@ export function Prompt(props: PromptProps) {
               <Show when={props.hint}>{props.hint}</Show>
               <Show when={!props.hint}>
                 <text fg={theme.border} wrapMode="none">
-                  {Locale.truncateLeft(location()?.directory ?? paths.cwd, 32)}
+                  {Locale.truncateLeft(location()?.directory ?? paths.cwd, 28)}
                 </text>
               </Show>
+              <Show when={props.sessionID && mcpConnected() > 0}>
+                <text fg={theme.textMuted} wrapMode="none">
+                  <span style={{ fg: mcpFailing() ? theme.error : theme.success }}>●</span> {mcpConnected()} MCP
+                </text>
+              </Show>
+              <Show when={props.sessionID && pendingApprovals() > 0}>
+                <text fg={theme.warning} wrapMode="none">
+                  ? {pendingApprovals()} waiting
+                </text>
+              </Show>
+              <box flexGrow={1} />
               <Show when={store.mode === "normal" && usage()}>
                 {(item) => (
                   <text fg={theme.textMuted} wrapMode="none">
                     {[item().context, item().cost].filter(Boolean).join(" · ")}
                   </text>
                 )}
-              </Show>
-              <Show when={hasRightContent()}>
-                <box flexDirection="row" gap={1} alignItems="center">
-                  {props.right}
-                </box>
               </Show>
               <text fg={theme.textMuted} wrapMode="none">
                 <Show
@@ -1661,12 +1683,14 @@ export function Prompt(props: PromptProps) {
                     </>
                   }
                 >
+                  <Show when={paletteShortcut()}>
+                    <span style={{ fg: theme.text }}>{paletteShortcut()}</span> commands{"   "}
+                  </Show>
                   <span style={{ fg: theme.text }}>?</span> keys
                 </Show>
               </text>
             </box>
           </box>
-        </box>
       </box>
       <Autocomplete
         sessionID={props.sessionID}

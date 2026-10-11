@@ -228,6 +228,7 @@ export const Definitions = {
 
   terminal_suspend: keybind("ctrl+z", "Suspend terminal"),
   terminal_title_toggle: keybind("none", "Toggle terminal title"),
+  tips_toggle: keybind("<leader>h", "Toggle tips on home screen"),
   plugin_manager: keybind("none", "Open plugin manager dialog"),
   plugin_install: keybind("none", "Install plugin"),
 
@@ -411,6 +412,7 @@ export const CommandMap = {
   history_next: "prompt.history.next",
   terminal_suspend: "terminal.suspend",
   terminal_title_toggle: "terminal.title.toggle",
+  tips_toggle: "tips.toggle",
   plugin_manager: "plugins.list",
   plugin_install: "plugins.install",
   which_key_toggle: "which-key.toggle",

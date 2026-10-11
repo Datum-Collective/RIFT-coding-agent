@@ -45,10 +45,15 @@ function View(props: { api: TuiPluginApi; sessionID: string }) {
           </box>
         </box>
       </Show>
-      <text fg={theme().border} wrapMode="none">
-        <span style={{ fg: theme().primary }}>◆</span> rift {RiftVersion}
-        <Show when={cost() > 0}> · {money.format(cost())}</Show>
-      </text>
+      <box flexDirection="row" justifyContent="space-between" paddingRight={1}>
+        <text fg={theme().textMuted} wrapMode="none">
+          <span style={{ fg: theme().primary }}>◆</span> <b>RIFT</b>
+          <span style={{ fg: theme().border }}> {RiftVersion}</span>
+        </text>
+        <Show when={cost() > 0}>
+          <text fg={theme().textMuted}>{money.format(cost())}</text>
+        </Show>
+      </box>
     </box>
   )
 }

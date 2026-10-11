@@ -5,6 +5,7 @@
  * into one scannable column, rules instead of boxes, and metrics flushed right.
  */
 import { Show, type JSX } from "solid-js"
+import { TextAttributes } from "@opentui/core"
 import { useTheme } from "../../context/theme"
 import type { Signal } from "../../util/task"
 
@@ -33,31 +34,45 @@ export function signalColor(theme: ThemeColors, signal: Signal) {
   }
 }
 
-/** `label ─────────` — a section marker: a lowercase word, then a faint rule to the edge. */
+/** `Label ─────────` — a section marker: a bold word, then a faint rule to the edge. */
 export function Rule(props: { label: string; width: number; accent?: boolean }) {
   const { theme } = useTheme()
   return (
     <box flexDirection="row" gap={1} flexShrink={0}>
-      <text flexShrink={0} wrapMode="none" fg={props.accent ? theme.primary : theme.textMuted}>
-        {props.label.toLowerCase()}
+      <text flexShrink={0} wrapMode="none" fg={props.accent ? theme.primary : theme.text} attributes={TextAttributes.BOLD}>
+        {props.label.charAt(0).toUpperCase() + props.label.slice(1).toLowerCase()}
       </text>
-      <text flexGrow={1} flexShrink={1} wrapMode="none" overflow="hidden" fg={theme.border}>
+      <text flexGrow={1} flexShrink={1} wrapMode="none" overflow="hidden" fg={theme.borderSubtle}>
         {"─".repeat(Math.max(0, props.width))}
       </text>
     </box>
   )
 }
 
-/** A lowercase muted label with an optional count, used for groups in the context rail. */
+/** A section heading in the side panel: a bold title with a quiet count on the right. */
 export function Label(props: { children: string; count?: string }) {
   const { theme } = useTheme()
   return (
     <box flexDirection="row" justifyContent="space-between" flexShrink={0}>
-      <text fg={theme.textMuted}>{props.children.toLowerCase()}</text>
+      <text fg={theme.text}>
+        <b>{props.children.charAt(0).toUpperCase() + props.children.slice(1)}</b>
+      </text>
       <Show when={props.count}>
-        <text fg={theme.border}>{props.count}</text>
+        <text fg={theme.textMuted}>{props.count}</text>
       </Show>
     </box>
+  )
+}
+
+/** A thin progress bar: filled in the accent (or a status colour), the rest in the faint ink. */
+export function Bar(props: { value: number; width: number; color?: ReturnType<typeof useTheme>["theme"]["primary"] }) {
+  const { theme } = useTheme()
+  const filled = () => Math.round(Math.max(0, Math.min(1, props.value)) * props.width)
+  return (
+    <text wrapMode="none" flexShrink={0}>
+      <span style={{ fg: props.color ?? theme.primary }}>{"━".repeat(filled())}</span>
+      <span style={{ fg: theme.borderSubtle }}>{"━".repeat(Math.max(0, props.width - filled()))}</span>
+    </text>
   )
 }
 

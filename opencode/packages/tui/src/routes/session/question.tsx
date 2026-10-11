@@ -5,7 +5,7 @@ import { TextAttributes, type TextareaRenderable } from "@opentui/core"
 import { useTheme } from "../../context/theme"
 import type { QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2"
 import { useSDK } from "../../context/sdk"
-import { EmptyBorder } from "../../ui/border"
+import { RoundedBorder } from "../../ui/border"
 import { useTuiConfig } from "../../config"
 import { useBindings, useOpencodeModeStack } from "../../keymap"
 
@@ -288,9 +288,9 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
   return (
     <box
       backgroundColor={theme.backgroundPanel}
-      border={["top"]}
-      borderColor={theme.border}
-      customBorderChars={{ ...EmptyBorder, horizontal: "─" }}
+      border
+      borderColor={theme.primary}
+      customBorderChars={RoundedBorder}
     >
       <box gap={1} paddingLeft={1} paddingRight={2} paddingTop={1} paddingBottom={1}>
         <Show when={!single()}>

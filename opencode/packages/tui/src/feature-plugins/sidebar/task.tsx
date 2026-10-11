@@ -10,7 +10,7 @@ import type { BuiltinTuiPlugin } from "../builtins"
 import { createMemo, For, Show } from "solid-js"
 import { useTheme } from "../../context/theme"
 import { useTask } from "../../component/control/use-task"
-import { GLYPH, Label, Row, formatDuration, shortenPath, signalColor } from "../../component/control/primitives"
+import { Bar, GLYPH, Label, Row, formatDuration, shortenPath, signalColor } from "../../component/control/primitives"
 import type { Signal, Task } from "../../util/task"
 
 const id = "internal:sidebar-task"
@@ -29,6 +29,8 @@ const STATE: Record<Task["state"], { label: string; signal: Signal }> = {
   done: { label: "Done", signal: "done" },
 }
 
+const BAR_WIDTH = 32
+
 /** The panel for one task. Takes the task as data so it can be rendered without a live session. */
 export function TaskPanel(props: { task: Task }) {
   const { theme } = useTheme()
@@ -42,29 +44,49 @@ export function TaskPanel(props: { task: Task }) {
   const blocked = createMemo(() => task().blocked.permissions + task().blocked.questions)
   const files = createMemo(() => task().changes.files)
   const checks = createMemo(() => task().verification.checks)
+  const context = createMemo(() => task().context)
+  const money = (value: number) => `$${value.toFixed(2)}`
 
   return (
     <box gap={1}>
       <box>
-        <text fg={theme.text}>
-          <span style={{ fg: signalColor(theme, state().signal) }}>{GLYPH[state().signal]} </span>
-          {state().label.toLowerCase()}
+        <text fg={signalColor(theme, state().signal)}>
+          {GLYPH[state().signal]} <b>{state().label}</b>
         </text>
         <Show when={now() && task().state !== "blocked"}>
           <text fg={theme.textMuted} wrapMode="none">
+            {"  "}
             {shortenPath(now()!.label, 34)}
           </text>
         </Show>
         <Show when={blocked() > 0}>
           <text fg={theme.warning}>
+            {"  "}
             {blocked()} {blocked() === 1 ? "request needs" : "requests need"} your answer
           </text>
         </Show>
       </box>
 
+      <Show when={context().tokens > 0}>
+        <box>
+          <Label count={[context().percent !== null ? `${context().percent}%` : "", task().cost > 0 ? money(task().cost) : ""].filter(Boolean).join(" · ")}>
+            Context
+          </Label>
+          <Show when={context().percent !== null}>
+            <Bar
+              value={(context().percent ?? 0) / 100}
+              width={BAR_WIDTH}
+              color={(context().percent ?? 0) >= 80 ? theme.warning : theme.primary}
+            />
+          </Show>
+          <text fg={theme.textMuted}>{context().tokens.toLocaleString()} tokens</text>
+        </box>
+      </Show>
+
       <Show when={steps().length > 0}>
         <box>
           <Label count={`${stepsDone()}/${steps().length}`}>Plan</Label>
+          <Bar value={steps().length ? stepsDone() / steps().length : 0} width={BAR_WIDTH} color={theme.success} />
           <For each={steps().slice(0, MAX_STEPS)}>
             {(step) => (
               <Row signal={step.signal} dim={step.signal === "done"}>
@@ -82,7 +104,9 @@ export function TaskPanel(props: { task: Task }) {
 
       <Show when={files().length > 0}>
         <box>
-          <Label count={`${files().length} ${files().length === 1 ? "file" : "files"}`}>Changes</Label>
+          <Label count={`${files().length} ${files().length === 1 ? "file" : "files"} · +${task().changes.added} −${task().changes.removed}`}>
+            Changes
+          </Label>
           <For each={files().slice(0, MAX_FILES)}>
             {(item) => (
               <box flexDirection="row" justifyContent="space-between" gap={1}>
@@ -103,19 +127,12 @@ export function TaskPanel(props: { task: Task }) {
           <Show when={files().length > MAX_FILES}>
             <text fg={theme.textMuted}>+{files().length - MAX_FILES} more</text>
           </Show>
-          <Show when={files().length > 1}>
-            <box flexDirection="row" gap={1}>
-              <text fg={theme.diffAdded}>+{task().changes.added}</text>
-              <text fg={theme.diffRemoved}>−{task().changes.removed}</text>
-              <text fg={theme.textMuted}>in total</text>
-            </box>
-          </Show>
         </box>
       </Show>
 
       <Show when={checks().length > 0}>
         <box>
-          <Label>Checks</Label>
+          <Label count={`${checks().filter((check) => check.status === "passed").length}/${checks().length} passed`}>Checks</Label>
           <For each={checks()}>
             {(check) => {
               const signal: Signal =

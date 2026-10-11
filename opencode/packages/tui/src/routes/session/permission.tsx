@@ -6,7 +6,7 @@ import { TextAttributes, type TextareaRenderable } from "@opentui/core"
 import { useTheme } from "../../context/theme"
 import type { PermissionRequest } from "@opencode-ai/sdk/v2"
 import { useSDK } from "../../context/sdk"
-import { EmptyBorder } from "../../ui/border"
+import { RoundedBorder } from "../../ui/border"
 import { useSync } from "../../context/sync"
 import { useProject } from "../../context/project"
 import { filetype } from "../../util/filetype"
@@ -484,9 +484,9 @@ function RejectPrompt(props: { onConfirm: (message: string) => void; onCancel: (
   return (
     <box
       backgroundColor={theme.backgroundPanel}
-      border={["top"]}
-      borderColor={theme.border}
-      customBorderChars={{ ...EmptyBorder, horizontal: "─" }}
+      border
+      borderColor={theme.error}
+      customBorderChars={RoundedBorder}
     >
       <box paddingLeft={1} paddingRight={2} paddingTop={1} flexDirection="row">
         <text width={2} flexShrink={0} fg={theme.error}>
@@ -669,9 +669,9 @@ function Prompt<const T extends Record<string, string>>(props: {
   const content = () => (
     <box
       backgroundColor={theme.backgroundPanel}
-      border={["top"]}
-      borderColor={theme.border}
-      customBorderChars={{ ...EmptyBorder, horizontal: "─" }}
+      border
+      borderColor={theme.warning}
+      customBorderChars={RoundedBorder}
       {...(store.expanded
         ? { top: dimensions().height * -1 + 1, bottom: 0, left: 0, right: 0, position: "absolute" }
         : {

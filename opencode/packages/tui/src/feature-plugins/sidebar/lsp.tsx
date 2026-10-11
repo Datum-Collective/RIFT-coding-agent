@@ -13,8 +13,12 @@ function View(props: { api: TuiPluginApi }) {
   return (
     <box>
       <box flexDirection="row" justifyContent="space-between" onMouseDown={() => list().length > 2 && setOpen((x) => !x)}>
-        <text fg={theme().textMuted}>lsp</text>
-        <text fg={theme().border}>{off() ? "off" : list().length === 0 ? "on first read" : list().length > 2 && !open() ? `${list().length} ▸` : ""}</text>
+        <text fg={theme().text}>
+          <b>LSP</b>
+        </text>
+        <text fg={theme().textMuted}>
+          {off() ? "off" : list().length === 0 ? "starts on first read" : `${list().length}${list().length > 2 ? (open() ? " ▾" : " ▸") : ""}`}
+        </text>
       </box>
       <Show when={list().length <= 2 || open()}>
         <For each={list()}>

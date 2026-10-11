@@ -2,6 +2,7 @@ import { createContext, useContext, type ParentProps, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useTheme } from "../context/theme"
 import { useTerminalDimensions } from "@opentui/solid"
+import { RoundedBorder } from "./border"
 export type ToastOptions = {
   title?: string
   message: string
@@ -29,6 +30,9 @@ export function Toast() {
           paddingLeft={1}
           paddingRight={1}
           backgroundColor={theme.backgroundPanel}
+          border
+          customBorderChars={RoundedBorder}
+          borderColor={current().variant === "info" ? theme.borderSubtle : theme[current().variant]}
           flexDirection="row"
         >
           <text width={2} flexShrink={0} fg={current().variant === "info" ? theme.primary : theme[current().variant]}>

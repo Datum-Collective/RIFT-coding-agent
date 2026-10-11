@@ -364,3 +364,29 @@ Not verified: real terminal emulators and fonts (only the pty emulator was used)
 checked for alignment there; `☰` measured two columns in the renderer and one in the terminal, so the
 plan glyph is `≡` instead. A font that draws `◆ ∴ ± ⇢` wide would shift those rows by a column.
 Windows was not tested.
+
+### Phase 7, revision 2: Claude's polish, OpenCode's depth
+
+Direction changed on review: more polish and visual richness, the RIFT opening screen back, a
+better side panel, and OpenCode's depth kept. `docs/design/tui.md` is updated to match.
+
+- **Theme**: warm neutral canvas (`#1A1917` dark / `#FAF9F5` light) with a panel tone one step up,
+  the logo's azure as the accent, warmer status colours. The background is painted again.
+- **Opening screen**: the block-art RIFT logo is back (with its compact fallback below 76
+  columns), a tagline under it, the composer at the logo's width, a welcome card with recent
+  sessions and the keys worth knowing (shown on terminals 44+ rows tall), the tips line, and the
+  home footer (directory, MCP, version). Restored from the previous commit: `banner.ts`, the banner
+  component and test, the banner SVG script, the tips plugin and the home footer.
+- **Transcript**: a rounded intro card at the top, user turns on a panel band, tool bodies (shell
+  output, diffs, plans, written files) in soft panel cards under their header line.
+- **Composer**: a rounded card, accent frame while working; the hint line shows directory, MCP
+  status, pending approvals, context, cost and keys.
+- **Side panel**: 42 columns on the panel tone with real hierarchy: title over a rule; status;
+  Context with a usage bar, tokens and cost (back from OpenCode); Plan with a progress bar; Changes
+  with totals; Checks with a pass count; Graph; MCP; LSP; RIFT and version at the foot. Docks at
+  130+ columns.
+- **Dialogs**: floating rounded cards over a dimmed backdrop; the selected row gets a soft fill.
+- **Approvals, questions, rejections, toasts**: rounded cards framed in their status colour.
+- Section labels in the task view, panel and pickers are title case and bold.
+
+Tests: `packages/tui` 264 pass, 0 fail.

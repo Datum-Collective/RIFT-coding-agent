@@ -26,30 +26,28 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
 
   return (
     <Show when={session()}>
-      {/* The context rail: plan, graph, changes, servers. A faint rule, not a painted panel. */}
+      {/* The side panel: the task at a glance (status, context, plan, changes, checks), the
+          engineering graph, then the servers. A surface of its own, one step up from the canvas. */}
       <box
-        backgroundColor={props.overlay ? theme.backgroundPanel : undefined}
-        width={36}
+        backgroundColor={theme.backgroundPanel}
+        width={42}
         height="100%"
         paddingTop={1}
         paddingBottom={1}
         paddingLeft={2}
         paddingRight={1}
-        border={["left"]}
-        borderColor={theme.border}
-        customBorderChars={{ ...EmptyBorder, vertical: "│" }}
       >
         <scrollbox
           flexGrow={1}
           scrollAcceleration={scrollAcceleration()}
           verticalScrollbarOptions={{
             trackOptions: {
-              backgroundColor: theme.background,
-              foregroundColor: theme.borderActive,
+              backgroundColor: theme.backgroundPanel,
+              foregroundColor: theme.borderSubtle,
             },
           }}
         >
-          <box flexShrink={0} gap={1} paddingRight={1}>
+          <box flexShrink={0} gap={2} paddingRight={1}>
             <pluginRuntime.Slot
               name="sidebar_title"
               mode="single_winner"
@@ -57,7 +55,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
               title={session()!.title}
               share_url={session()!.share?.url}
             >
-              <box paddingRight={1}>
+              <box paddingRight={1} paddingBottom={1} border={["bottom"]} borderColor={theme.borderSubtle} customBorderChars={{ ...EmptyBorder, horizontal: "─" }}>
                 <text fg={theme.text} wrapMode="word">
                   <b>{session()!.title}</b>
                 </text>

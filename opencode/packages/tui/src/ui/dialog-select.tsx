@@ -618,7 +618,11 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                     <box paddingTop={index() > 0 ? 1 : 0} paddingLeft={3}>
                       <Show
                         when={options[0]?.categoryView}
-                        fallback={<text fg={theme.textMuted}>{category.toLowerCase()}</text>}
+                        fallback={
+                          <text fg={theme.textMuted} attributes={TextAttributes.BOLD}>
+                            {category}
+                          </text>
+                        }
                       >
                         {options[0]?.categoryView}
                       </Show>
@@ -661,7 +665,9 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                             flexDirection="row"
                             paddingLeft={1}
                             paddingRight={2}
-                            backgroundColor={option.bg && active() ? option.bg : RGBA.fromInts(0, 0, 0, 0)}
+                            backgroundColor={
+                              active() ? (option.bg ?? (actionFocused() ? RGBA.fromInts(0, 0, 0, 0) : theme.backgroundElement)) : RGBA.fromInts(0, 0, 0, 0)
+                            }
                           >
                             <text width={2} flexShrink={0} fg={actionFocused() ? theme.textMuted : theme.primary}>
                               {active() ? "›" : ""}
