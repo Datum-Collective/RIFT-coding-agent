@@ -390,3 +390,10 @@ better side panel, and OpenCode's depth kept. `docs/design/tui.md` is updated to
 - Section labels in the task view, panel and pickers are title case and bold.
 
 Tests: `packages/tui` 264 pass, 0 fail.
+
+### Phase 7, revision 3: blacked out
+
+The warm canvas is replaced with true black (`#000000`) and neutral greys: panels `#0C0C0C`,
+hover/selection `#181818`, frames `#262626`, faint ink `#4D4D4D`, text `#EDEDED`, muted `#8F8F8F`.
+Accent stays the logo's azure. Diff tints darkened to sit on black. Light variant is plain white
+and greys. Layout unchanged. `packages/tui` tests pass.

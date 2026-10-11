@@ -2,7 +2,7 @@
 
 The design system for the TUI. Read this before changing a screen; every component follows it.
 
-Direction (revision 2): Claude's polish (warm neutrals, soft surfaces, rounded cards, generous
+Direction (revision 2): Claude's polish (a blacked-out canvas, soft surfaces, rounded cards, generous
 spacing, quiet typography) over OpenCode's depth (a rich side panel, framed composer, floating
 dialogs, status everywhere it helps), with RIFT's own identity: the block-art logo, the azure accent
 that comes from it, the glyph gutter and the verification-first content.
@@ -89,21 +89,21 @@ screen; the indigo accent.
 
 ## Color
 
-Tokens, dark / light, warm neutrals with the logo's azure as the accent.
+Tokens, dark / light: true black and neutral greys, with the logo's azure as the accent.
 
 | Token | Dark | Light | Use |
 |---|---|---|---|
-| background | `#1A1917` | `#FAF9F5` | the canvas |
-| backgroundPanel | `#22211E` | `#F2F0E8` | composer, tool bodies, user turns, side panel, dialogs |
-| backgroundElement | `#2D2B27` | `#E8E5DA` | hover, the selected row |
-| borderSubtle | `#3A3732` | `#DDD9CE` | card frames, rules, empty bar track |
-| border (faint ink) | `#5E5A53` | `#A8A398` | gutters, done glyphs, metadata |
-| text | `#EDEBE5` | `#2A2824` | body |
-| textMuted | `#A39F96` | `#6F6B63` | secondary text, targets, hints |
-| primary / accent | `#7C83FF` | `#4349E0` | RIFT, focus, `❯ $ ± ≡`, selection, progress |
-| success | `#86C795` | `#2F7D4A` | done, additions |
-| warning | `#E2B56E` | `#93650E` | needs you, retries, approval frames |
-| error | `#E8806F` | `#C2412D` | failures, deletions |
+| background | `#000000` | `#FFFFFF` | the canvas |
+| backgroundPanel | `#0C0C0C` | `#F7F7F7` | composer, tool bodies, user turns, side panel, dialogs |
+| backgroundElement | `#181818` | `#EDEDED` | hover, the selected row |
+| borderSubtle | `#262626` | `#E2E2E2` | card frames, rules, empty bar track |
+| border (faint ink) | `#4D4D4D` | `#A3A3A3` | gutters, done glyphs, metadata |
+| text | `#EDEDED` | `#171717` | body |
+| textMuted | `#8F8F8F` | `#666666` | secondary text, targets, hints |
+| primary / accent | `#7C83FF` | `#3D46F2` | RIFT, focus, `❯ $ ± ≡`, selection, progress |
+| success | `#6BCB8B` | `#1A7F37` | done, additions |
+| warning | `#E5B567` | `#9A6700` | needs you, retries, approval frames |
+| error | `#F07178` | `#CF222E` | failures, deletions |
 
 Syntax colors stay in the same family: keywords indigo, strings green, numbers amber, types cyan,
 comments faint italic.
