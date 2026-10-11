@@ -1,13 +1,18 @@
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { batch, createContext, createEffect, onCleanup, Show, useContext, type JSX, type ParentProps } from "solid-js"
 import { useTheme } from "../context/theme"
-import { MouseButton, Renderable, RGBA } from "@opentui/core"
+import { MouseButton, Renderable } from "@opentui/core"
+import { EmptyBorder } from "./border"
 import { createStore } from "solid-js/store"
 import { useToast } from "./toast"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { useBindings, useOpencodeModeStack } from "../keymap"
 import { useClipboard } from "../context/clipboard"
 
+/**
+ * Every dialog is a sheet docked at the bottom of the screen, over the composer: full width, on a
+ * solid surface, under a faint rule. The transcript above stays readable; nothing is dimmed.
+ */
 export function Dialog(
   props: ParentProps<{
     size?: "medium" | "large" | "xlarge"
@@ -19,10 +24,11 @@ export function Dialog(
   const renderer = useRenderer()
 
   let dismiss = false
-  const width = () => {
-    if (props.size === "xlarge") return 116
-    if (props.size === "large") return 88
-    return 60
+  // Wider content (diffs, timelines) gets more of the screen; lists stay at a readable measure.
+  const maxWidth = () => {
+    if (props.size === "xlarge") return dimensions().width
+    if (props.size === "large") return Math.min(dimensions().width, 140)
+    return Math.min(dimensions().width, 110)
   }
 
   return (
@@ -39,13 +45,11 @@ export function Dialog(
       }}
       width={dimensions().width}
       height={dimensions().height}
-      alignItems="center"
+      justifyContent="flex-end"
       position="absolute"
       zIndex={3000}
-      paddingTop={dimensions().height / 4}
       left={0}
       top={0}
-      backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
     >
       <box
         onMouseUp={(e: { stopPropagation(): void }) => {
@@ -55,12 +59,17 @@ export function Dialog(
           dismiss = false
           e.stopPropagation()
         }}
-        width={width()}
-        maxWidth={dimensions().width - 2}
+        width={dimensions().width}
+        maxHeight={Math.max(8, dimensions().height - 2)}
         backgroundColor={theme.backgroundPanel}
+        border={["top"]}
+        borderColor={theme.border}
+        customBorderChars={{ ...EmptyBorder, horizontal: "─" }}
         paddingTop={1}
       >
-        {props.children}
+        <box width="100%" maxWidth={maxWidth()}>
+          {props.children}
+        </box>
       </box>
     </box>
   )

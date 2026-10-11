@@ -37,20 +37,6 @@ export type SessionStripItem = {
   current: boolean
 }
 
-const statusColor = {
-  idle: "textMuted",
-  thinking: "accent",
-  tool_running: "warning",
-  blocked_waiting_for_input: "error",
-} as const
-
-const statusLabel = {
-  idle: "idle",
-  thinking: "thinking",
-  tool_running: "tool_running",
-  blocked_waiting_for_input: "blocked_waiting_for_input",
-} as const
-
 function sessionLabel(session: Session | undefined, sessionID: string) {
   if (session && !isDefaultTitle(session.title)) return session.title
   return sessionID.slice(-8)
@@ -82,6 +68,14 @@ export function getSessionStripItems(
     .sort((a, b) => Number(b.current) - Number(a.current) || a.label.localeCompare(b.label))
 }
 
+const statusGlyph = {
+  idle: "·",
+  thinking: "▸",
+  tool_running: "▸",
+  blocked_waiting_for_input: "?",
+} as const
+
+/** With more than one live session: one quiet line naming each, with what it is doing. */
 export function SessionStatusStrip() {
   const sync = useSync()
   const route = useRoute()
@@ -89,30 +83,18 @@ export function SessionStatusStrip() {
 
   const currentSessionID = createMemo(() => (route.data.type === "session" ? route.data.sessionID : undefined))
   const sessions = createMemo(() => getSessionStripItems(sync.data, sync.data.session, currentSessionID()))
+  const color = (status: SessionStripStatus) =>
+    status === "blocked_waiting_for_input" ? theme.warning : status === "idle" ? theme.border : theme.primary
 
   return (
     <Show when={sessions().length > 1}>
-      <box
-        height={1}
-        flexShrink={0}
-        flexDirection="row"
-        gap={1}
-        paddingLeft={1}
-        paddingRight={1}
-        border={["bottom"]}
-        borderColor={theme.borderSubtle}
-      >
-        <text fg={theme.textMuted}>sessions:</text>
+      <box height={1} flexShrink={0} flexDirection="row" gap={3} paddingLeft={1} paddingRight={1} overflow="hidden">
         <For each={sessions()}>
-          {(session, index) => (
-            <>
-              <Show when={index() > 0}>
-                <text fg={theme.textMuted}>|</text>
-              </Show>
-              <text fg={theme[statusColor[session.status]]} wrapMode="none">
-                {session.current ? "*" : " "} {session.label} [{statusLabel[session.status]}]
-              </text>
-            </>
+          {(session) => (
+            <text fg={session.current ? theme.text : theme.textMuted} wrapMode="none" flexShrink={0}>
+              <span style={{ fg: color(session.status) }}>{statusGlyph[session.status]} </span>
+              {session.current ? <b>{session.label}</b> : session.label}
+            </text>
           )}
         </For>
       </box>

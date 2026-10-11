@@ -31,14 +31,14 @@ function View(props: { api: TuiPluginApi }) {
       <box>
         <box flexDirection="row" gap={1} onMouseDown={() => list().length > 2 && setOpen((x) => !x)}>
           <Show when={list().length > 2}>
-            <text fg={theme().text}>{open() ? "▼" : "▶"}</text>
+            <text fg={theme().border}>{open() ? "▾" : "▸"}</text>
           </Show>
-          <text fg={theme().text}>
-            <b>MCP</b>
+          <text fg={theme().textMuted}>
+            mcp
             <Show when={!open()}>
-              <span style={{ fg: theme().textMuted }}>
-                {" "}
-                ({on()} active{bad() > 0 ? `, ${bad()} error${bad() > 1 ? "s" : ""}` : ""})
+              <span style={{ fg: theme().border }}>
+                {"  "}
+                {on()} on{bad() > 0 ? ` · ${bad()} failing` : ""}
               </span>
             </Show>
           </text>
@@ -53,13 +53,13 @@ function View(props: { api: TuiPluginApi }) {
                     fg: dot(item.status),
                   }}
                 >
-                  •
+                  {item.status === "connected" ? "✓" : item.status === "failed" || item.status === "needs_client_registration" ? "✕" : "·"}
                 </text>
-                <text fg={theme().text} wrapMode="word">
+                <text fg={theme().textMuted} wrapMode="word">
                   {item.name}{" "}
-                  <span style={{ fg: theme().textMuted }}>
+                  <span style={{ fg: theme().border }}>
                     <Switch fallback={item.status}>
-                      <Match when={item.status === "connected"}>Connected</Match>
+                      <Match when={item.status === "connected"}>{""}</Match>
                       <Match when={item.status === "failed"}>
                         <i>{item.error}</i>
                       </Match>

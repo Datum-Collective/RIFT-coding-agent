@@ -15,7 +15,7 @@ import type { TuiPlugin, TuiPluginApi, TuiSidebarGraphItem } from "@opencode-ai/
 import type { BuiltinTuiPlugin } from "../builtins"
 import { createMemo, For, Show } from "solid-js"
 import { useTheme } from "../../context/theme"
-import { GLYPH, signalColor, shortenPath } from "../../component/control/primitives"
+import { GLYPH, Label, signalColor, shortenPath } from "../../component/control/primitives"
 import { useTask } from "../../component/control/use-task"
 import { deriveGraph, evidenceFor } from "../../util/engineering-graph"
 import type { Evidence, Signal } from "../../util/task"
@@ -47,7 +47,7 @@ function layout(nodes: readonly TuiSidebarGraphItem[]): Branch[] {
     const siblings = byParent.get(parent_id) ?? []
     return siblings.flatMap((node, index) => {
       const isLast = index === siblings.length - 1
-      const childPrefix = prefix + (isLast ? "    " : "│   ")
+      const childPrefix = prefix + (isLast ? "  " : "│ ")
       return [{ node, prefix, isLast }, ...walk(node.id, childPrefix)]
     })
   }
@@ -55,12 +55,12 @@ function layout(nodes: readonly TuiSidebarGraphItem[]): Branch[] {
 }
 
 function branchPrefix(branch: Branch) {
-  return branch.prefix + (branch.isLast ? "└── " : "├── ")
+  return branch.prefix + (branch.isLast ? "└ " : "├ ")
 }
 
 /** Where a node's own detail lines continue its branch: same rule as a child, minus the connector. */
 function detailPrefix(branch: Branch) {
-  return branch.prefix + (branch.isLast ? "    " : "│   ")
+  return branch.prefix + (branch.isLast ? "  " : "│ ")
 }
 
 function List(props: { label: string; items: readonly string[]; prefix: string }) {
@@ -89,7 +89,7 @@ function EvidenceRow(props: { item: Evidence; prefix: string }) {
   const signal = () => EVIDENCE_SIGNAL[props.item.status]
   return (
     <text wrapMode="none">
-      <span style={{ fg: theme.borderSubtle }}>{props.prefix}</span>
+      <span style={{ fg: theme.border }}>{props.prefix}</span>
       <span style={{ fg: signalColor(theme, signal()) }}>{GLYPH[signal()]} </span>
       <span style={{ fg: props.item.status === "failed" ? theme.text : theme.textMuted }}>
         {props.item.label}
@@ -113,11 +113,11 @@ function NodeRow(props: { branch: Branch; byID: Map<string, TuiSidebarGraphItem>
   return (
     <box>
       <text wrapMode="none">
-        <span style={{ fg: theme.borderSubtle }}>{branchPrefix(props.branch)}</span>
+        <span style={{ fg: theme.border }}>{branchPrefix(props.branch)}</span>
         <span style={{ fg: signalColor(theme, signal()) }}>{GLYPH[signal()]} </span>
         <span style={{ fg: node().status === "in_progress" ? theme.text : theme.textMuted }}>
           {node().title}
-          <Show when={node().owner}> · {node().owner}</Show>
+          <Show when={node().owner && node().owner !== "build"}> · {node().owner}</Show>
         </span>
       </text>
       <Show when={unmetDeps().length > 0}>
@@ -160,17 +160,13 @@ export function GraphPanel(props: {
       when={branches().length > 0}
       fallback={
         <box>
-          <text fg={theme.text}>
-            <b>Engineering graph</b>
-          </text>
-          <text fg={theme.textMuted}>No nodes yet — the agent builds this out as it works.</text>
+          <Label>graph</Label>
+          <text fg={theme.border}>builds as the agent works</text>
         </box>
       }
     >
       <box gap={0}>
-        <text fg={theme.text}>
-          <b>Engineering graph</b>
-        </text>
+        <Label count={`${props.nodes.filter((node) => node.status === "done").length}/${props.nodes.length}`}>graph</Label>
         <For each={branches()}>
           {(branch) => <NodeRow branch={branch} byID={byID()} evidence={props.evidence?.get(branch.node.id) ?? []} />}
         </For>

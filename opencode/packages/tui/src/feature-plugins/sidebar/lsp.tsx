@@ -12,33 +12,17 @@ function View(props: { api: TuiPluginApi }) {
 
   return (
     <box>
-      <box flexDirection="row" gap={1} onMouseDown={() => list().length > 2 && setOpen((x) => !x)}>
-        <Show when={list().length > 2}>
-          <text fg={theme().text}>{open() ? "▼" : "▶"}</text>
-        </Show>
-        <text fg={theme().text}>
-          <b>LSP</b>
-        </text>
+      <box flexDirection="row" justifyContent="space-between" onMouseDown={() => list().length > 2 && setOpen((x) => !x)}>
+        <text fg={theme().textMuted}>lsp</text>
+        <text fg={theme().border}>{off() ? "off" : list().length === 0 ? "on first read" : list().length > 2 && !open() ? `${list().length} ▸` : ""}</text>
       </box>
       <Show when={list().length <= 2 || open()}>
-        <Show when={list().length === 0}>
-          <text fg={theme().textMuted}>{off() ? "LSPs are disabled" : "LSPs will activate as files are read"}</text>
-        </Show>
         <For each={list()}>
           {(item) => (
-            <box flexDirection="row" gap={1}>
-              <text
-                flexShrink={0}
-                style={{
-                  fg: item.status === "connected" ? theme().success : theme().error,
-                }}
-              >
-                •
-              </text>
-              <text fg={theme().textMuted}>
-                {item.id} {item.root}
-              </text>
-            </box>
+            <text fg={theme().textMuted} wrapMode="none">
+              <span style={{ fg: item.status === "connected" ? theme().success : theme().error }}>{item.status === "connected" ? "✓" : "✕"} </span>
+              {item.id}
+            </text>
           )}
         </For>
       </Show>

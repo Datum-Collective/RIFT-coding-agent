@@ -10,10 +10,10 @@ import type { Signal } from "../../util/task"
 
 export const GLYPH: Record<Signal, string> = {
   done: "✓",
-  active: "●",
-  pending: "○",
-  failed: "✗",
-  warn: "⚠",
+  active: "▸",
+  pending: "·",
+  failed: "✕",
+  warn: "!",
 }
 
 type ThemeColors = ReturnType<typeof useTheme>["theme"]
@@ -23,26 +23,40 @@ export function signalColor(theme: ThemeColors, signal: Signal) {
     case "done":
       return theme.success
     case "active":
-      return theme.accent
+      return theme.primary
     case "failed":
       return theme.error
     case "warn":
       return theme.warning
     default:
-      return theme.textMuted
+      return theme.border
   }
 }
 
-/** `LABEL ─────────────` — the section marker the whole UI is built from. */
+/** `label ─────────` — a section marker: a lowercase word, then a faint rule to the edge. */
 export function Rule(props: { label: string; width: number; accent?: boolean }) {
   const { theme } = useTheme()
-  const fill = () => Math.max(0, props.width - props.label.length - 3)
   return (
     <box flexDirection="row" gap={1} flexShrink={0}>
-      <text fg={props.accent ? theme.accent : theme.textMuted}>
-        <b>{props.label}</b>
+      <text flexShrink={0} wrapMode="none" fg={props.accent ? theme.primary : theme.textMuted}>
+        {props.label.toLowerCase()}
       </text>
-      <text fg={theme.borderSubtle}>{"─".repeat(fill())}</text>
+      <text flexGrow={1} flexShrink={1} wrapMode="none" overflow="hidden" fg={theme.border}>
+        {"─".repeat(Math.max(0, props.width))}
+      </text>
+    </box>
+  )
+}
+
+/** A lowercase muted label with an optional count, used for groups in the context rail. */
+export function Label(props: { children: string; count?: string }) {
+  const { theme } = useTheme()
+  return (
+    <box flexDirection="row" justifyContent="space-between" flexShrink={0}>
+      <text fg={theme.textMuted}>{props.children.toLowerCase()}</text>
+      <Show when={props.count}>
+        <text fg={theme.border}>{props.count}</text>
+      </Show>
     </box>
   )
 }
@@ -61,7 +75,9 @@ export function Row(props: {
   const { theme } = useTheme()
   return (
     <box flexDirection="row" flexShrink={0} paddingLeft={props.indent ?? 0}>
-      <text fg={signalColor(theme, props.signal)}>{GLYPH[props.signal]} </text>
+      <text width={2} flexShrink={0} fg={signalColor(theme, props.signal)}>
+        {GLYPH[props.signal]}
+      </text>
       <box flexGrow={1} flexShrink={1} overflow="hidden">
         {props.children}
       </box>

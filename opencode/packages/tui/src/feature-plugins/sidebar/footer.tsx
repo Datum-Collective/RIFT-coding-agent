@@ -1,14 +1,7 @@
-import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
 import { createMemo, Show } from "solid-js"
-import { abbreviateHome } from "../../runtime"
-import { useTuiPaths } from "../../context/runtime"
 import { RiftVersion } from "@opencode-ai/core/installation/version"
-import { shortenPath } from "../../component/control/primitives"
-
-// The sidebar is 56 columns wide with 2-column padding on each side; leave a little slack.
-const PATH_MAX = 34
 
 const id = "internal:sidebar-footer"
 
@@ -18,7 +11,6 @@ const money = new Intl.NumberFormat("en-US", {
 })
 
 function View(props: { api: TuiPluginApi; sessionID: string }) {
-  const paths = useTuiPaths()
   const theme = () => props.api.theme.current
   const has = createMemo(() =>
     props.api.state.provider.some(
@@ -28,48 +20,16 @@ function View(props: { api: TuiPluginApi; sessionID: string }) {
   const done = createMemo(() => props.api.kv.get("dismissed_getting_started", false))
   const show = createMemo(() => !has() && !done())
   const cost = createMemo(() => props.api.state.session.get(props.sessionID)?.cost ?? 0)
-  const tokens = createMemo(() => {
-    const messages = props.api.state.session.messages(props.sessionID)
-    const last = messages.findLast(
-      (item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0,
-    )
-    if (!last) return 0
-    return last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
-  })
-  const path = createMemo(() => {
-    const session = props.api.state.session.get(props.sessionID)
-    const dir = session?.directory || props.api.state.path.directory || paths.cwd
-    const out = abbreviateHome(dir, paths.home)
-    const branch = session?.directory === props.api.state.path.directory ? props.api.state.vcs?.branch : undefined
-    const text = branch ? out + ":" + branch : out
-    const short = shortenPath(text, PATH_MAX)
-    const list = short.split("/")
-    return {
-      parent: list.slice(0, -1).join("/"),
-      name: list.at(-1) ?? "",
-    }
-  })
-
   return (
     <box gap={1}>
       <Show when={show()}>
-        <box
-          backgroundColor={theme().backgroundElement}
-          paddingTop={1}
-          paddingBottom={1}
-          paddingLeft={2}
-          paddingRight={2}
-          flexDirection="row"
-          gap={1}
-        >
-          <text flexShrink={0} fg={theme().text}>
-            ⬖
+        <box flexDirection="row" gap={1}>
+          <text flexShrink={0} fg={theme().primary}>
+            ◆
           </text>
           <box flexGrow={1} gap={1}>
             <box flexDirection="row" justifyContent="space-between">
-              <text fg={theme().text}>
-                <b>Getting started</b>
-              </text>
+              <text fg={theme().text}>getting started</text>
               <text fg={theme().textMuted} onMouseDown={() => props.api.kv.set("dismissed_getting_started", true)}>
                 ✕
               </text>
@@ -85,20 +45,9 @@ function View(props: { api: TuiPluginApi; sessionID: string }) {
           </box>
         </box>
       </Show>
-      <text wrapMode="none">
-        <span style={{ fg: theme().textMuted }}>{path().parent}/</span>
-        <span style={{ fg: theme().text }}>{path().name}</span>
-      </text>
-      <text fg={theme().textMuted}>
-        <Show when={tokens() > 0}>
-          {tokens().toLocaleString()} tok · {money.format(cost())}{" "}
-        </Show>
-        <span style={{ fg: theme().success }}>•</span>{" "}
-        <span style={{ fg: theme().text }}>
-          <b>RIFT</b>
-        </span>{" "}
-        {/* Not api.app.version: that is the runtime version, which plugins depend on staying put. */}
-        <span>{RiftVersion}</span>
+      <text fg={theme().border} wrapMode="none">
+        <span style={{ fg: theme().primary }}>◆</span> rift {RiftVersion}
+        <Show when={cost() > 0}> · {money.format(cost())}</Show>
       </text>
     </box>
   )

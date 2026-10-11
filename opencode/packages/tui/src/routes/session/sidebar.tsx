@@ -3,11 +3,12 @@ import { useSync } from "../../context/sync"
 import { createMemo, Show } from "solid-js"
 import { useTheme } from "../../context/theme"
 import { useTuiConfig } from "../../config"
-import { InstallationChannel, RiftVersion } from "@opencode-ai/core/installation/version"
+import { RiftVersion } from "@opencode-ai/core/installation/version"
 import { usePluginRuntime } from "../../plugin/runtime"
 
 import { getScrollAcceleration } from "../../util/scroll"
 import { WorkspaceLabel } from "../../component/workspace-label"
+import { EmptyBorder } from "../../ui/border"
 
 export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const pluginRuntime = usePluginRuntime()
@@ -25,15 +26,18 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
 
   return (
     <Show when={session()}>
+      {/* The context rail: plan, graph, changes, servers. A faint rule, not a painted panel. */}
       <box
-        backgroundColor={theme.backgroundPanel}
-        width={56}
+        backgroundColor={props.overlay ? theme.backgroundPanel : undefined}
+        width={36}
         height="100%"
         paddingTop={1}
         paddingBottom={1}
         paddingLeft={2}
-        paddingRight={2}
-        position={props.overlay ? "absolute" : "relative"}
+        paddingRight={1}
+        border={["left"]}
+        borderColor={theme.border}
+        customBorderChars={{ ...EmptyBorder, vertical: "│" }}
       >
         <scrollbox
           flexGrow={1}
@@ -54,12 +58,9 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
               share_url={session()!.share?.url}
             >
               <box paddingRight={1}>
-                <text fg={theme.text}>
+                <text fg={theme.text} wrapMode="word">
                   <b>{session()!.title}</b>
                 </text>
-                <Show when={InstallationChannel !== "latest"}>
-                  <text fg={theme.textMuted}>{props.sessionID}</text>
-                </Show>
                 <Show when={session()!.workspaceID}>
                   <text fg={theme.textMuted}>
                     <Show
@@ -88,12 +89,8 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
 
         <box flexShrink={0} gap={1} paddingTop={1}>
           <pluginRuntime.Slot name="sidebar_footer" mode="single_winner" session_id={props.sessionID}>
-            <text fg={theme.textMuted}>
-              <span style={{ fg: theme.success }}>•</span>{" "}
-              <span style={{ fg: theme.text }}>
-                <b>RIFT</b>
-              </span>{" "}
-              <span>{RiftVersion}</span>
+            <text fg={theme.border}>
+              <span style={{ fg: theme.primary }}>◆</span> rift {RiftVersion}
             </text>
           </pluginRuntime.Slot>
         </box>

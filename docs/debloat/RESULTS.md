@@ -281,3 +281,86 @@ Tests: `packages/opencode` 3349 pass, 16 fail on the full run. After fixing two 
 attention sounds) plus 2 in `provider.test.ts` ("opencode loader keeps paid models ..."), which fail
 the same way on the committed Phase 4 tree. All 487 tests in the touched areas (mcp, cli/mcp-*,
 help, commands, session tools/prompt, guard, tool) pass. `packages/tui`: 264 pass.
+
+## Phase 7: UI redesign (same stack, new design)
+
+The design system is written down in `docs/design/tui.md`: principles, layout, the gutter glyph
+table, color tokens, type, components and motion. Codex CLI was the primary reference for the
+interaction model (transcript-first single column, borderless composer with a status line,
+inline pickers with a `›` cursor, numbered approvals, a `?` shortcut sheet, restraint with color).
+RIFT's own parts: the glyph gutter, `$`-style shell blocks with a ruled output gutter, grouped
+exploration, the structured checks block, the context rail, recent sessions on home, the task
+view, and the indigo accent.
+
+| Metric | Before | After |
+|---|---|---|
+| TUI source (`packages/tui/src`) | | 1,755 lines added, 2,899 removed (41 files) |
+| TUI tests | 264 pass | 259 pass, 0 fail (5 banner tests removed with the banner) |
+| Binary | 98.48 MB (98,484,578 bytes, Phase 5 tree) | 98.47 MB (98,468,066 bytes) |
+| `--version` | 0.03 to 0.04 s, 34 MB | 0.03 to 0.04 s, 34 to 36 MB |
+| Time until the composer is ready, compiled binary, pty, models fetch off | 2.59, 2.59, 2.61, 3.01 s | 2.42, 2.47, 2.62, 2.73 s |
+
+What changed, by surface:
+
+- **Theme**: a new default `rift` theme (`theme/assets/rift.json`) on the terminal's own
+  background: neutrals, one indigo accent (`#7C83FF` dark / `#3D46F2` light), status colors
+  only for status, tinted diffs. Users who picked a theme keep it; the old themes are still listed.
+- **Transcript**: user turns as `❯ text`; reasoning as one muted `∴ thought 1.2s` line; one line
+  per tool call with a gutter glyph and a bold verb; consecutive read/search/find/list calls fold
+  into one `Explored` entry; shell calls as `$ command` with elapsed time, non-zero exit codes, and
+  output under a faint rule collapsed to 6 lines; file changes as `± path +n −n` with a diff that
+  collapses past 24 rows; plans as `≡ Plan 2/3`; subagents as `⇢`; errors as `✕`; a faint turn
+  footer (`─ 1.6s · model`). A tool waiting for approval shows an amber `?` instead of a spinner.
+- **Checks**: RIFT's verification report is rendered from its structured metadata as a checks
+  block (one row per command with its real outcome, browser check, summary-vs-diff), with the
+  prose and failing output one click away. Before, it was rendered as plain answer text.
+- **Composer**: no rounded frame. A faint rule, the `❯` prompt (`$` in shell mode), and one status
+  line: agent and model on the left; directory, context, cost and `? keys` on the right. While the
+  agent works, an activity line above the rule shows a spinner, elapsed time, the rate-limit retry
+  countdown and attempt (amber, not red), and `esc to stop`.
+- **Home**: the banner art, tips carousel and home footer are gone. Home is an empty session: the
+  intro line, the five most recent sessions (click to reopen), and the composer in the same place
+  it sits in every session.
+- **Sheets**: every dialog and picker opens docked at the bottom over the composer, full width on a
+  solid surface under a faint rule; no dimmed backdrop. Selection is an accent `›` and bold text,
+  not a filled bar; categories are lowercase muted labels; filter input is a `❯` line.
+- **Approvals**: numbered choices (`1. Yes`, `2. Yes, and don't ask again`, `3. No, tell RIFT what to
+  do instead (esc)`), keys 1 to 3 choose directly, up/down and enter still work. The question
+  prompt and the reject prompt follow the same pattern.
+- **Autocomplete** (`/`, `@`): same list style, descriptions aligned in one column.
+- **Shortcut sheet**: `?` on an empty composer (also `/help`, `/keys`): three columns built from
+  the live keymap, so rebound keys show correctly.
+- **Context rail**: 36 columns, no painted panel, a faint left rule; docks at 140+ columns and
+  overlays below that. Lowercase labels (`plan 2/3`, `graph 3/4`, `lsp off`), compact tree
+  connectors, and a footer that no longer repeats the path and token count the composer shows.
+- **Task view** (`ctrl+l`): same content; section headings are lowercase with a rule that can no
+  longer wrap (the old `EXECUTIO` / `N` split at narrow widths is fixed).
+- **Toasts, status strip, subagent footer, revert notice, confirm dialogs**: restyled to the same
+  glyph and color rules; the status strip no longer prints internal state names.
+- Removed decorative code: `banner.ts` and its README SVG generator, `bg-pulse` (background
+  animation in the retry dialog), the tips carousel and home footer plugins.
+
+Decision to note: new sessions open on the transcript, not the task view. The Phase 7 plan said
+task view first; the redesign brief made the transcript the product, and the task view's essentials
+now live in the rail. `ctrl+l` still toggles, and the last choice is remembered per user, so
+anyone who chose the task view keeps it. Flipping the default back is one line
+(`view_mode` in `routes/session/index.tsx`).
+
+Not done from the original Phase 7 list: automatic fallback to another free model on rate limits.
+That is engine behaviour, not UI; the activity line shows the countdown and attempt.
+
+The startup row waits for the composer placeholder on the rendered screen, a stricter mark than
+Phase 2's "first 3 KB of output", so it is not comparable with that number; both binaries were
+built from the same tree with and without the Phase 7 changes and measured the same way.
+
+Verified: typecheck clean for `tui` and `opencode`; `packages/tui` 259 pass; full `packages/opencode`
+suite 3351 pass, 14 fail, the same 14 that fail without these changes (9 run-process timeouts,
+3 attention sounds, 2 provider-loader tests). Rendered under a pty with a scripted model (home, a full
+session with read/search/shell/edit/plan/checks, mid-stream, a 429 retry, the approval sheet, the
+command palette, the model picker, `/` autocomplete, the shortcut sheet, the task view, the rail
+docked at 150 columns and overlaid at 100, 80 columns, light mode).
+
+Not verified: real terminal emulators and fonts (only the pty emulator was used). Each glyph was
+checked for alignment there; `☰` measured two columns in the renderer and one in the terminal, so the
+plan glyph is `≡` instead. A font that draws `◆ ∴ ± ⇢` wide would shift those rows by a column.
+Windows was not tested.

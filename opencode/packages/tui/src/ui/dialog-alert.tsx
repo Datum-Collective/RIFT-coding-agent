@@ -41,15 +41,16 @@ export function DialogAlert(props: DialogAlertProps) {
       </box>
       <box flexDirection="row" justifyContent="flex-end" paddingBottom={1}>
         <box
-          paddingLeft={3}
-          paddingRight={3}
-          backgroundColor={theme.primary}
+          paddingLeft={1}
+          paddingRight={1}
           onMouseUp={() => {
             props.onConfirm?.()
             dialog.clear()
           }}
         >
-          <text fg={theme.selectedListItemText}>ok</text>
+          <text fg={theme.text} attributes={TextAttributes.BOLD}>
+            <span style={{ fg: theme.primary }}>› </span>ok
+          </text>
         </box>
       </box>
     </box>

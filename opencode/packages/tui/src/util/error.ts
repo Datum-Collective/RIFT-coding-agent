@@ -24,8 +24,8 @@ export function cliErrorMessage(input: unknown): string | undefined {
     return [
       `Model not found: ${field(model, "providerID")}/${field(model, "modelID")}`,
       ...(suggestions.length ? ["Did you mean: " + suggestions.join(", ")] : []),
-      "Try: `opencode models` to list available models",
-      "Or check your config (opencode.json) provider/model names",
+      "Try: `rift models` to list available models",
+      "Or check the provider and model names in rift.json",
     ].join("\n")
   }
 

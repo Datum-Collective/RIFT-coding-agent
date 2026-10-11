@@ -10,7 +10,7 @@ import type { BuiltinTuiPlugin } from "../builtins"
 import { createMemo, For, Show } from "solid-js"
 import { useTheme } from "../../context/theme"
 import { useTask } from "../../component/control/use-task"
-import { GLYPH, Row, formatDuration, shortenPath, signalColor } from "../../component/control/primitives"
+import { GLYPH, Label, Row, formatDuration, shortenPath, signalColor } from "../../component/control/primitives"
 import type { Signal, Task } from "../../util/task"
 
 const id = "internal:sidebar-task"
@@ -27,20 +27,6 @@ const STATE: Record<Task["state"], { label: string; signal: Signal }> = {
   blocked: { label: "Waiting on you", signal: "warn" },
   failed: { label: "Something failed", signal: "failed" },
   done: { label: "Done", signal: "done" },
-}
-
-function Heading(props: { children: string; count?: string }) {
-  const { theme } = useTheme()
-  return (
-    <box flexDirection="row" justifyContent="space-between">
-      <text fg={theme.text}>
-        <b>{props.children}</b>
-      </text>
-      <Show when={props.count}>
-        <text fg={theme.textMuted}>{props.count}</text>
-      </Show>
-    </box>
-  )
 }
 
 /** The panel for one task. Takes the task as data so it can be rendered without a live session. */
@@ -60,8 +46,9 @@ export function TaskPanel(props: { task: Task }) {
   return (
     <box gap={1}>
       <box>
-        <text fg={signalColor(theme, state().signal)}>
-          {GLYPH[state().signal]} <b>{state().label}</b>
+        <text fg={theme.text}>
+          <span style={{ fg: signalColor(theme, state().signal) }}>{GLYPH[state().signal]} </span>
+          {state().label.toLowerCase()}
         </text>
         <Show when={now() && task().state !== "blocked"}>
           <text fg={theme.textMuted} wrapMode="none">
@@ -77,7 +64,7 @@ export function TaskPanel(props: { task: Task }) {
 
       <Show when={steps().length > 0}>
         <box>
-          <Heading count={`${stepsDone()}/${steps().length}`}>Plan</Heading>
+          <Label count={`${stepsDone()}/${steps().length}`}>Plan</Label>
           <For each={steps().slice(0, MAX_STEPS)}>
             {(step) => (
               <Row signal={step.signal} dim={step.signal === "done"}>
@@ -95,7 +82,7 @@ export function TaskPanel(props: { task: Task }) {
 
       <Show when={files().length > 0}>
         <box>
-          <Heading count={`${files().length} ${files().length === 1 ? "file" : "files"}`}>Changes</Heading>
+          <Label count={`${files().length} ${files().length === 1 ? "file" : "files"}`}>Changes</Label>
           <For each={files().slice(0, MAX_FILES)}>
             {(item) => (
               <box flexDirection="row" justifyContent="space-between" gap={1}>
@@ -107,7 +94,7 @@ export function TaskPanel(props: { task: Task }) {
                     <text fg={theme.diffAdded}>+{item.added}</text>
                   </Show>
                   <Show when={item.removed}>
-                    <text fg={theme.diffRemoved}>-{item.removed}</text>
+                    <text fg={theme.diffRemoved}>−{item.removed}</text>
                   </Show>
                 </box>
               </box>
@@ -119,7 +106,7 @@ export function TaskPanel(props: { task: Task }) {
           <Show when={files().length > 1}>
             <box flexDirection="row" gap={1}>
               <text fg={theme.diffAdded}>+{task().changes.added}</text>
-              <text fg={theme.diffRemoved}>-{task().changes.removed}</text>
+              <text fg={theme.diffRemoved}>−{task().changes.removed}</text>
               <text fg={theme.textMuted}>in total</text>
             </box>
           </Show>
@@ -128,7 +115,7 @@ export function TaskPanel(props: { task: Task }) {
 
       <Show when={checks().length > 0}>
         <box>
-          <Heading>Checks</Heading>
+          <Label>Checks</Label>
           <For each={checks()}>
             {(check) => {
               const signal: Signal =
