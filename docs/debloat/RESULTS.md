@@ -200,3 +200,84 @@ Caveats:
 
 Tests: `packages/opencode` 3328 pass, 13 fail: the same 12 as baseline, plus one smoke test
 (`providers list`) that timed out under load in the full run and passes alone.
+
+## Phase 5: MCP the Claude Code way
+
+Measured with `bun script/prompt-tokens.ts --mcp` (new flag): five stdio servers from
+`test/fixture/mcp-fake-server.ts` with 20, 14, 10, 8 and 6 tools (58 tools, realistic GitHub-style
+schemas), o200k tokenizer, hermetic home.
+
+| Metric | Before | After | Target |
+|---|---|---|---|
+| MCP tool schemas per request, 5 servers / 58 tools | 10,400 tokens (58 tools) | 328 tokens (1 tool: `mcp_search`) | names only until used, met |
+| Fixed total with those 5 servers | 13,305 tokens | 3,231 | |
+| Fixed total, no MCP servers | 2,901 | 2,901 (unchanged) | < 3,000 |
+| MCP servers connected at startup | all, before the first request | none; first use or `/mcp` | |
+| Binary | 98.5 MB | 98.5 MB (98,501,090 bytes) | |
+| `--version` | 0.03 s, 34 MB | 0.04 s, 34 to 37 MB | |
+| Request guard snapshots | baseline | unchanged | |
+
+The no-MCP total reads 2,901 here and 2,966 in Phase 4. Nothing in the prompt changed between the
+two runs; the 65-token gap is run-to-run variation in the environment block (date, paths).
+
+What changed:
+
+1. Config (`src/mcp/config.ts`). Three scopes, later wins: user `~/.rift/mcp.json`, project
+   `.mcp.json` (nearest wins, walking up to the worktree root), local `mcp` in rift.json / opencode.json.
+   The two JSON files use the `mcpServers` shape other MCP clients use (`command`/`args`/`env`, or
+   `type: http|sse` + `url`/`headers`), so an existing `.mcp.json` works unchanged. Strings expand
+   `${VAR}` and `${VAR:-default}` at load time; files keep the placeholders. `{ "enabled": false }`
+   in rift.json turns off a server defined in another scope. `OPENCODE_DISABLE_PROJECT_CONFIG` also
+   skips `.mcp.json`.
+2. Approval. A `.mcp.json` server is `needs_approval` until the user decides. The TUI asks at startup
+   (Allow once / Always allow / Deny); always and deny are remembered per project in
+   `<state>/mcp-projects.json`. `rift mcp reset-project-choices` forgets them. In `rift run` an
+   unapproved server is skipped, and `rift mcp list` says why.
+3. CLI: `mcp add <name> -- <cmd> [args]`, `mcp add -t http <name> <url>`, `--scope local|project|user`,
+   `-e KEY=val`, `-H "Name: value"`, `mcp add-json`, `get`, `list`, `remove`, `reset-project-choices`,
+   `auth <name>`, `logout <name>`. The interactive wizard and `mcp debug` are gone.
+4. Lazy connect. Nothing connects at startup. The first request that needs MCP starts every enabled,
+   approved server and waits for them once, up to 5 s (`RIFT_MCP_STARTUP_WAIT`). A slower server
+   joins later turns, and `mcp_search` waits for it. New statuses: `pending`, `connecting`,
+   `needs_approval`.
+5. `/mcp` panel (also `/mcps`): every server with scope, transport, status, tool count and auth
+   state; Enter lists its tools (or asks for approval); space turns it on or off, remembered per
+   project; ctrl+r reconnects; ctrl+o signs in. The TUI now refreshes MCP status, resources and
+   MCP prompt commands on `mcp.tools.changed`. Before this, the sidebar never updated after startup.
+6. Tool search (`src/mcp/search.ts`). When the allowed MCP tools would cost more than about 2,500
+   tokens (`RIFT_MCP_TOOL_SEARCH=auto|always|never`), the request carries one `mcp_search` tool
+   whose description lists every tool name grouped by server. A search (keywords, or
+   `select:<full name>,...`) returns schemas and records the names in the tool result. Every later
+   step of the session sends those tools with their full schemas, so the model calls them by name.
+7. Names are `mcp__<server>__<tool>`, so permission rules can target `mcp__server__*` or one tool,
+   and a fully denied server's tools drop out of the request and the search list. One tool result
+   is capped at 100 KB (about 25k tokens); the rest is saved to a file with a truncation note.
+   Remote servers that drop are retried after 1, 2, 4, 8 and 16 s. `tools/list_changed`, resources
+   via `@server:uri` and prompts as slash commands were already in place and are unchanged.
+
+Fixed along the way:
+
+- `Truncate.output` kept nothing when a single line was longer than the byte budget (minified
+  JSON). It now keeps the first `maxBytes` of that line. Affects every tool, not only MCP.
+- SDK regeneration was broken by Phase 1 (`packages/sdk/js/script/build.ts` ran the deleted
+  `generate` command). It now runs `script/openapi.ts`. The regenerated SDK also drops the
+  `experimental.console` client Phase 1 removed server side. The TUI was still calling it at startup
+  (a 404, swallowed), so the dead org-switch dialog and console state are removed from the TUI.
+
+Tests added: `test/mcp/config.test.ts` (scopes, expansion, approvals, search ranking, naming,
+per-server permission rules), `test/mcp/lazy.test.ts` (no start before use, approval once/deny,
+slow server vs startup wait, on/off persisted), `test/cli/mcp-add.test.ts` rewritten for the new CLI,
+`test/cli/mcp-tool-search.test.ts` (end to end through `rift run`: names only, search loads a
+tool, the call reaches the server; a 400 KB result is capped with the note).
+
+Verified by hand on the compiled binary: under a pty, the TUI shows the approval prompt for a
+`.mcp.json` server, "Always allow" persists, and `/mcp` lists both servers with scope and tool counts.
+
+Not verified: auto-reconnect of a dropped HTTP server (implemented, no test that drops a live
+connection); OAuth sign-in from the `/mcp` panel against a real provider.
+
+Tests: `packages/opencode` 3349 pass, 16 fail on the full run. After fixing two stubs and updating the
+`mcp` help snapshot, the failures left are the 12 baseline ones (9 run-process timeouts, 3
+attention sounds) plus 2 in `provider.test.ts` ("opencode loader keeps paid models ..."), which fail
+the same way on the committed Phase 4 tree. All 487 tests in the touched areas (mcp, cli/mcp-*,
+help, commands, session tools/prompt, guard, tool) pass. `packages/tui`: 264 pass.

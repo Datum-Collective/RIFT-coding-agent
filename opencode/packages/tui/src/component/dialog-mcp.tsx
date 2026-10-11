@@ -1,84 +1,178 @@
-import { createMemo, createSignal } from "solid-js"
-import { useLocal } from "../context/local"
+import { createEffect, createMemo, createSignal, onMount } from "solid-js"
+import type { McpServer } from "@opencode-ai/sdk/v2"
 import { useSync } from "../context/sync"
-import { map, pipe, entries, sortBy } from "remeda"
-import { DialogSelect, type DialogSelectRef, type DialogSelectOption } from "../ui/dialog-select"
+import { DialogSelect, type DialogSelectOption } from "../ui/dialog-select"
+import { useDialog } from "../ui/dialog"
+import { useToast } from "../ui/toast"
 import { useTheme } from "../context/theme"
-import { TextAttributes } from "@opentui/core"
 import { useSDK } from "../context/sdk"
 
-function Status(props: { enabled: boolean; loading: boolean }) {
+type Status = McpServer["status"]["status"]
+
+function label(server: McpServer) {
+  const status = server.status
+  switch (status.status) {
+    case "connected":
+      return `${server.tools.length} tools`
+    case "pending":
+      return "not started"
+    case "connecting":
+      return "connecting"
+    case "disabled":
+      return "disabled"
+    case "needs_approval":
+      return "needs approval"
+    case "needs_auth":
+      return "needs sign-in"
+    case "needs_client_registration":
+      return "needs client id"
+    case "failed":
+      return "failed"
+  }
+}
+
+function StatusText(props: { server: McpServer; busy: boolean }) {
   const { theme } = useTheme()
-  if (props.loading) {
-    return <span style={{ fg: theme.textMuted }}>⋯ Loading</span>
+  const color = (status: Status) => {
+    if (status === "connected") return theme.success
+    if (status === "failed" || status === "needs_client_registration") return theme.error
+    if (status === "needs_approval" || status === "needs_auth") return theme.warning
+    return theme.textMuted
   }
-  if (props.enabled) {
-    return <span style={{ fg: theme.success, attributes: TextAttributes.BOLD }}>✓ Enabled</span>
+  return (
+    <span style={{ fg: props.busy ? theme.textMuted : color(props.server.status.status) }}>
+      {props.busy ? "working" : label(props.server)}
+    </span>
+  )
+}
+
+/** Asks whether a project's .mcp.json server may start. */
+export function DialogMcpApproval(props: { server: McpServer; onDone?: () => void }) {
+  const sdk = useSDK()
+  const dialog = useDialog()
+  const decide = async (decision: "once" | "always" | "deny") => {
+    await sdk.client.mcp.approve({ name: props.server.name, decision })
+    dialog.clear()
+    props.onDone?.()
   }
-  return <span style={{ fg: theme.textMuted }}>○ Disabled</span>
+  return (
+    <DialogSelect
+      title={`Start "${props.server.name}" from this project's .mcp.json?`}
+      placeholder={props.server.target}
+      skipFilter
+      options={[
+        { title: "Allow once", value: "once" as const, description: "for this run only" },
+        { title: "Always allow", value: "always" as const, description: "remembered for this project" },
+        { title: "Deny", value: "deny" as const, description: "remembered; change it in /mcp" },
+      ]}
+      onSelect={(option) => void decide(option.value)}
+    />
+  )
+}
+
+function DialogMcpTools(props: { server: McpServer }) {
+  return (
+    <DialogSelect
+      title={`${props.server.name}: ${props.server.tools.length} tools`}
+      options={props.server.tools.map((tool) => ({
+        title: tool,
+        value: tool,
+        description: `mcp__${props.server.name.replace(/[^a-zA-Z0-9_-]/g, "_")}__${tool.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+      }))}
+    />
+  )
 }
 
 export function DialogMcp() {
-  const local = useLocal()
   const sync = useSync()
   const sdk = useSDK()
-  const [, setRef] = createSignal<DialogSelectRef<unknown>>()
-  const [loading, setLoading] = createSignal<string | null>(null)
+  const dialog = useDialog()
+  const toast = useToast()
+  const [servers, setServers] = createSignal<McpServer[]>([])
+  const [busy, setBusy] = createSignal<string | null>(null)
 
-  const options = createMemo(() => {
-    // Track sync data and loading state to trigger re-render when they change
-    const mcpData = sync.data.mcp
-    const loadingMcp = loading()
-
-    return pipe(
-      mcpData ?? {},
-      entries(),
-      sortBy(([name]) => name),
-      map(([name, status]) => ({
-        value: name,
-        title: name,
-        description: status.status === "failed" ? "failed" : status.status,
-        footer: <Status enabled={local.mcp.isEnabled(name)} loading={loadingMcp === name} />,
-        category: undefined,
-      })),
-    )
+  // Opening /mcp starts any server that has not started yet; the list refreshes as they connect.
+  const refresh = () =>
+    sdk.client.mcp.servers({ start: "true" }).then((x) => {
+      if (x.data) setServers(x.data)
+    })
+  onMount(() => void refresh())
+  createEffect(() => {
+    JSON.stringify(sync.data.mcp)
+    void refresh()
   })
+
+  const run = async (name: string, action: () => Promise<unknown>) => {
+    if (busy() !== null) return
+    setBusy(name)
+    try {
+      await action()
+    } catch (error) {
+      toast.show({ variant: "error", message: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setBusy(null)
+      await refresh()
+    }
+  }
+
+  const byName = (name: string) => servers().find((server) => server.name === name)
+
+  const options = createMemo(() =>
+    servers().map(
+      (server): DialogSelectOption<string> => ({
+        value: server.name,
+        title: server.name,
+        description: `${server.scope} · ${server.type === "remote" ? "http" : "stdio"}${server.auth ? ` · ${server.auth.replace("_", " ")}` : ""}`,
+        details: server.status.status === "failed" || server.status.status === "needs_client_registration"
+          ? [server.status.error]
+          : undefined,
+        footer: <StatusText server={server} busy={busy() === server.name} />,
+      }),
+    ),
+  )
 
   const actions = createMemo(() => [
     {
       command: "dialog.mcp.toggle",
-      title: "toggle",
-      onTrigger: async (option: DialogSelectOption<string>) => {
-        // Prevent toggling while an operation is already in progress
-        if (loading() !== null) return
-
-        setLoading(option.value)
-        try {
-          await local.mcp.toggle(option.value)
-          // Refresh MCP status from server
-          const status = await sdk.client.mcp.status()
-          if (status.data) {
-            sync.set("mcp", status.data)
-          } else {
-            console.error("Failed to refresh MCP status: no data returned")
-          }
-        } catch (error) {
-          console.error("Failed to toggle MCP:", error)
-        } finally {
-          setLoading(null)
-        }
+      title: "on/off",
+      onTrigger: (option: DialogSelectOption<string>): void => {
+        const server = byName(option.value)
+        if (!server) return
+        const on = server.status.status !== "disabled"
+        void run(option.value, () =>
+          on ? sdk.client.mcp.disconnect({ name: option.value }) : sdk.client.mcp.connect({ name: option.value }),
+        )
+      },
+    },
+    {
+      command: "dialog.mcp.reconnect",
+      title: "reconnect",
+      onTrigger: (option: DialogSelectOption<string>): void => {
+        void run(option.value, () => sdk.client.mcp.connect({ name: option.value }))
+      },
+    },
+    {
+      command: "dialog.mcp.auth",
+      title: "sign in",
+      disabled: (option: DialogSelectOption<string> | undefined) => !option || !byName(option.value)?.auth,
+      onTrigger: (option: DialogSelectOption<string>): void => {
+        void run(option.value, () => sdk.client.mcp.auth.authenticate({ name: option.value }))
       },
     },
   ])
 
   return (
     <DialogSelect
-      ref={setRef}
-      title="MCPs"
+      title="MCP servers"
       options={options()}
       actions={actions()}
-      onSelect={(_option) => {
-        // Don't close on select, only on escape
+      emptyView={<text>No MCP servers. Add one with: rift mcp add &lt;name&gt; -- &lt;command&gt;</text>}
+      onSelect={(option) => {
+        const server = byName(option.value)
+        if (!server) return
+        if (server.status.status === "needs_approval")
+          return dialog.replace(() => <DialogMcpApproval server={server} onDone={() => dialog.replace(() => <DialogMcp />)} />)
+        if (server.tools.length) return dialog.replace(() => <DialogMcpTools server={server} />)
       }}
     />
   )

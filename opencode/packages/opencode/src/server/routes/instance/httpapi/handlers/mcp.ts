@@ -3,7 +3,7 @@ import { Effect, Schema } from "effect"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { McpServerNotFoundError } from "../errors"
-import { AddPayload, AuthCallbackPayload, StatusMap, UnsupportedOAuthError } from "../groups/mcp"
+import { AddPayload, ApprovePayload, AuthCallbackPayload, StatusMap, UnsupportedOAuthError } from "../groups/mcp"
 
 export const mcpHandlers = HttpApiBuilder.group(InstanceHttpApi, "mcp", (handlers) =>
   Effect.gen(function* () {
@@ -11,6 +11,26 @@ export const mcpHandlers = HttpApiBuilder.group(InstanceHttpApi, "mcp", (handler
 
     const status = Effect.fn("McpHttpApi.status")(function* () {
       return yield* mcp.status()
+    })
+
+    const servers = Effect.fn("McpHttpApi.servers")(function* (ctx: { query: { start?: "true" | "false" } }) {
+      if (ctx.query.start === "true") yield* mcp.start()
+      return yield* mcp.servers()
+    })
+
+    const approve = Effect.fn("McpHttpApi.approve")(function* (ctx: {
+      params: { name: string }
+      payload: typeof ApprovePayload.Type
+    }) {
+      return yield* mcp
+        .approve(ctx.params.name, ctx.payload.decision)
+        .pipe(
+          Effect.catchTag("MCP.NotFoundError", (error) =>
+            Effect.fail(
+              new McpServerNotFoundError({ name: error.name, message: `MCP server not found: ${error.name}` }),
+            ),
+          ),
+        )
     })
 
     const add = Effect.fn("McpHttpApi.add")(function* (ctx: { payload: typeof AddPayload.Type }) {
@@ -100,6 +120,8 @@ export const mcpHandlers = HttpApiBuilder.group(InstanceHttpApi, "mcp", (handler
 
     return handlers
       .handle("status", status)
+      .handle("servers", servers)
+      .handle("approve", approve)
       .handle("add", add)
       .handle("authStart", authStart)
       .handle("authCallback", authCallback)

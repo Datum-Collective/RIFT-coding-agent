@@ -21,7 +21,7 @@ function View(props: { api: TuiPluginApi }) {
     if (status === "connected") return theme().success
     if (status === "failed") return theme().error
     if (status === "disabled") return theme().textMuted
-    if (status === "needs_auth") return theme().warning
+    if (status === "needs_auth" || status === "needs_approval") return theme().warning
     if (status === "needs_client_registration") return theme().error
     return theme().textMuted
   }
@@ -66,6 +66,9 @@ function View(props: { api: TuiPluginApi }) {
                       <Match when={item.status === "disabled"}>Disabled</Match>
                       <Match when={item.status === "needs_auth"}>Needs auth</Match>
                       <Match when={item.status === "needs_client_registration"}>Needs client ID</Match>
+                      <Match when={item.status === "needs_approval"}>Needs approval (/mcp)</Match>
+                      <Match when={item.status === "pending"}>Starts on first use</Match>
+                      <Match when={item.status === "connecting"}>Connecting</Match>
                     </Switch>
                   </span>
                 </text>

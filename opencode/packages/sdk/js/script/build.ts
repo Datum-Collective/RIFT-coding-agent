@@ -11,7 +11,7 @@ import { createClient } from "@hey-api/openapi-ts"
 
 const opencode = path.resolve(dir, "../../opencode")
 
-await $`bun dev generate > ${dir}/openapi.json`.cwd(opencode)
+await $`bun run --preload @opentui/solid/preload script/openapi.ts > ${dir}/openapi.json`.cwd(opencode)
 
 const document = (await Bun.file("./openapi.json").json()) as {
   components?: { schemas?: Record<string, unknown> }

@@ -66,6 +66,7 @@ export function DialogStatus() {
                         disabled: theme.textMuted,
                         needs_auth: theme.warning,
                         needs_client_registration: theme.error,
+                        needs_approval: theme.warning,
                       } as Record<string, typeof theme.success>
                     )[item.status],
                   }}
@@ -78,9 +79,12 @@ export function DialogStatus() {
                     <Switch fallback={item.status}>
                       <Match when={item.status === "connected"}>Connected</Match>
                       <Match when={item.status === "failed" && item}>{(val) => val().error}</Match>
-                      <Match when={item.status === "disabled"}>Disabled in configuration</Match>
+                      <Match when={item.status === "disabled"}>Disabled</Match>
+                      <Match when={item.status === "pending"}>Starts on first use</Match>
+                      <Match when={item.status === "connecting"}>Connecting</Match>
+                      <Match when={item.status === "needs_approval"}>Needs approval (open /mcp)</Match>
                       <Match when={(item.status as string) === "needs_auth"}>
-                        Needs authentication (run: opencode mcp auth {key})
+                        Needs authentication (run: rift mcp auth {key})
                       </Match>
                       <Match when={(item.status as string) === "needs_client_registration" && item}>
                         {(val) => (val() as { error: string }).error}

@@ -116,7 +116,11 @@ export function fetch<T extends { name: string }>(
 
 export const sanitize = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, "_")
 
-export const toolName = (clientName: string, name: string) => sanitize(clientName) + "_" + sanitize(name)
+/** Model-facing name of an MCP tool: mcp__<server>__<tool>, so permission rules can target `mcp__server__*`. */
+export const toolName = (clientName: string, name: string) => `mcp__${sanitize(clientName)}__${sanitize(name)}`
+
+/** The server part of an `mcp__server__tool` name, or undefined for any other tool name. */
+export const serverOf = (toolName: string) => toolName.match(/^mcp__(.+?)__/)?.[1]
 
 export function prompts(client: Client, timeout?: number) {
   if (!client.getServerCapabilities()?.prompts) return Promise.resolve([])
