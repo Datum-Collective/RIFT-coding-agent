@@ -446,3 +446,21 @@ duplicating the TUI. Removed it and kept the printer.
   plans) per tool call on stderr, exit code non-zero on error.
 - The 9 `run-process` tests that timed out on every run since the baseline now pass. The remaining
   5 failures (2 provider-loader, 3 attention-sound) fail the same way on the untouched baseline.
+
+### Fewer git processes at startup
+
+Repository discovery asked `git rev-parse` three times (`--show-toplevel`, `--git-dir`,
+`--git-common-dir`); it now asks once with all three flags and falls back to the three separate
+calls if that fails (outside a work tree), so results are identical. Startup ran this discovery
+about five times from different services.
+
+| Metric | Before | After |
+|---|---|---|
+| git processes during TUI startup | 22 | 12 |
+| Time until the composer is ready, compiled, full catalogue (same session, back to back) | 3.03 to 3.11 s | 2.96 to 3.00 s |
+
+The machine was under more load than in the earlier speed pass, so both columns are slower than
+the 1.97 s measured there; the comparison is between builds measured together.
+
+Tried and reverted: a 10-second memo of discovery and `remote get-url`. It hid a remote added (or a
+`git init`) mid-session for up to 10 seconds, which three project tests caught.
