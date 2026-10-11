@@ -397,3 +397,24 @@ The warm canvas is replaced with true black (`#000000`) and neutral greys: panel
 hover/selection `#181818`, frames `#262626`, faint ink `#4D4D4D`, text `#EDEDED`, muted `#8F8F8F`.
 Accent stays the logo's azure. Diff tints darkened to sit on black. Light variant is plain white
 and greys. Layout unchanged. `packages/tui` tests pass.
+
+## Speed pass: provider loading on the startup path
+
+Measured on the compiled binary, headless server, fresh instance, full models.dev catalogue
+(226 providers, ~8.5k models), two runs each.
+
+| Request | Before | After |
+|---|---|---|
+| `/config/providers` (TUI waits on this) | 207, 210 ms | 85, 90 ms |
+| `/provider`, first | 283, 292 ms | 301, 305 ms |
+| `/provider`, repeat | 285, 287 ms | 137, 150 ms |
+
+- The model validator is built once instead of on every call (`toPublicInfo`).
+- The provider state copies a catalogue entry only when that provider is touched, instead of
+  deep-cloning all 226 up front.
+- Public provider copies are cached per source object for responses.
+- The TUI no longer waits for the full provider catalogue (several MB, used only by the connect
+  dialog) before first paint; it loads in the background.
+
+Request guard snapshots unchanged; provider/guard/server tests 959 pass (the 2 failures are the
+pre-existing "opencode loader keeps paid models" tests); `packages/tui` passes.

@@ -311,12 +311,15 @@ export const ConfigProvidersResult = Schema.Struct({
 })
 export type ConfigProvidersResult = Types.DeepMutable<Schema.Schema.Type<typeof ConfigProvidersResult>>
 
+// Built once: compiling the validator inside the filter cost ~40 ms per pass over the catalogue.
+const isModel = Schema.is(Model)
+
 export function toPublicInfo(provider: Info): Info {
   return JSON.parse(
     JSON.stringify(
       {
         ...provider,
-        models: Object.fromEntries(Object.entries(provider.models).filter(([, model]) => Schema.is(Model)(model))),
+        models: Object.fromEntries(Object.entries(provider.models).filter(([, model]) => isModel(model))),
       },
       (_, value) => {
         if (typeof value === "function" || typeof value === "symbol" || value === undefined) return undefined
@@ -325,6 +328,30 @@ export function toPublicInfo(provider: Info): Info {
       },
     ),
   )
+}
+
+// Provider objects are only mutated while the provider state is built, and a models.dev refresh
+// yields new objects, so a public copy can be reused for as long as its source object lives.
+const publicCache = new WeakMap<object, Info>()
+
+/** `toPublicInfo`, cached per source object. For serializing responses only: do not mutate the result. */
+export function toPublicInfoCached(provider: Info): Info {
+  let cached = publicCache.get(provider)
+  if (!cached) {
+    cached = toPublicInfo(provider)
+    publicCache.set(provider, cached)
+  }
+  return cached
+}
+
+/** The public form of a models.dev provider entry, cached per entry. Same rules as `toPublicInfoCached`. */
+export function publicFromModelsDev(provider: ModelsDev.Provider): Info {
+  let cached = publicCache.get(provider)
+  if (!cached) {
+    cached = toPublicInfo(fromModelsDevProvider(provider))
+    publicCache.set(provider, cached)
+  }
+  return cached
 }
 
 export function defaultModelIDs<T extends { models: Record<string, { id: string }> }>(providers: Record<string, T>) {
@@ -596,7 +623,28 @@ const layer = Layer.effect(
         const cfg = yield* config.get()
         const modelsDev = yield* modelsDevSvc.get()
         const catalog = mapValues(modelsDev, fromModelsDevProvider)
-        const database = mapValues(catalog, toPublicInfo)
+        // A mutable copy per provider, made the first time that provider is touched. Cloning the
+        // whole catalogue up front (226 providers, ~8.5k models) cost ~150 ms on every start, and
+        // only the handful of providers with config, keys or loaders are ever written to.
+        const overrides: Record<string, Info> = {}
+        const database = {
+          get(id: string): Info | undefined {
+            if (id in overrides) return overrides[id]
+            const source = catalog[id as ProviderV2.ID]
+            if (!source) return undefined
+            return (overrides[id] = toPublicInfo(source))
+          },
+          set(id: string, value: Info) {
+            overrides[id] = value
+          },
+          /** Read without copying; never mutate the result. */
+          peek(id: string): Info | undefined {
+            return overrides[id] ?? catalog[id as ProviderV2.ID]
+          },
+          ids() {
+            return new Set([...Object.keys(catalog), ...Object.keys(overrides)])
+          },
+        }
 
         const providers: Record<ProviderV2.ID, Info> = {} as Record<ProviderV2.ID, Info>
         const languages = new Map<string, LanguageModelV3>()
@@ -624,7 +672,7 @@ const layer = Layer.effect(
             providers[providerID] = mergeDeep(existing, provider)
             return
           }
-          const match = database[providerID]
+          const match = database.get(providerID)
           if (!match) return
           // @ts-expect-error
           providers[providerID] = mergeDeep(match, provider)
@@ -652,7 +700,7 @@ const layer = Layer.effect(
           const providerID = ProviderV2.ID.make(p.id)
           if (disabled.has(providerID)) continue
 
-          const provider = database[providerID]
+          const provider = database.get(providerID)
           if (!provider) continue
           const pluginAuth = yield* auth.get(providerID).pipe(Effect.orDie)
 
@@ -673,7 +721,7 @@ const layer = Layer.effect(
 
         // extend database from config
         for (const [providerID, provider] of configProviders) {
-          const existing = database[providerID]
+          const existing = database.get(providerID)
           const parsed: Info = {
             id: ProviderV2.ID.make(providerID),
             name: provider.name ?? existing?.name ?? providerID,
@@ -766,14 +814,15 @@ const layer = Layer.effect(
             )
             parsed.models[modelID] = parsedModel
           }
-          database[providerID] = parsed
+          database.set(providerID, parsed)
         }
 
         // load env
         const envs = yield* env.all()
-        for (const [id, provider] of Object.entries(database)) {
+        for (const id of database.ids()) {
           const providerID = ProviderV2.ID.make(id)
           if (disabled.has(providerID)) continue
+          const provider = database.peek(id)!
           const apiKey = provider.env.map((item) => envs[item]).find(Boolean)
           if (!apiKey) continue
           mergeProvider(providerID, {
@@ -808,7 +857,7 @@ const layer = Layer.effect(
           const options = yield* Effect.promise(() =>
             plugin.auth!.loader!(
               () => bridge.promise(auth.get(providerID).pipe(Effect.orDie)) as any,
-              toPublicInfo(database[plugin.auth!.provider]),
+              toPublicInfo(database.peek(plugin.auth!.provider)!),
             ),
           )
           const opts = options ?? {}
@@ -819,7 +868,7 @@ const layer = Layer.effect(
         for (const [id, fn] of Object.entries(custom(dep))) {
           const providerID = ProviderV2.ID.make(id)
           if (disabled.has(providerID)) continue
-          const data = database[providerID]
+          const data = database.get(providerID)
           if (!data) {
             continue
           }

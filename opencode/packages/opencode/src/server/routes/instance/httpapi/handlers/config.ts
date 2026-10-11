@@ -24,7 +24,7 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
     const providers = Effect.fn("ConfigHttpApi.providers")(function* () {
       const providers = yield* providerSvc.list()
       return {
-        providers: Object.values(providers).map(Provider.toPublicInfo),
+        providers: Object.values(providers).map(Provider.toPublicInfoCached),
         default: Provider.defaultModelIDs(providers),
       }
     })
