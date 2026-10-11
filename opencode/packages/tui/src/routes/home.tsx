@@ -17,7 +17,6 @@ import { Locale } from "../util/locale"
 import { HomeSessionDestinationProvider } from "./home/session-destination"
 import { Banner, bannerFits } from "../component/banner"
 import { BANNER_WIDTH } from "../banner"
-import { RoundedBorder } from "../ui/border"
 import { useTerminalDimensions } from "@opentui/solid"
 
 let once = false
@@ -140,8 +139,8 @@ function Welcome(props: { width: number }) {
   const modelKey = useCommandShortcut("model.list")
   const paletteKey = useCommandShortcut("command.palette.show")
   const agentKey = useCommandShortcut("agent.cycle")
-  // Card frame (2) and padding (4), the keys column (30) and the gap (4), the › and the age column.
-  const titleMax = createMemo(() => Math.max(10, props.width - 2 - 4 - 30 - 4 - 2 - 10))
+  // Left padding (2), the keys column (26) and the gap (4), the › and the age column.
+  const titleMax = createMemo(() => Math.max(10, props.width - 2 - 1 - 27 - 4 - 2 - 10))
   const sessions = createMemo(() =>
     sync.data.session
       .filter((item) => !item.parentID)
@@ -152,43 +151,25 @@ function Welcome(props: { width: number }) {
     [
       { key: "/", label: "commands" },
       { key: "@", label: "attach a file" },
-      { key: "!", label: "run a shell command" },
+      { key: "!", label: "shell command" },
       { key: agentKey(), label: "switch agent" },
       { key: modelKey(), label: "choose a model" },
-      { key: paletteKey(), label: "everything else" },
+      { key: paletteKey(), label: "all commands" },
       { key: "?", label: "shortcuts" },
     ].filter((item) => item.key),
   )
 
   return (
-    <box
-      marginTop={1}
-      border
-      customBorderChars={RoundedBorder}
-      borderColor={theme.borderSubtle}
-      backgroundColor={theme.backgroundPanel}
-      paddingLeft={2}
-      paddingRight={2}
-      paddingTop={1}
-      paddingBottom={1}
-      flexShrink={0}
-      gap={1}
-    >
-      <text fg={theme.text} wrapMode="none" flexShrink={0}>
-        <span style={{ fg: theme.primary, bold: true }}>{sessions().length ? "Welcome back" : "Welcome to RIFT"}</span>
-        <span style={{ fg: theme.textMuted }}>
-          {"  "}
-          {local.model.parsed().model}
-        </span>
-        <span style={{ fg: theme.border }}> {local.model.parsed().provider}</span>
-      </text>
+    // No card: two quiet columns under the composer, aligned to its text.
+    <box marginTop={2} paddingLeft={2} paddingRight={1} flexShrink={0} gap={1}>
       <box flexDirection="row" gap={4} flexShrink={1}>
         <Show when={sessions().length > 0}>
           <box flexGrow={1} flexShrink={1} minWidth={0}>
-            <text fg={theme.textMuted}>
-              <b>Recent</b>
+            <text fg={theme.border}>
+              recent
               <Show when={listKey()}>
-                <span style={{ fg: theme.border }}>{"  "}{listKey()}</span>
+                {"  "}
+                {listKey()}
               </Show>
             </text>
             <For each={sessions()}>
@@ -216,14 +197,12 @@ function Welcome(props: { width: number }) {
             </For>
           </box>
         </Show>
-        <box flexShrink={0} width={30}>
-          <text fg={theme.textMuted}>
-            <b>Get going</b>
-          </text>
+        <box flexShrink={0} width={27}>
+          <text fg={theme.border}>keys</text>
           <For each={keys()}>
             {(item) => (
               <box flexDirection="row">
-                <text width={10} flexShrink={0} fg={theme.primary} wrapMode="none">
+                <text width={10} flexShrink={0} fg={theme.text} wrapMode="none">
                   {item.key}
                 </text>
                 <text fg={theme.textMuted} wrapMode="none">

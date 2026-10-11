@@ -1475,13 +1475,12 @@ export function Prompt(props: PromptProps) {
             </text>
           </box>
         </Show>
-        {/* The composer: a soft rounded card. Its frame takes the accent while the agent works. */}
+        {/* The composer: a thin rounded frame, no fill. The frame takes the accent while the agent works. */}
         <box
           width="100%"
           border
           customBorderChars={RoundedBorder}
           borderColor={leader() || status().type !== "idle" ? theme.primary : theme.borderSubtle}
-          backgroundColor={theme.backgroundPanel}
           paddingLeft={1}
           paddingRight={1}
           flexShrink={0}

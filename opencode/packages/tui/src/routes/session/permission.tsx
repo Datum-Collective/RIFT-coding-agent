@@ -483,7 +483,6 @@ function RejectPrompt(props: { onConfirm: (message: string) => void; onCancel: (
 
   return (
     <box
-      backgroundColor={theme.backgroundPanel}
       border
       borderColor={theme.error}
       customBorderChars={RoundedBorder}
@@ -668,7 +667,7 @@ function Prompt<const T extends Record<string, string>>(props: {
   // An approval is a sheet above the composer: what is asked, then numbered answers.
   const content = () => (
     <box
-      backgroundColor={theme.backgroundPanel}
+      backgroundColor={store.expanded ? theme.background : undefined}
       border
       borderColor={theme.warning}
       customBorderChars={RoundedBorder}

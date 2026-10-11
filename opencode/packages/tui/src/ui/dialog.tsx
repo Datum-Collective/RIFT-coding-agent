@@ -2,7 +2,6 @@ import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { batch, createContext, createEffect, onCleanup, Show, useContext, type JSX, type ParentProps } from "solid-js"
 import { useTheme } from "../context/theme"
 import { MouseButton, Renderable, RGBA } from "@opentui/core"
-import { RoundedBorder } from "./border"
 import { createStore } from "solid-js/store"
 import { useToast } from "./toast"
 import { Flag } from "@opencode-ai/core/flag/flag"
@@ -64,9 +63,6 @@ export function Dialog(
         maxWidth={dimensions().width - 4}
         maxHeight={Math.max(8, dimensions().height - Math.floor(dimensions().height / 5) - 2)}
         backgroundColor={theme.backgroundPanel}
-        border
-        customBorderChars={RoundedBorder}
-        borderColor={theme.borderSubtle}
         paddingTop={1}
       >
         {props.children}

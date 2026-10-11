@@ -287,7 +287,6 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
 
   return (
     <box
-      backgroundColor={theme.backgroundPanel}
       border
       borderColor={theme.primary}
       customBorderChars={RoundedBorder}
