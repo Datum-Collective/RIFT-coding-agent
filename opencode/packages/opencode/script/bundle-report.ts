@@ -1,12 +1,14 @@
 #!/usr/bin/env bun
 // Bundles the CLI the way build.ts does (minified, split) without compiling, and prints the
-// largest inputs by bytes contributed to the output. usage: bun script/bundle-report.ts [top]
+// largest inputs by bytes contributed to the output.
+// usage: bun script/bundle-report.ts [top] [--why <substring>]   (--why prints how a package gets in)
 import path from "path"
 import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
 
 const dir = path.resolve(import.meta.dirname, "..")
 process.chdir(dir)
-const top = Number(process.argv[2] ?? 30)
+const why = process.argv.includes("--why") ? process.argv[process.argv.indexOf("--why") + 1] : undefined
+const top = Number(process.argv.find((arg, i) => i > 1 && /^\d+$/.test(arg)) ?? 30)
 const generated = await import("./generate.ts")
 const pkg = await Bun.file("package.json").json()
 
@@ -59,3 +61,31 @@ for (const [input, n] of rows) {
 }
 console.log("\nby package/dir:")
 for (const [k, n] of [...groups.entries()].sort((a, b) => b[1] - a[1]).slice(0, top)) console.log(String(n).padStart(10), k)
+
+if (why) {
+  // Shortest import chain from an entry point to the first input containing `why`.
+  const inputs = meta.inputs as Record<string, { imports: { path: string }[] }>
+  const entries = ["src/index.ts", "src/cli/tui/worker.ts"]
+  // Input keys are relative to the package; import paths are absolute.
+  const key = (file: string) => (path.isAbsolute(file) ? path.relative(dir, file) : file)
+  const previous = new Map<string, string | undefined>(entries.map((file) => [file, undefined]))
+  const queue = [...entries]
+  let found: string | undefined
+  while (queue.length && !found) {
+    const file = queue.shift()!
+    for (const item of inputs[file]?.imports ?? []) {
+      const next = key(item.path)
+      if (previous.has(next)) continue
+      previous.set(next, file)
+      if (next.includes(why)) {
+        found = next
+        break
+      }
+      queue.push(next)
+    }
+  }
+  console.log(`\nwhy ${why}:`)
+  const chain: string[] = []
+  for (let at = found; at; at = previous.get(at)) chain.unshift(at)
+  console.log(chain.length ? chain.map((file) => "  " + file.replace(/.*node_modules\/\.bun\/[^/]+\/node_modules\//, "")).join("\n") : "  not found")
+}

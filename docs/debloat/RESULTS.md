@@ -501,3 +501,23 @@ latest changes did not help; capping concurrency did (`--max-concurrency=2`: 13 
 package test script now passes `--max-concurrency=4`. Full suite with the cap: 3170 pass, 6 fail;
 5 are the pre-existing failures (2 provider-loader, 3 attention-sound) and the sixth, a PTY test
 that waits on a 5-second shell, passes on its own under the script's 30 s timeout.
+
+## Simpler home, lighter boot
+
+- Home is the logo, the tagline, the composer with its one status line, and a single one-line tip.
+  The recent-sessions and keys columns are gone (`ctrl+x l` and `?` cover them); tips longer than
+  one line are skipped and a command with several bindings shows only the first; the footer is a
+  single line.
+- Modules that only some actions need now load on first use instead of at boot: npm's config reader
+  (`@npmcli/config` and the glob/workspace code under it; used by upgrades and plugin installs),
+  npm's package-spec parser, and the HTML-to-Markdown converter used by web fetch (`turndown` and
+  its DOM). In a CPU profile of importing the engine runtime these accounted for roughly 90 ms of
+  module evaluation.
+- `script/bundle-report.ts --why <package>` prints the import chain that pulls a package into the
+  bundle.
+
+Not measured end to end: the machine's load average was 8 to 16 during this pass and repeated
+timings of the same build varied by more than the expected gain.
+
+Found and left alone: the AWS event-stream code comes from the Bedrock protocol in the `llm` package
+(frozen); `fast-check` is pulled in by Effect's barrel export; `zod/v3` by the MCP SDK.

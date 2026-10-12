@@ -2,7 +2,6 @@ import { Effect, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { Parser } from "htmlparser2"
 import * as Tool from "./tool"
-import TurndownService from "turndown"
 import DESCRIPTION from "./webfetch.txt"
 import { isImageAttachment } from "@/util/media"
 
@@ -129,7 +128,7 @@ export const WebFetchTool = Tool.define(
           switch (params.format) {
             case "markdown":
               if (contentType.includes("text/html")) {
-                const markdown = convertHTMLToMarkdown(content)
+                const markdown = yield* Effect.promise(() => convertHTMLToMarkdown(content))
                 return {
                   output: markdown,
                   title,
@@ -179,7 +178,9 @@ function extractTextFromHTML(html: string) {
   return text.trim()
 }
 
-function convertHTMLToMarkdown(html: string): string {
+// The HTML-to-Markdown converter (turndown and its DOM) loads on the first fetch, not at startup.
+async function convertHTMLToMarkdown(html: string): Promise<string> {
+  const { default: TurndownService } = await import("turndown")
   const turndownService = new TurndownService({
     headingStyle: "atx",
     hr: "---",
