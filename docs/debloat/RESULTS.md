@@ -492,3 +492,12 @@ Claude Code plugin).
 - Removed: the repo's `video/` engine, `src/video/` (scaffold and the 894 KB template),
   `script/video-template.ts` and its build step, `rift video init`, and the repo's
   `.claude/commands/video.md`. README section rewritten.
+
+### Test suite reliability
+
+The `run-process` tests spawn a full CLI each, and `bun test` ran up to 20 of them at once; on a
+busy machine they timed out (the "9 run-process timeouts" listed since the baseline). Reverting the
+latest changes did not help; capping concurrency did (`--max-concurrency=2`: 13 of 13 pass). The
+package test script now passes `--max-concurrency=4`. Full suite with the cap: 3170 pass, 6 fail;
+5 are the pre-existing failures (2 provider-loader, 3 attention-sound) and the sixth, a PTY test
+that waits on a 5-second shell, passes on its own under the script's 30 s timeout.
