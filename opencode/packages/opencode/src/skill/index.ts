@@ -159,6 +159,44 @@ const scan = Effect.fnUntraced(function* (
   }
 })
 
+/**
+ * Where the plugins in Claude Code's `~/.claude/plugins/installed_plugins.json` keep their skills:
+ * the folders a plugin's `.claude-plugin/plugin.json` lists under `skills`, or its `skills/` folder
+ * when it lists none. Returned as scan roots with the glob to use under each.
+ */
+export const claudePluginSkillDirs = Effect.fnUntraced(function* (fsys: FSUtil.Interface, home: string) {
+  const manifest = yield* fsys
+    .readJson(path.join(home, CLAUDE_EXTERNAL_DIR, "plugins", "installed_plugins.json"))
+    .pipe(Effect.catch(() => Effect.succeed(undefined)))
+  const plugins = (manifest as { plugins?: Record<string, Array<{ installPath?: unknown }>> } | undefined)?.plugins
+  if (!plugins || typeof plugins !== "object") return [] as Array<{ root: string; pattern: string }>
+  const roots: Array<{ root: string; pattern: string }> = []
+  for (const installs of Object.values(plugins)) {
+    if (!Array.isArray(installs)) continue
+    for (const install of installs) {
+      if (typeof install?.installPath !== "string") continue
+      const base = install.installPath
+      const meta = yield* fsys
+        .readJson(path.join(base, ".claude-plugin", "plugin.json"))
+        .pipe(Effect.catch(() => Effect.succeed(undefined)))
+      const listed = (meta as { skills?: unknown } | undefined)?.skills
+      if (Array.isArray(listed) && listed.length) {
+        for (const item of listed) {
+          if (typeof item !== "string") continue
+          const dir = path.resolve(base, item)
+          // Stay inside the plugin: a manifest cannot point RIFT at arbitrary folders.
+          if (!dir.startsWith(path.resolve(base) + path.sep)) continue
+          if (yield* fsys.isDir(dir)) roots.push({ root: dir, pattern: "SKILL.md" })
+        }
+        continue
+      }
+      const dir = path.join(base, "skills")
+      if (yield* fsys.isDir(dir)) roots.push({ root: dir, pattern: "**/SKILL.md" })
+    }
+  }
+  return roots
+})
+
 const discoverSkills = Effect.fnUntraced(function* (
   config: Config.Interface,
   discovery: Discovery.Interface,
@@ -180,6 +218,14 @@ const discoverSkills = Effect.fnUntraced(function* (
       const root = path.join(global.home, dir)
       if (!(yield* fsys.isDir(root))) continue
       yield* scan(state, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "global" })
+    }
+
+    // Skills from Claude Code plugins (`claude plugin install ...`), e.g. Remotion's, so a plugin
+    // installed for Claude Code works in RIFT too. Only the plugins Claude Code lists as installed.
+    if (!disableClaudeCodeSkills) {
+      for (const item of yield* claudePluginSkillDirs(fsys, global.home)) {
+        yield* scan(state, item.root, item.pattern, { dot: true, scope: "global" })
+      }
     }
 
     const upDirs = yield* fsys

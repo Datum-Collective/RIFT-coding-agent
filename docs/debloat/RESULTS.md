@@ -464,3 +464,31 @@ the 1.97 s measured there; the comparison is between builds measured together.
 
 Tried and reverted: a 10-second memo of discovery and `remote get-url`. It hid a remote added (or a
 `git init`) mid-session for up to 10 seconds, which three project tests caught.
+
+## Remotion: /video rebuilt on Remotion's official skills
+
+`/video` used a custom "rift-video" Remotion engine (typed specs, scene catalog, validate/frames
+scripts) embedded in the binary as an 894 KB file and written into projects by `rift video init`.
+It is replaced by Remotion's official Agent Skills (remotion-dev/skills, the skills in Remotion's
+Claude Code plugin).
+
+| Metric | Before | After |
+|---|---|---|
+| Binary | 98.25 MB | 97.30 MB (97,295,714 bytes) |
+| Video code in the repo | `video/` engine (110 files, 1 MB) + embedded template + scaffold | a 45-line workflow prompt and a 75-line CLI |
+
+- `/remotion <brief>` (and `/video`, same workflow): loads `remotion-best-practices` and the skills
+  it routes to; storyboard first; build; render a still from every scene and read it before the
+  final render; confirm the MP4's resolution, fps and length; report.
+- `rift remotion setup [-g]` runs `npx skills add remotion-dev/skills -a claude-code -s '*' -y`
+  (tested: installs all 12 skills into `.claude/skills` without prompts). `rift remotion new
+  <name>` runs `npx create-video@latest --yes --blank --no-tailwind` and `npm install`.
+  `rift remotion studio` opens Remotion Studio. `rift video` is an alias.
+- RIFT now loads skills from installed Claude Code plugins (`~/.claude/plugins/installed_plugins.json`),
+  honouring each plugin's `plugin.json` skill list, so `claude plugin install remotion@remotion`
+  makes the skills available in RIFT too. Verified against this machine: the 12 Remotion skills
+  and the installed mattpocock-skills plugin's skills appear in RIFT's command list; the plugin's
+  unlisted (deprecated) skills do not. A manifest entry that points outside its plugin is ignored.
+- Removed: the repo's `video/` engine, `src/video/` (scaffold and the 894 KB template),
+  `script/video-template.ts` and its build step, `rift video init`, and the repo's
+  `.claude/commands/video.md`. README section rewritten.

@@ -84,10 +84,11 @@ export const commands: CommandEntry[] = [
     load: () => import("./cmd/export").then((m) => m.ExportCommand),
   },
   {
-    name: "video",
-    command: "video",
-    describe: "make animated videos from a brief",
-    load: () => import("./cmd/video").then((m) => m.VideoCommand),
+    name: "remotion",
+    command: "remotion",
+    aliases: ["video"],
+    describe: "make videos with Remotion",
+    load: () => import("./cmd/remotion").then((m) => m.RemotionCommand),
   },
   {
     name: "import",

@@ -190,7 +190,7 @@ const TIPS: Tip[] = [
   (shortcuts) => press(shortcuts.agentCycle(), "to cycle between the Build, Plan and Vibe agents"),
   "The {highlight}Plan{/highlight} agent reads everything and changes nothing. Like a senior engineer in their last week",
   "Mention {highlight}@agent-name{/highlight} to hand a job to a subagent. Delegation works better when the delegate can't say no",
-  "Type {highlight}/video{/highlight} and one sentence to get an MP4. It checks every frame first, which is more QA than most launch videos get",
+  "Type {highlight}/remotion{/highlight} and one sentence to get an MP4. It checks a frame from every scene first, which is more QA than most launch videos get",
 
   // Prompting
   "Type {highlight}@{/highlight} and a filename to attach it. Pasting 400 lines also works, the way shouting also works",

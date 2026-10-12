@@ -19,7 +19,7 @@ Commands:
   opencode serve               starts a headless opencode server
   opencode models [provider]   list all available models
   opencode export [sessionID]  export session data as JSON
-  opencode video               make animated videos from a brief
+  opencode remotion            make videos with Remotion                            [aliases: video]
   opencode import <file>       import a session from a JSON file or a RIFT share link
   opencode pr <number>         fetch and checkout a GitHub PR branch, then run RIFT
   opencode session             manage sessions
@@ -97,7 +97,7 @@ Commands:
   opencode serve               starts a headless opencode server
   opencode models [provider]   list all available models
   opencode export [sessionID]  export session data as JSON
-  opencode video               make animated videos from a brief
+  opencode remotion            make videos with Remotion                            [aliases: video]
   opencode import <file>       import a session from a JSON file or a RIFT share link
   opencode pr <number>         fetch and checkout a GitHub PR branch, then run RIFT
   opencode session             manage sessions
@@ -293,7 +293,7 @@ Commands:
   opencode serve               starts a headless opencode server
   opencode models [provider]   list all available models
   opencode export [sessionID]  export session data as JSON
-  opencode video               make animated videos from a brief
+  opencode remotion            make videos with Remotion                            [aliases: video]
   opencode import <file>       import a session from a JSON file or a RIFT share link
   opencode pr <number>         fetch and checkout a GitHub PR branch, then run RIFT
   opencode session             manage sessions
@@ -362,7 +362,7 @@ Commands:
   opencode serve               starts a headless opencode server
   opencode models [provider]   list all available models
   opencode export [sessionID]  export session data as JSON
-  opencode video               make animated videos from a brief
+  opencode remotion            make videos with Remotion                            [aliases: video]
   opencode import <file>       import a session from a JSON file or a RIFT share link
   opencode pr <number>         fetch and checkout a GitHub PR branch, then run RIFT
   opencode session             manage sessions
@@ -446,7 +446,7 @@ Commands:
   opencode serve               starts a headless opencode server
   opencode models [provider]   list all available models
   opencode export [sessionID]  export session data as JSON
-  opencode video               make animated videos from a brief
+  opencode remotion            make videos with Remotion                            [aliases: video]
   opencode import <file>       import a session from a JSON file or a RIFT share link
   opencode pr <number>         fetch and checkout a GitHub PR branch, then run RIFT
   opencode session             manage sessions
@@ -530,7 +530,7 @@ Commands:
   opencode serve               starts a headless opencode server
   opencode models [provider]   list all available models
   opencode export [sessionID]  export session data as JSON
-  opencode video               make animated videos from a brief
+  opencode remotion            make videos with Remotion                            [aliases: video]
   opencode import <file>       import a session from a JSON file or a RIFT share link
   opencode pr <number>         fetch and checkout a GitHub PR branch, then run RIFT
   opencode session             manage sessions
@@ -581,7 +581,7 @@ Commands:
   opencode serve               starts a headless opencode server
   opencode models [provider]   list all available models
   opencode export [sessionID]  export session data as JSON
-  opencode video               make animated videos from a brief
+  opencode remotion            make videos with Remotion                            [aliases: video]
   opencode import <file>       import a session from a JSON file or a RIFT share link
   opencode pr <number>         fetch and checkout a GitHub PR branch, then run RIFT
   opencode session             manage sessions
@@ -813,7 +813,7 @@ Commands:
   opencode serve               starts a headless opencode server
   opencode models [provider]   list all available models
   opencode export [sessionID]  export session data as JSON
-  opencode video               make animated videos from a brief
+  opencode remotion            make videos with Remotion                            [aliases: video]
   opencode import <file>       import a session from a JSON file or a RIFT share link
   opencode pr <number>         fetch and checkout a GitHub PR branch, then run RIFT
   opencode session             manage sessions
@@ -864,7 +864,7 @@ Commands:
   opencode serve               starts a headless opencode server
   opencode models [provider]   list all available models
   opencode export [sessionID]  export session data as JSON
-  opencode video               make animated videos from a brief
+  opencode remotion            make videos with Remotion                            [aliases: video]
   opencode import <file>       import a session from a JSON file or a RIFT share link
   opencode pr <number>         fetch and checkout a GitHub PR branch, then run RIFT
   opencode session             manage sessions
@@ -915,7 +915,7 @@ Commands:
   opencode serve               starts a headless opencode server
   opencode models [provider]   list all available models
   opencode export [sessionID]  export session data as JSON
-  opencode video               make animated videos from a brief
+  opencode remotion            make videos with Remotion                            [aliases: video]
   opencode import <file>       import a session from a JSON file or a RIFT share link
   opencode pr <number>         fetch and checkout a GitHub PR branch, then run RIFT
   opencode session             manage sessions
