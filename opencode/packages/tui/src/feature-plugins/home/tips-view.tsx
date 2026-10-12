@@ -77,8 +77,9 @@ function parse(tip: string): TipPart[] {
 const NO_MODELS_TIP = "Run {highlight}/connect{/highlight} to add an AI provider. Until then, RIFT is a very nice text box"
 const NO_MODELS_PARTS = parse(NO_MODELS_TIP)
 
+// A command can have several bindings ("ctrl+l , ctrl+o"); a tip names the first.
 function shortcutText(value: string) {
-  return `{highlight}${value}{/highlight}`
+  return `{highlight}${value.split(",")[0]!.trim()}{/highlight}`
 }
 
 function commandText(command: string, shortcut: string) {
@@ -99,6 +100,8 @@ function configShortcut(api: TuiPluginApi, command: string): TipShortcut {
       .filter(Boolean)
       .join(", ")
 }
+
+const TIP_MAX = 62
 
 export function Tips(props: { api: TuiPluginApi; connected?: boolean }) {
   const theme = useTheme().theme
@@ -150,7 +153,10 @@ export function Tips(props: { api: TuiPluginApi; connected?: boolean }) {
       const value = typeof item === "string" ? item : item(shortcuts)
       return value ? [value] : []
     })
-    return tips[Math.floor(tipOffset * tips.length)] ?? NO_MODELS_TIP
+    // One line under the composer, never a paragraph: prefer tips that fit.
+    const short = tips.filter((item) => item.replace(/\{\/?highlight\}/g, "").length <= TIP_MAX)
+    const pool = short.length ? short : tips
+    return pool[Math.floor(tipOffset * pool.length)] ?? NO_MODELS_TIP
   }, NO_MODELS_TIP)
   // Solid can expose a memo's initial value while a pure computation is pending.
   const parts = createMemo(() => {
@@ -161,13 +167,12 @@ export function Tips(props: { api: TuiPluginApi; connected?: boolean }) {
 
   return (
     <box flexDirection="row" maxWidth="100%">
-      <text flexShrink={0} style={{ fg: theme.primary }}>
-        ◆ <span style={{ fg: theme.textMuted }}>tip</span>
-        {"  "}
+      <text flexShrink={0} style={{ fg: theme.border }}>
+        tip{"  "}
       </text>
       <text flexShrink={1} wrapMode="word">
         <For each={parts()}>
-          {(part) => <span style={{ fg: part.highlight ? theme.text : theme.textMuted }}>{part.text}</span>}
+          {(part) => <span style={{ fg: part.highlight ? theme.textMuted : theme.border }}>{part.text}</span>}
         </For>
       </text>
     </box>
