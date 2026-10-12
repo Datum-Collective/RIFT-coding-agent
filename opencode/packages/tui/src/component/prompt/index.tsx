@@ -1565,49 +1565,8 @@ export function Prompt(props: PromptProps) {
               syntaxStyle={syntax()}
             />
           </box>
-          <box flexDirection="row" flexShrink={0} paddingLeft={2} gap={2} justifyContent="space-between">
-            <box flexDirection="row" gap={1} flexShrink={1}>
-              <Show when={local.agent.current()} fallback={<box height={1} />}>
-                {(agent) => (
-                  <>
-                    <text fg={fadeColor(store.mode === "shell" ? theme.warning : highlight(), agentMetaAlpha())} wrapMode="none">
-                      {store.mode === "shell" ? "shell" : agent().name}
-                    </text>
-                    <Show when={store.mode === "normal" && local.permission.mode === "auto"}>
-                      <text fg={fadeColor(theme.warning, agentMetaAlpha())}>auto</text>
-                    </Show>
-                    <Show when={store.mode === "normal"}>
-                      <Switch>
-                        <Match when={agent().name === "vibe"}>
-                          <text fg={fadeColor(theme.textMuted, modelMetaAlpha())} wrapMode="none">
-                            <span style={{ fg: theme.accent }}>planner</span> {local.agent.vibe.modelLabel("planner")}
-                            <span style={{ fg: theme.border }}> → </span>
-                            <span style={{ fg: theme.accent }}>executor</span> {local.agent.vibe.modelLabel("executor")}
-                          </text>
-                        </Match>
-                        <Match when={true}>
-                          <text fg={fadeColor(theme.text, modelMetaAlpha())} wrapMode="none" flexShrink={0}>
-                            {local.model.parsed().model}
-                            <span style={{ fg: theme.textMuted }}> {currentProviderLabel()}</span>
-                            <Show when={showVariant()}>
-                              <span style={{ fg: fadeColor(theme.warning, variantMetaAlpha()) }}> {local.model.variant.current()}</span>
-                            </Show>
-                          </text>
-                        </Match>
-                      </Switch>
-                    </Show>
-                  </>
-                )}
-              </Show>
-            </box>
-            <Show when={hasRightContent()}>
-              <box flexDirection="row" gap={1} alignItems="center" flexShrink={0}>
-                {props.right}
-              </box>
-            </Show>
-          </box>
         </box>
-        {/* Under the card: where you are and what it has cost, then the keys worth knowing. */}
+        {/* One quiet line under the box: who answers on the left, context and help on the right. */}
         <box flexDirection="row" flexShrink={0} paddingLeft={1} paddingRight={1} gap={2} justifyContent="space-between">
             <box flexDirection="row" gap={2} flexGrow={1} flexShrink={1}>
               <Switch>
@@ -1649,12 +1608,41 @@ export function Prompt(props: PromptProps) {
                   <text fg={editorContextLabelState() === "pending" ? theme.secondary : theme.textMuted}>{file()}</text>
                 )}
               </Show>
+              <box flexDirection="row" gap={1} flexShrink={1}>
+                <Show when={local.agent.current()} fallback={<box height={1} />}>
+                  {(agent) => (
+                    <>
+                      <text fg={fadeColor(store.mode === "shell" ? theme.warning : highlight(), agentMetaAlpha())} wrapMode="none">
+                        {store.mode === "shell" ? "shell" : agent().name}
+                      </text>
+                      <Show when={store.mode === "normal" && local.permission.mode === "auto"}>
+                        <text fg={fadeColor(theme.warning, agentMetaAlpha())}>auto</text>
+                      </Show>
+                      <Show when={store.mode === "normal"}>
+                        <Switch>
+                          <Match when={agent().name === "vibe"}>
+                            <text fg={fadeColor(theme.textMuted, modelMetaAlpha())} wrapMode="none">
+                              <span style={{ fg: theme.accent }}>planner</span> {local.agent.vibe.modelLabel("planner")}
+                              <span style={{ fg: theme.border }}> → </span>
+                              <span style={{ fg: theme.accent }}>executor</span> {local.agent.vibe.modelLabel("executor")}
+                            </text>
+                          </Match>
+                          <Match when={true}>
+                            <text fg={fadeColor(theme.text, modelMetaAlpha())} wrapMode="none" flexShrink={0}>
+                              {local.model.parsed().model}
+                              <span style={{ fg: theme.textMuted }}> {currentProviderLabel()}</span>
+                              <Show when={showVariant()}>
+                                <span style={{ fg: fadeColor(theme.warning, variantMetaAlpha()) }}> {local.model.variant.current()}</span>
+                              </Show>
+                            </text>
+                          </Match>
+                        </Switch>
+                      </Show>
+                    </>
+                  )}
+                </Show>
+              </box>
               <Show when={props.hint}>{props.hint}</Show>
-              <Show when={!props.hint}>
-                <text fg={theme.border} wrapMode="none">
-                  {Locale.truncateLeft(location()?.directory ?? paths.cwd, 28)}
-                </text>
-              </Show>
               <Show when={props.sessionID && mcpConnected() > 0}>
                 <text fg={theme.textMuted} wrapMode="none">
                   <span style={{ fg: mcpFailing() ? theme.error : theme.success }}>●</span> {mcpConnected()} MCP
@@ -1666,6 +1654,11 @@ export function Prompt(props: PromptProps) {
                 </text>
               </Show>
               <box flexGrow={1} />
+              <Show when={hasRightContent()}>
+                <box flexDirection="row" gap={1} alignItems="center" flexShrink={0}>
+                  {props.right}
+                </box>
+              </Show>
               <Show when={store.mode === "normal" && usage()}>
                 {(item) => (
                   <text fg={theme.textMuted} wrapMode="none">
@@ -1682,10 +1675,7 @@ export function Prompt(props: PromptProps) {
                     </>
                   }
                 >
-                  <Show when={paletteShortcut()}>
-                    <span style={{ fg: theme.text }}>{paletteShortcut()}</span> commands{"   "}
-                  </Show>
-                  <span style={{ fg: theme.text }}>?</span> keys
+                  <span style={{ fg: theme.text }}>?</span> for shortcuts
                 </Show>
               </text>
             </box>
