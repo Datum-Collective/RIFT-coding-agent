@@ -1398,10 +1398,11 @@ export function Prompt(props: PromptProps) {
 
   return (
     <>
-      <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
+      {/* A blank line above, so the transcript never runs into the composer or its activity line. */}
+      <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%" paddingTop={1}>
         {/* Activity: only while the agent works. Spinner, elapsed time, retries, how to stop. */}
         <Show when={status().type !== "idle"}>
-          <box flexDirection="row" gap={1} paddingLeft={0} flexShrink={0}>
+          <box flexDirection="row" gap={1} paddingLeft={1} paddingBottom={1} flexShrink={0}>
             <box width={1} flexShrink={0}>
               <Show when={kv.get("animations_enabled", true)} fallback={<text fg={theme.primary}>…</text>}>
                 <spinner color={theme.primary} frames={SPINNER_FRAMES} interval={80} />

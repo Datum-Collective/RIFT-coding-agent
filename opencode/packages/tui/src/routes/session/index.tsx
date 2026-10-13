@@ -1271,7 +1271,7 @@ export function Session() {
         }}
       >
         <box flexDirection="row" flexGrow={1} minHeight={0}>
-          <box flexGrow={1} minHeight={0} paddingLeft={2} paddingRight={2}>
+          <box flexGrow={1} minHeight={0} paddingLeft={2} paddingRight={2} paddingBottom={1}>
             <Show when={session()}>
               <scrollbox
                 ref={(r) => (scroll = r)}
@@ -2214,6 +2214,8 @@ function BlockTool(props: {
   onClick?: () => void
   part?: ToolPart
   spinner?: boolean
+  /** True when there is nothing to show yet (a command still waiting on its first output). */
+  empty?: boolean
 }) {
   const { theme } = useTheme()
   const renderer = useRenderer()
@@ -2263,7 +2265,7 @@ function BlockTool(props: {
           {props.header}
         </text>
       </box>
-      <Show when={props.children}>
+      <Show when={props.children && !props.empty}>
         {/* The body sits in a soft card under its header, like a code block in a document. */}
         <box
           marginLeft={INLINE_TOOL_ICON_WIDTH}
@@ -2312,6 +2314,7 @@ function Shell(props: ToolProps) {
       <BlockTool
         glyph="$"
         spinner={isRunning()}
+        empty={!output()}
         part={props.part}
         header={
           <>
