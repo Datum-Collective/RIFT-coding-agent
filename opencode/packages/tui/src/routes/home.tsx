@@ -1,7 +1,5 @@
 import { Prompt, type PromptRef } from "../component/prompt"
 import { createEffect, createMemo, createSignal, onMount } from "solid-js"
-import { Banner, bannerFits } from "../component/banner"
-import { BANNER_WIDTH } from "../banner"
 import { useSync } from "../context/sync"
 import { Toast } from "../ui/toast"
 import { useArgs } from "../context/args"
@@ -10,13 +8,16 @@ import { usePromptRef } from "../context/prompt"
 import { useLocal } from "../context/local"
 import { usePluginRuntime } from "../plugin/runtime"
 import { useEditorContext } from "../context/editor"
-import { useTerminalDimensions } from "@opentui/solid"
-import { useTuiConfig } from "../config"
+import { TextAttributes } from "@opentui/core"
+import { useTheme } from "../context/theme"
 import { HomeSessionDestinationProvider } from "./home/session-destination"
+import { Banner, bannerFits } from "../component/banner"
+import { BANNER_WIDTH } from "../banner"
+import { useTerminalDimensions } from "@opentui/solid"
 
 let once = false
 const placeholder = {
-  normal: ["Fix a TODO in the codebase", "What is the tech stack of this project?", "Fix broken tests"],
+  normal: ["fix a TODO in the codebase", "explain how this project is laid out", "fix the failing tests"],
   shell: ["ls -la", "git status", "pwd"],
 }
 
@@ -30,16 +31,8 @@ export function Home() {
   const local = useLocal()
   const editor = useEditorContext()
   const dimensions = useTerminalDimensions()
-  const tuiConfig = useTuiConfig()
-  const promptMaxWidth = createMemo(() => {
-    const configured = tuiConfig.prompt?.max_width
-    if (configured === "auto") return Math.max(75, Math.floor(dimensions().width * 0.7))
-    return configured ?? 75
-  })
-  // The banner is fixed-width art, so when it is on screen the prompt takes the same width and
-  // the two line up exactly. Without this they are sized independently and only ever agree by
-  // accident.
-  const contentWidth = createMemo(() => (bannerFits(dimensions().width) ? BANNER_WIDTH : promptMaxWidth()))
+  // The composer and the card take the logo's width so the three line up exactly.
+  const contentWidth = createMemo(() => (bannerFits(dimensions().width) ? BANNER_WIDTH : Math.min(80, dimensions().width - 4)))
   let sent = false
 
   onMount(() => {
@@ -72,18 +65,20 @@ export function Home() {
     r.submit()
   })
 
+  // The opening screen: the logo, one line saying what RIFT is, the composer at the logo's width,
+  // and a single tip. Everything else is one keypress away (? for shortcuts, ctrl+x l for sessions).
   return (
     <HomeSessionDestinationProvider>
-      <box flexGrow={1} alignItems="center" paddingLeft={2} paddingRight={2}>
+      <box flexGrow={1} minHeight={0} alignItems="center" paddingLeft={2} paddingRight={2}>
         <box flexGrow={1} minHeight={0} />
-        <box height={4} minHeight={0} flexShrink={1} />
-        <box width="100%" maxWidth={contentWidth()} flexShrink={0}>
+        <box width="100%" maxWidth={contentWidth()} flexShrink={0} alignItems="center">
           <pluginRuntime.Slot name="home_logo" mode="replace">
             <Banner />
+            <Tagline />
           </pluginRuntime.Slot>
         </box>
         <box height={1} minHeight={0} flexShrink={1} />
-        <box width="100%" maxWidth={contentWidth()} zIndex={1000} paddingTop={1} flexShrink={0}>
+        <box width="100%" maxWidth={contentWidth()} zIndex={1000} flexShrink={0}>
           <pluginRuntime.Slot name="home_prompt" mode="replace" ref={bind}>
             <Prompt ref={bind} right={<pluginRuntime.Slot name="home_prompt_right" />} placeholders={placeholder} />
           </pluginRuntime.Slot>
@@ -96,5 +91,17 @@ export function Home() {
         <pluginRuntime.Slot name="home_footer" mode="single_winner" />
       </box>
     </HomeSessionDestinationProvider>
+  )
+}
+
+/** The line under the logo: version, then what RIFT is, in one breath. */
+function Tagline() {
+  const { theme } = useTheme()
+  return (
+    <box paddingTop={1} flexShrink={0} alignItems="center">
+      <text fg={theme.textMuted} attributes={TextAttributes.ITALIC}>
+        the coding agent that checks its own work
+      </text>
+    </box>
   )
 }

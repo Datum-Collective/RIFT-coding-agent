@@ -1,37 +1,22 @@
 import yargs from "yargs"
 import { hideBin } from "yargs/helpers"
-import { RunCommand } from "./cli/cmd/run"
-import { GenerateCommand } from "./cli/cmd/generate"
-import { ConsoleCommand } from "./cli/cmd/account"
-import { ProvidersCommand } from "./cli/cmd/providers"
-import { AgentCommand } from "./cli/cmd/agent"
-import { UpgradeCommand } from "./cli/cmd/upgrade"
-import { UninstallCommand } from "./cli/cmd/uninstall"
-import { ModelsCommand } from "./cli/cmd/models"
-import { UI } from "./cli/ui"
-import { RiftVersion } from "@opencode-ai/core/installation/version"
-import { FormatError } from "./cli/error"
-import { ServeCommand } from "./cli/cmd/serve"
-import { DebugCommand } from "./cli/cmd/debug"
-import { StatsCommand } from "./cli/cmd/stats"
-import { McpCommand } from "./cli/cmd/mcp"
-import { GithubCommand } from "./cli/cmd/github"
-import { ExportCommand } from "./cli/cmd/export"
-import { VideoCommand } from "./cli/cmd/video"
-import { ImportCommand } from "./cli/cmd/import"
-import { AttachCommand } from "./cli/cmd/attach"
-import { TuiThreadCommand } from "./cli/cmd/tui"
-import { AcpCommand } from "./cli/cmd/acp"
 import { EOL } from "os"
-import { WebCommand } from "./cli/cmd/web"
-import { PrCommand } from "./cli/cmd/pr"
-import { SessionCommand } from "./cli/cmd/session"
-import { DbCommand } from "./cli/cmd/db"
-import { errorMessage } from "./util/error"
-import { PluginCommand } from "./cli/cmd/plug"
-import { Heap } from "./cli/heap"
+import { RiftVersion } from "@opencode-ai/core/installation/version"
+import type { CommandModule } from "yargs"
+import { commands, select, stub } from "./cli/commands"
 
 const args = hideBin(process.argv)
+
+// `rift --version` is by far the most frequent invocation from scripts and update checks; it must
+// not pay for the command modules, Effect or the runtime. Same output as yargs' own handler.
+if (args.length === 1 && (args[0] === "--version" || args[0] === "-v")) {
+  process.stdout.write(RiftVersion + EOL)
+  process.exit(0)
+}
+
+const { UI } = await import("./cli/ui")
+const { FormatError } = await import("./cli/error")
+const { errorMessage } = await import("./util/error")
 
 function show(out: string) {
   const text = out.trimStart()
@@ -42,6 +27,17 @@ function show(out: string) {
   }
   process.stderr.write(out)
 }
+
+// Only the selected command is imported. The others are registered as name-and-description stubs so
+// `rift --help` still lists them. With no command selected the default one (the TUI) is loaded,
+// which is also what top-level `--help` needs for its option list.
+const selected = select(args)
+const loaded = await Promise.all(
+  commands.map(async (entry) => {
+    const wanted = selected ? entry === selected : entry.name === undefined
+    return wanted ? ((await entry.load()) as CommandModule) : stub(entry)
+  }),
+)
 
 const cli = yargs(args)
   .parserConfiguration({ "populate--": true })
@@ -73,6 +69,7 @@ const cli = yargs(args)
       process.env.OPENCODE_PURE = "1"
     }
 
+    const { Heap } = await import("./cli/heap")
     Heap.start()
 
     process.env.AGENT = "1"
@@ -81,30 +78,7 @@ const cli = yargs(args)
   })
   .usage("")
   .completion("completion", "generate shell completion script")
-  .command(AcpCommand)
-  .command(McpCommand)
-  .command(TuiThreadCommand)
-  .command(AttachCommand)
-  .command(RunCommand)
-  .command(GenerateCommand)
-  .command(DebugCommand)
-  .command(ConsoleCommand)
-  .command(ProvidersCommand)
-  .command(AgentCommand)
-  .command(UpgradeCommand)
-  .command(UninstallCommand)
-  .command(ServeCommand)
-  .command(WebCommand)
-  .command(ModelsCommand)
-  .command(StatsCommand)
-  .command(ExportCommand)
-  .command(VideoCommand)
-  .command(ImportCommand)
-  .command(GithubCommand)
-  .command(PrCommand)
-  .command(SessionCommand)
-  .command(PluginCommand)
-  .command(DbCommand)
+  .command(loaded as any)
   .fail((msg, err) => {
     if (
       msg?.startsWith("Unknown argument") ||

@@ -1,0 +1,44 @@
+Make this video with Remotion: $ARGUMENTS
+
+Remotion builds videos as React code. Its official Agent Skills (from remotion-dev/skills) carry the
+Remotion know-how; this command adds RIFT's part: a storyboard first, and looking at the result
+before calling it done. Follow these steps in order.
+
+0. **Skills.** Load `remotion-best-practices` with the skill tool; it routes to the others
+   (`remotion-create`, `remotion-markup`, `remotion-captions`, `remotion-render`, `remotion-studio`,
+   ...). Load each one when its step comes up. If none of the Remotion skills is available, run
+   `rift remotion setup` from the project root (it installs them with `npx skills add
+   remotion-dev/skills`), then load them. Node 20+ is required; if Node is missing, say how to
+   install it and stop.
+
+1. **Find or create the project.** Look for a folder whose package.json depends on `remotion`. If
+   there is none, follow `remotion-create` to scaffold one (it uses `npx create-video@latest`), or
+   run `rift remotion new <name>`. Run every Remotion command from that folder.
+
+2. **Interpret the brief.** Subject, audience, platform, length, aspect ratio, tone, required
+   content, call to action. Decide anything unspecified; don't ask about trivia. Defaults: social
+   or "short" means 1080x1920 at 30 fps, about 30 s, captions on; explainers and demos 1920x1080.
+   If this project is the subject, read its README and code so the video says true things.
+
+3. **Storyboard before code.** Show a compact table: scene, seconds, purpose, on-screen text,
+   transition. One idea per scene; the first 3 seconds say why to keep watching. Prefer strong
+   typography and real product visuals over decoration.
+
+4. **Build it** following `remotion-markup` (and `remotion-captions` for captions): one composition,
+   scenes as `<Sequence>`s or `<Series>`, timing from `useCurrentFrame()` and `interpolate`/`spring`,
+   no CSS animations. Assets go in `public/` and are referenced with `staticFile()`.
+
+5. **Look at it.** Render a still from the middle of every scene, for example
+   `npx remotion still <CompositionId> out/scene-2.png --frame=95`, and read each image. Check
+   for clipped or crowded text, weak hierarchy, things too small for a phone, captions over
+   content, empty or lopsided frames. Fix and re-render the stills until every one is a frame you
+   would ship. Compiling is not done; looking is.
+
+6. **Render** following `remotion-render` (for example
+   `npx remotion render <CompositionId> out/<name>.mp4`). Then confirm the file exists and its
+   resolution, fps and duration match the brief (`npx remotion ffprobe out/<name>.mp4` or ffprobe).
+
+7. **Report** the MP4 path, the storyboard, and what you decided on the user's behalf. Offer
+   `rift remotion studio` (Remotion Studio) for hand-tuning.
+
+No paid services are needed.

@@ -11,8 +11,8 @@ describe("tui thread", () => {
   test("loads the TUI integration lazily", async () => {
     const source = await Bun.file(new URL("../../../src/cli/cmd/tui.ts", import.meta.url)).text()
 
-    expect(source).toContain('await import("../tui/layer")')
-    expect(source).toMatch(/await import\(["']@\/plugin\/tui\/runtime["']\)/)
+    expect(source).toContain('import("../tui/layer")')
+    expect(source).toMatch(/import\(["']@\/plugin\/tui\/runtime["']\)/)
     expect(source).not.toContain('import("./app")')
   })
 
@@ -51,18 +51,6 @@ describe("tui thread", () => {
     expect(resolveThreadDirectory(undefined, pwd.path, cwd.path)).toBe(cwd.path)
   })
 
-  test("parses supported --no-replay forms", async () => {
-    for (const option of ["--no-replay", "--no-replay=true", "--noReplay"]) {
-      const args = await yargs([])
-        .command({ ...TuiThreadCommand, handler: () => {} })
-        .exitProcess(false)
-        .parse(["--mini", option, "--replay-limit", "10"])
-
-      expect(args.replay === false || args.noReplay === true).toBe(true)
-      expect(args.replayLimit).toBe(10)
-    }
-  })
-
   test("preserves boolean negation for existing options", async () => {
     const args = await yargs([])
       .command({ ...TuiThreadCommand, handler: () => {} })
@@ -71,31 +59,4 @@ describe("tui thread", () => {
 
     expect(args.mdns).toBe(false)
   })
-
-  cliIt.live("rejects mini-only options without --mini", ({ opencode }) =>
-    Effect.gen(function* () {
-      const result = yield* opencode.spawn(["--replay-limit", "10"])
-
-      opencode.expectExit(result, 1)
-      expect(result.stderr).toContain("--replay-limit requires --mini")
-    }),
-  )
-
-  cliIt.live("routes attached sessions to mini mode", ({ opencode }) =>
-    Effect.gen(function* () {
-      const result = yield* opencode.spawn(["attach", "http://127.0.0.1:1", "--mini"])
-
-      opencode.expectExit(result, 1)
-      expect(result.stderr).toContain("--mini requires a TTY stdout")
-    }),
-  )
-
-  cliIt.live("rejects network options in mini mode", ({ opencode }) =>
-    Effect.gen(function* () {
-      const result = yield* opencode.spawn(["--mini", "--port", "4096"])
-
-      opencode.expectExit(result, 1)
-      expect(result.stderr).toContain("--port cannot be used with --mini")
-    }),
-  )
 })

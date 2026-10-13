@@ -75,14 +75,15 @@ export function DialogConfirm(props: DialogConfirmProps) {
             <box
               paddingLeft={1}
               paddingRight={1}
-              backgroundColor={key === store.active ? theme.primary : undefined}
+              
               onMouseUp={() => {
                 if (key === "confirm") props.onConfirm?.()
                 if (key === "cancel") props.onCancel?.()
                 dialog.clear()
               }}
             >
-              <text fg={key === store.active ? theme.selectedListItemText : theme.textMuted}>
+              <text fg={key === store.active ? theme.text : theme.textMuted} attributes={key === store.active ? TextAttributes.BOLD : undefined}>
+                <span style={{ fg: theme.primary }}>{key === store.active ? "› " : "  "}</span>
                 {Locale.titlecase(key === "cancel" ? (props.label ?? key) : (props.confirmLabel ?? key))}
               </text>
             </box>

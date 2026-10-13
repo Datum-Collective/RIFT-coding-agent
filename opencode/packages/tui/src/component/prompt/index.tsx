@@ -5,6 +5,7 @@ import {
   MouseEvent,
   PasteEvent,
   decodePasteBytes,
+  TextAttributes,
   type KeyEvent,
   type Renderable,
 } from "@opentui/core"
@@ -15,11 +16,11 @@ import path from "path"
 import { fileURLToPath } from "url"
 import { useLocal } from "../../context/local"
 import { Flag } from "@opencode-ai/core/flag/flag"
-import { tint, useTheme } from "../../context/theme"
+import { useTheme } from "../../context/theme"
 import { RoundedBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { useClipboard } from "../../context/clipboard"
-import { Spinner } from "../spinner"
+import { Spinner, SPINNER_FRAMES } from "../spinner"
 import { useSDK } from "../../context/sdk"
 import { useRoute } from "../../context/route"
 import { useProject } from "../../context/project"
@@ -41,7 +42,6 @@ import type { AssistantMessage, FilePart, UserMessage } from "@opencode-ai/sdk/v
 import { Locale } from "../../util/locale"
 import { errorMessage } from "../../util/error"
 import { formatDuration } from "../../util/format"
-import { createColors, createFrames } from "../../ui/spinner"
 import { useDialog } from "../../ui/dialog"
 import { DialogProvider as DialogProviderConnect } from "../dialog-provider"
 import { DialogAlert } from "../../ui/dialog-alert"
@@ -261,6 +261,24 @@ export function Prompt(props: PromptProps) {
     if (!messages) return undefined
     return messages.findLast((m): m is UserMessage => m.role === "user")
   })
+
+  // Elapsed time of the current turn, counted from the user's last message so it survives a reopen.
+  const [now, setNow] = createSignal(Date.now())
+  createEffect(() => {
+    if (status().type === "idle") return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    onCleanup(() => clearInterval(timer))
+  })
+  const busySeconds = createMemo(() => {
+    const started = lastUserMessage()?.time.created
+    if (!started || status().type === "idle") return 0
+    return Math.max(0, Math.floor((now() - started) / 1000))
+  })
+
+  const mcpConnected = createMemo(() => Object.values(sync.data.mcp).filter((item) => item.status === "connected").length)
+  const mcpFailing = createMemo(() => Object.values(sync.data.mcp).some((item) => item.status === "failed"))
+  const pendingApprovals = createMemo(() => (props.sessionID ? (sync.data.permission[props.sessionID]?.length ?? 0) : 0))
 
   const usage = createMemo(() => {
     if (!props.sessionID) return
@@ -851,6 +869,31 @@ export function Prompt(props: PromptProps) {
     }
   })
 
+  // `?` on an empty composer opens the shortcut sheet; anywhere else it is just a character.
+  useBindings(() => {
+    return {
+      target: inputTarget,
+      enabled: (() => {
+        cursorVersion()
+        return (
+          inputTarget() !== undefined &&
+          !props.disabled &&
+          store.mode === "normal" &&
+          !auto()?.visible &&
+          store.prompt.input === ""
+        )
+      })(),
+      bindings: [
+        {
+          key: "?",
+          desc: "Keyboard shortcuts",
+          group: "Prompt",
+          cmd: () => keymap.dispatchCommand("help.show"),
+        },
+      ],
+    }
+  })
+
   useBindings(() => {
     return {
       target: inputTarget,
@@ -1338,52 +1381,117 @@ export function Prompt(props: PromptProps) {
     () => !!local.agent.current() && store.mode === "normal" && showVariant(),
     animationsEnabled,
   )
-  const borderHighlight = createMemo(() => tint(theme.border, highlight(), agentMetaAlpha()))
 
   const placeholderText = createMemo(() => {
     if (props.showPlaceholder === false) return undefined
     if (store.mode === "shell") {
       if (!shell().length) return undefined
       const example = shell()[store.placeholder % shell().length]
-      return `Run a command… "${example}"`
+      return `run a shell command, e.g. ${example}`
     }
     if (!list().length) return undefined
-    return `Ask anything… "${list()[store.placeholder % list().length]}"`
+    return `describe a task, e.g. ${list()[store.placeholder % list().length]}`
   })
 
-  const spinnerDef = createMemo(() => {
-    const agent =
-      status().type !== "idle"
-        ? (local.agent.list().find((a) => a.name === lastUserMessage()?.agent) ?? local.agent.current())
-        : local.agent.current()
-    const color = agent ? local.agent.color(agent.name) : theme.border
-    return {
-      frames: createFrames({
-        color,
-        style: "blocks",
-        inactiveFactor: 0.6,
-        // enableFading: false,
-        minAlpha: 0.3,
-      }),
-      color: createColors({
-        color,
-        style: "blocks",
-        inactiveFactor: 0.6,
-        // enableFading: false,
-        minAlpha: 0.3,
-      }),
-    }
-  })
   const maxHeight = createMemo(() => tuiConfig.prompt?.max_height ?? Math.max(6, Math.floor(dimensions().height / 3)))
   const moveLabelWidth = createMemo(() => Math.max(12, Math.min(44, dimensions().width - 48)))
 
   return (
     <>
-      <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
-        <box width="100%" border borderColor={borderHighlight()} customBorderChars={RoundedBorder}>
-          <box paddingLeft={1} paddingRight={1} flexShrink={0} flexGrow={1} width="100%">
+      {/* A blank line above, so the transcript never runs into the composer or its activity line. */}
+      <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%" paddingTop={1}>
+        {/* Activity: only while the agent works. Spinner, elapsed time, retries, how to stop. */}
+        <Show when={status().type !== "idle"}>
+          <box flexDirection="row" gap={1} paddingLeft={1} paddingBottom={1} flexShrink={0}>
+            <box width={1} flexShrink={0}>
+              <Show when={kv.get("animations_enabled", true)} fallback={<text fg={theme.primary}>…</text>}>
+                <spinner color={theme.primary} frames={SPINNER_FRAMES} interval={80} />
+              </Show>
+            </box>
+            <text fg={theme.text} flexShrink={0}>
+              {status().type === "retry" ? "Waiting" : "Working"}
+              <span style={{ fg: theme.textMuted }}> {formatDuration(busySeconds()) || "0s"}</span>
+            </text>
+            <box flexDirection="row" gap={1} flexGrow={1} flexShrink={1}>
+                    {(() => {
+                      const retry = createMemo(() => {
+                        const s = status()
+                        if (s.type !== "retry") return
+                        return s
+                      })
+                      const message = createMemo(() => {
+                        const r = retry()
+                        if (!r) return
+                        if (r.message.includes("exceeded your current quota") && r.message.includes("gemini"))
+                          return "gemini is way too hot right now"
+                        if (r.message.length > 80) return r.message.slice(0, 80) + "…"
+                        return r.message
+                      })
+                      const isTruncated = createMemo(() => {
+                        const r = retry()
+                        if (!r) return false
+                        return r.message.length > 120
+                      })
+                      const [seconds, setSeconds] = createSignal(0)
+                      onMount(() => {
+                        const timer = setInterval(() => {
+                          const next = retry()?.next
+                          if (next) setSeconds(Math.round((next - Date.now()) / 1000))
+                        }, 1000)
+
+                        onCleanup(() => {
+                          clearInterval(timer)
+                        })
+                      })
+                      const handleMessageClick = () => {
+                        const r = retry()
+                        if (!r) return
+                        if (isTruncated()) {
+                          void DialogAlert.show(dialog, "Retry Error", r.message)
+                        }
+                      }
+
+                      const countdown = () => {
+                        const duration = formatDuration(seconds())
+                        return duration ? `retry in ${duration}` : "retrying"
+                      }
+
+                      return (
+                        <Show when={retry()}>
+                          <box onMouseUp={handleMessageClick} flexShrink={1}>
+                            <text fg={theme.textMuted} wrapMode="none">
+                              <span style={{ fg: theme.warning }}>{countdown()}</span>
+                              <span style={{ fg: theme.border }}> · attempt {retry()!.attempt} · </span>
+                              {message()}
+                              {isTruncated() ? " (click for more)" : ""}
+                            </text>
+                          </box>
+                        </Show>
+                      )
+                    })()}
+            </box>
+            <text fg={theme.textMuted} flexShrink={0}>
+              <span style={{ fg: store.interrupt > 0 ? theme.warning : theme.text }}>esc</span>
+              {store.interrupt > 0 ? " again to stop" : " to stop"}
+            </text>
+          </box>
+        </Show>
+        {/* The composer: a thin rounded frame, no fill. The frame takes the accent while the agent works. */}
+        <box
+          width="100%"
+          border
+          customBorderChars={RoundedBorder}
+          borderColor={leader() || status().type !== "idle" ? theme.primary : theme.borderSubtle}
+          paddingLeft={1}
+          paddingRight={1}
+          flexShrink={0}
+        >
+          <box flexDirection="row" width="100%">
+            <text width={2} flexShrink={0} fg={store.mode === "shell" ? theme.warning : theme.primary} attributes={TextAttributes.BOLD}>
+              {store.mode === "shell" ? "$" : "❯"}
+            </text>
             <textarea
-              width="100%"
+              flexGrow={1}
               placeholder={placeholderText()}
               placeholderColor={theme.textMuted}
               textColor={leader() ? theme.textMuted : theme.text}
@@ -1452,57 +1560,82 @@ export function Prompt(props: PromptProps) {
                 }, 0)
               }}
               onMouseDown={(r: MouseEvent) => r.target?.focus()}
-              focusedBackgroundColor={theme.backgroundElement}
+              focusedBackgroundColor={undefined}
               cursorColor={props.disabled ? theme.backgroundElement : theme.text}
               cursorStyle={tuiConfig.cursor}
               syntaxStyle={syntax()}
             />
-            <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
-              <box flexDirection="row" gap={1}>
+          </box>
+        </box>
+        {/* One quiet line under the box: who answers on the left, context and help on the right. */}
+        <box flexDirection="row" flexShrink={0} paddingLeft={1} paddingRight={1} gap={2} justifyContent="space-between">
+            <box flexDirection="row" gap={2} flexGrow={1} flexShrink={1}>
+              <Switch>
+                <Match when={workspace.notice()}>{(notice) => <text fg={theme.accent}>{notice()}</text>}</Match>
+                <Match when={workspace.label()}>
+                  {(label) => (
+                    <box flexDirection="row" gap={1}>
+                      <Show when={workspace.creating()}>
+                        <Spinner color={theme.accent} />
+                      </Show>
+                      <text fg={workspace.creating() ? theme.accent : theme.textMuted}>
+                        {(() => {
+                          const item = label()
+                          if (item.type === "new") {
+                            if (workspace.creating())
+                              return `creating ${item.workspaceType}${".".repeat(workspace.creatingDots())}`
+                            return `workspace (new ${item.workspaceType})`
+                          }
+                          return `workspace ${item.workspaceName}`
+                        })()}
+                      </text>
+                    </box>
+                  )}
+                </Match>
+                <Match when={move.progress()}>
+                  {(progress) => (
+                    <Spinner color={theme.accent}>
+                      {progress()}
+                      <span style={{ fg: theme.textMuted }}>{".".repeat(move.creatingDots())}</span>
+                    </Spinner>
+                  )}
+                </Match>
+                <Match when={move.pendingNew()}>
+                  <text fg={theme.accent}>new working copy</text>
+                </Match>
+              </Switch>
+              <Show when={editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined}>
+                {(file) => (
+                  <text fg={editorContextLabelState() === "pending" ? theme.secondary : theme.textMuted}>{file()}</text>
+                )}
+              </Show>
+              <box flexDirection="row" gap={1} flexShrink={1}>
                 <Show when={local.agent.current()} fallback={<box height={1} />}>
                   {(agent) => (
                     <>
-                      <text fg={fadeColor(highlight(), agentMetaAlpha())}>
-                        {store.mode === "shell" ? "Shell" : Locale.titlecase(agent().name)}
+                      <text fg={fadeColor(store.mode === "shell" ? theme.warning : highlight(), agentMetaAlpha())} wrapMode="none">
+                        {store.mode === "shell" ? "shell" : agent().name}
                       </text>
                       <Show when={store.mode === "normal" && local.permission.mode === "auto"}>
-                        <text fg={fadeColor(theme.textMuted, agentMetaAlpha())}>auto</text>
+                        <text fg={fadeColor(theme.warning, agentMetaAlpha())}>auto</text>
                       </Show>
                       <Show when={store.mode === "normal"}>
                         <Switch>
                           <Match when={agent().name === "vibe"}>
-                            <box flexDirection="row" gap={1}>
-                              <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
-                              <text fg={fadeColor(theme.accent, modelMetaAlpha())}>planner</text>
-                              <text fg={fadeColor(theme.text, modelMetaAlpha())}>
-                                {local.agent.vibe.modelLabel("planner")}
-                              </text>
-                              <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>→</text>
-                              <text fg={fadeColor(theme.accent, modelMetaAlpha())}>executor</text>
-                              <text fg={fadeColor(theme.text, modelMetaAlpha())}>
-                                {local.agent.vibe.modelLabel("executor")}
-                              </text>
-                            </box>
+                            <text fg={fadeColor(theme.textMuted, modelMetaAlpha())} wrapMode="none">
+                              <span style={{ fg: theme.accent }}>planner</span> {local.agent.vibe.modelLabel("planner")}
+                              <span style={{ fg: theme.border }}> → </span>
+                              <span style={{ fg: theme.accent }}>executor</span> {local.agent.vibe.modelLabel("executor")}
+                            </text>
                           </Match>
                           <Match when={true}>
-                            <box flexDirection="row" gap={1}>
-                              <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
-                              <text
-                                flexShrink={0}
-                                fg={fadeColor(leader() ? theme.textMuted : theme.text, modelMetaAlpha())}
-                              >
-                                {local.model.parsed().model}
-                              </text>
-                              <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{currentProviderLabel()}</text>
+                            <text fg={fadeColor(theme.text, modelMetaAlpha())} wrapMode="none" flexShrink={0}>
+                              {local.model.parsed().model}
+                              <span style={{ fg: theme.textMuted }}> {currentProviderLabel()}</span>
                               <Show when={showVariant()}>
-                                <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
-                                <text>
-                                  <span style={{ fg: fadeColor(theme.warning, variantMetaAlpha()), bold: true }}>
-                                    {local.model.variant.current()}
-                                  </span>
-                                </text>
+                                <span style={{ fg: fadeColor(theme.warning, variantMetaAlpha()) }}> {local.model.variant.current()}</span>
                               </Show>
-                            </box>
+                            </text>
                           </Match>
                         </Switch>
                       </Show>
@@ -1510,193 +1643,44 @@ export function Prompt(props: PromptProps) {
                   )}
                 </Show>
               </box>
+              <Show when={props.hint}>{props.hint}</Show>
+              <Show when={props.sessionID && mcpConnected() > 0}>
+                <text fg={theme.textMuted} wrapMode="none">
+                  <span style={{ fg: mcpFailing() ? theme.error : theme.success }}>●</span> {mcpConnected()} MCP
+                </text>
+              </Show>
+              <Show when={props.sessionID && pendingApprovals() > 0}>
+                <text fg={theme.warning} wrapMode="none">
+                  ? {pendingApprovals()} waiting
+                </text>
+              </Show>
+              <box flexGrow={1} />
               <Show when={hasRightContent()}>
-                <box flexDirection="row" gap={1} alignItems="center">
+                <box flexDirection="row" gap={1} alignItems="center" flexShrink={0}>
                   {props.right}
                 </box>
               </Show>
-            </box>
-          </box>
-        </box>
-        {/* The rounded frame closes the prompt itself, so no filled rule is needed under it. */}
-        <box width="100%" flexDirection="row" justifyContent="space-between">
-          <Switch>
-            <Match when={status().type !== "idle"}>
-              <box
-                flexDirection="row"
-                gap={1}
-                flexGrow={1}
-                justifyContent={status().type === "retry" ? "space-between" : "flex-start"}
-              >
-                <box flexShrink={0} flexDirection="row" gap={1}>
-                  <box marginLeft={1}>
-                    <Show when={kv.get("animations_enabled", true)} fallback={<text fg={theme.textMuted}>[⋯]</text>}>
-                      <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
-                    </Show>
-                  </box>
-                  <box flexDirection="row" gap={1} flexShrink={0}>
-                    {(() => {
-                      const retry = createMemo(() => {
-                        const s = status()
-                        if (s.type !== "retry") return
-                        return s
-                      })
-                      const message = createMemo(() => {
-                        const r = retry()
-                        if (!r) return
-                        if (r.message.includes("exceeded your current quota") && r.message.includes("gemini"))
-                          return "gemini is way too hot right now"
-                        if (r.message.length > 80) return r.message.slice(0, 80) + "…"
-                        return r.message
-                      })
-                      const isTruncated = createMemo(() => {
-                        const r = retry()
-                        if (!r) return false
-                        return r.message.length > 120
-                      })
-                      const [seconds, setSeconds] = createSignal(0)
-                      onMount(() => {
-                        const timer = setInterval(() => {
-                          const next = retry()?.next
-                          if (next) setSeconds(Math.round((next - Date.now()) / 1000))
-                        }, 1000)
-
-                        onCleanup(() => {
-                          clearInterval(timer)
-                        })
-                      })
-                      const handleMessageClick = () => {
-                        const r = retry()
-                        if (!r) return
-                        if (isTruncated()) {
-                          void DialogAlert.show(dialog, "Retry Error", r.message)
-                        }
-                      }
-
-                      const retryText = () => {
-                        const r = retry()
-                        if (!r) return ""
-                        const baseMessage = message()
-                        const truncatedHint = isTruncated() ? " (click to expand)" : ""
-                        const duration = formatDuration(seconds())
-                        const retryInfo = ` [retrying ${duration ? `in ${duration} ` : ""}attempt #${r.attempt}]`
-                        return baseMessage + truncatedHint + retryInfo
-                      }
-
-                      return (
-                        <Show when={retry()}>
-                          <box onMouseUp={handleMessageClick}>
-                            <text fg={theme.error}>{retryText()}</text>
-                          </box>
-                        </Show>
-                      )
-                    })()}
-                  </box>
-                </box>
-                <text fg={store.interrupt > 0 ? theme.primary : theme.text}>
-                  esc{" "}
-                  <span style={{ fg: store.interrupt > 0 ? theme.primary : theme.textMuted }}>
-                    {store.interrupt > 0 ? "again to interrupt" : "interrupt"}
-                  </span>
-                </text>
-              </box>
-            </Match>
-            <Match when={workspace.notice()}>
-              {(notice) => (
-                <box paddingLeft={3}>
-                  <text fg={theme.accent}>{notice()}</text>
-                </box>
-              )}
-            </Match>
-            <Match when={workspace.label()}>
-              {(label) => (
-                <box paddingLeft={3} flexDirection="row" gap={1}>
-                  <Show when={workspace.creating()}>
-                    <Spinner color={theme.accent} />
-                  </Show>
-                  <text fg={workspace.creating() ? theme.accent : theme.text}>
-                    {(() => {
-                      const item = label()
-                      if (item.type === "new") {
-                        if (workspace.creating())
-                          return `Creating ${item.workspaceType}${".".repeat(workspace.creatingDots())}`
-                        return (
-                          <>
-                            Workspace <span style={{ fg: theme.textMuted }}>(new {item.workspaceType})</span>
-                          </>
-                        )
-                      }
-                      return (
-                        <>
-                          Workspace <span style={{ fg: theme.textMuted }}>{item.workspaceName}</span>
-                        </>
-                      )
-                    })()}
+              <Show when={store.mode === "normal" && usage()}>
+                {(item) => (
+                  <text fg={theme.textMuted} wrapMode="none">
+                    {[item().context, item().cost].filter(Boolean).join(" · ")}
                   </text>
-                </box>
-              )}
-            </Match>
-            <Match when={move.progress()}>
-              {(progress) => (
-                <box paddingLeft={3}>
-                  <Spinner color={theme.accent}>
-                    {progress()}
-                    <span style={{ fg: theme.textMuted }}>{".".repeat(move.creatingDots())}</span>
-                  </Spinner>
-                </box>
-              )}
-            </Match>
-            <Match when={move.pendingNew()}>
-              <box paddingLeft={3}>
-                <text fg={theme.accent}>(new working copy)</text>
-              </box>
-            </Match>
-            <Match when={true}>
-              {props.hint ?? (
-                <Show when={props.sessionID} fallback={<text />}>
-                  <box marginLeft={1}>
-                    <text fg={theme.textMuted}>{location()?.directory ?? paths.cwd}</text>
-                  </box>
-                </Show>
-              )}
-            </Match>
-          </Switch>
-          <Show when={status().type !== "retry"}>
-            <box gap={2} flexDirection="row">
-              <Show when={editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined}>
-                {(file) => (
-                  <text fg={editorContextLabelState() === "pending" ? theme.secondary : theme.textMuted}>{file()}</text>
                 )}
               </Show>
-              <Switch>
-                <Match when={store.mode === "normal"}>
-                  <Switch>
-                    <Match when={usage()}>
-                      {(item) => (
-                        <text fg={theme.textMuted} wrapMode="none">
-                          {[item().context, item().cost].filter(Boolean).join(" · ")}
-                        </text>
-                      )}
-                    </Match>
-                    <Match when={true}>
-                      <text fg={theme.text}>
-                        {agentShortcut()} <span style={{ fg: theme.textMuted }}>agents</span>
-                      </text>
-                    </Match>
-                  </Switch>
-                  <text fg={theme.text}>
-                    {paletteShortcut()} <span style={{ fg: theme.textMuted }}>commands</span>
-                  </text>
-                </Match>
-                <Match when={store.mode === "shell"}>
-                  <text fg={theme.text}>
-                    esc <span style={{ fg: theme.textMuted }}>exit shell mode</span>
-                  </text>
-                </Match>
-              </Switch>
+              <text fg={theme.textMuted} wrapMode="none">
+                <Show
+                  when={store.mode === "normal"}
+                  fallback={
+                    <>
+                      <span style={{ fg: theme.text }}>esc</span> leave shell
+                    </>
+                  }
+                >
+                  <span style={{ fg: theme.text }}>?</span> for shortcuts
+                </Show>
+              </text>
             </box>
-          </Show>
-        </box>
+          </box>
       </box>
       <Autocomplete
         sessionID={props.sessionID}

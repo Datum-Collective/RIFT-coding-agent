@@ -4,12 +4,10 @@ import { createSignal } from "solid-js"
 import { selectedForeground, useTheme } from "../context/theme"
 import { useDialog, type DialogContext } from "../ui/dialog"
 import { Link } from "../ui/link"
-import { BgPulse } from "./bg-pulse"
 import { useBindings } from "../keymap"
 
 const GO_URL = "https://opencode.ai/go"
 const PAD_X = 3
-const PAD_TOP_OUTER = 1
 const FOREGROUND_ALPHA = 186
 
 export type DialogRetryActionProps = {
@@ -78,11 +76,6 @@ export function DialogRetryAction(props: DialogRetryActionProps) {
 
   return (
     <box>
-      {showGoTreatment() ? (
-        <box position="absolute" top={-PAD_TOP_OUTER} left={0} right={0} bottom={0} zIndex={0}>
-          <BgPulse />
-        </box>
-      ) : null}
       <box zIndex={1} paddingLeft={PAD_X} paddingRight={PAD_X} paddingBottom={1} gap={1}>
         <box flexDirection="row" justifyContent="space-between">
           <text attributes={TextAttributes.BOLD} fg={theme.text} bg={textBg()}>
@@ -114,30 +107,31 @@ export function DialogRetryAction(props: DialogRetryActionProps) {
           <box
             paddingLeft={2}
             paddingRight={2}
-            backgroundColor={selected() === "dismiss" ? theme.primary : RGBA.fromInts(0, 0, 0, 0)}
+            
             onMouseOver={() => setSelected("dismiss")}
             onMouseUp={() => dismiss(props, dialog)}
           >
             <text
-              fg={selected() === "dismiss" ? fg : theme.textMuted}
+              fg={selected() === "dismiss" ? theme.primary : theme.textMuted}
               bg={selected() === "dismiss" ? undefined : textBg()}
               attributes={selected() === "dismiss" ? TextAttributes.BOLD : undefined}
             >
-              don't show again
+              {selected() === "dismiss" ? "› " : ""}don't show again
             </text>
           </box>
           <box
             paddingLeft={2}
             paddingRight={2}
-            backgroundColor={selected() === "action" ? theme.primary : RGBA.fromInts(0, 0, 0, 0)}
+            
             onMouseOver={() => setSelected("action")}
             onMouseUp={() => runAction(props, dialog)}
           >
             <text
-              fg={selected() === "action" ? fg : theme.text}
+              fg={selected() === "action" ? theme.primary : theme.textMuted}
               bg={selected() === "action" ? undefined : textBg()}
               attributes={selected() === "action" ? TextAttributes.BOLD : undefined}
             >
+              {selected() === "action" ? "› " : ""}
               {props.label}
             </text>
           </box>

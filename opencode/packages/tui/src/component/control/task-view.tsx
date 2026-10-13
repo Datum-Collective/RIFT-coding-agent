@@ -7,7 +7,7 @@
 import { createMemo, For, Show } from "solid-js"
 import { useTheme } from "../../context/theme"
 import { useCommandShortcut } from "../../keymap"
-import { Meta, Row, Rule, formatDuration, shortenPath, signalColor } from "./primitives"
+import { GLYPH, Meta, Row, Rule, formatDuration, shortenPath, signalColor } from "./primitives"
 import type { Claims, Signal, Task, VerifyCheck } from "../../util/task"
 
 const STATE_LABEL: Record<Task["state"], string> = {
@@ -108,7 +108,7 @@ export function TaskView(props: { task: Task; width: number; compact?: boolean }
           </text>
           <box flexDirection="row" gap={1} flexWrap="wrap">
             <text fg={signalColor(theme, STATE_SIGNAL[task().state])}>
-              {STATE_SIGNAL[task().state] === "active" ? "●" : STATE_SIGNAL[task().state] === "done" ? "✓" : "▸"}{" "}
+              {GLYPH[STATE_SIGNAL[task().state]]}{" "}
               {STATE_LABEL[task().state]}
             </text>
             <Show when={models()}>

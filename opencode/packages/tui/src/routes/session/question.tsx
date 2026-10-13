@@ -1,11 +1,11 @@
 import { createStore } from "solid-js/store"
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { useRenderer } from "@opentui/solid"
-import type { TextareaRenderable } from "@opentui/core"
-import { selectedForeground, tint, useTheme } from "../../context/theme"
+import { TextAttributes, type TextareaRenderable } from "@opentui/core"
+import { useTheme } from "../../context/theme"
 import type { QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2"
 import { useSDK } from "../../context/sdk"
-import { SplitBorder } from "../../ui/border"
+import { RoundedBorder } from "../../ui/border"
 import { useTuiConfig } from "../../config"
 import { useBindings, useOpencodeModeStack } from "../../keymap"
 
@@ -287,12 +287,11 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
 
   return (
     <box
-      backgroundColor={theme.backgroundPanel}
-      border={["left"]}
-      borderColor={theme.accent}
-      customBorderChars={SplitBorder.customBorderChars}
+      border
+      borderColor={theme.primary}
+      customBorderChars={RoundedBorder}
     >
-      <box gap={1} paddingLeft={1} paddingRight={3} paddingTop={1} paddingBottom={1}>
+      <box gap={1} paddingLeft={1} paddingRight={2} paddingTop={1} paddingBottom={1}>
         <Show when={!single()}>
           <box flexDirection="row" gap={1} paddingLeft={1}>
             <For each={questions()}>
@@ -305,13 +304,7 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
                   <box
                     paddingLeft={1}
                     paddingRight={1}
-                    backgroundColor={
-                      isActive()
-                        ? theme.accent
-                        : tabHover() === index()
-                          ? theme.backgroundElement
-                          : theme.backgroundPanel
-                    }
+                    backgroundColor={tabHover() === index() && !isActive() ? theme.backgroundElement : undefined}
                     onMouseOver={() => setTabHover(index())}
                     onMouseOut={() => setTabHover(null)}
                     onMouseUp={() => {
@@ -320,14 +313,10 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
                     }}
                   >
                     <text
-                      fg={
-                        isActive()
-                          ? selectedForeground(theme, theme.accent)
-                          : isAnswered()
-                            ? theme.text
-                            : theme.textMuted
-                      }
+                      fg={isActive() ? theme.primary : isAnswered() ? theme.text : theme.textMuted}
+                      attributes={isActive() ? TextAttributes.BOLD : undefined}
                     >
+                      {isAnswered() ? "✓ " : ""}
                       {q.header}
                     </text>
                   </box>
@@ -337,9 +326,7 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
             <box
               paddingLeft={1}
               paddingRight={1}
-              backgroundColor={
-                confirm() ? theme.accent : tabHover() === "confirm" ? theme.backgroundElement : theme.backgroundPanel
-              }
+              backgroundColor={!confirm() && tabHover() === "confirm" ? theme.backgroundElement : undefined}
               onMouseOver={() => setTabHover("confirm")}
               onMouseOut={() => setTabHover(null)}
               onMouseUp={() => {
@@ -347,17 +334,22 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
                 selectTab(questions().length)
               }}
             >
-              <text fg={confirm() ? selectedForeground(theme, theme.accent) : theme.textMuted}>Confirm</text>
+              <text fg={confirm() ? theme.primary : theme.textMuted} attributes={confirm() ? TextAttributes.BOLD : undefined}>
+                review
+              </text>
             </box>
           </box>
         </Show>
 
         <Show when={!confirm()}>
           <box paddingLeft={1} gap={1}>
-            <box>
-              <text fg={theme.text}>
+            <box flexDirection="row">
+              <text width={2} flexShrink={0} fg={theme.primary}>
+                ?
+              </text>
+              <text fg={theme.text} attributes={TextAttributes.BOLD}>
                 {question()?.question}
-                {multi() ? " (select all that apply)" : ""}
+                <span style={{ fg: theme.textMuted, bold: false }}>{multi() ? "  select all that apply" : ""}</span>
               </text>
             </box>
             <box>
@@ -375,24 +367,26 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
                       }}
                     >
                       <box flexDirection="row">
-                        <box backgroundColor={active() ? theme.backgroundElement : undefined} paddingRight={1}>
-                          <text fg={active() ? tint(theme.textMuted, theme.secondary, 0.6) : theme.textMuted}>
-                            {`${i() + 1}.`}
-                          </text>
-                        </box>
-                        <box backgroundColor={active() ? theme.backgroundElement : undefined}>
-                          <text fg={active() ? theme.secondary : picked() ? theme.success : theme.text}>
-                            {multi() ? `[${picked() ? "✓" : " "}] ${opt.label}` : opt.label}
-                          </text>
-                        </box>
+                        <text width={2} flexShrink={0} fg={theme.primary}>
+                          {active() ? "›" : ""}
+                        </text>
+                        <text
+                          fg={active() ? theme.text : picked() ? theme.success : theme.textMuted}
+                          attributes={active() ? TextAttributes.BOLD : undefined}
+                        >
+                          <span style={{ fg: theme.border }}>{`${i() + 1}. `}</span>
+                          {multi() ? `[${picked() ? "✓" : " "}] ${opt.label}` : opt.label}
+                        </text>
                         <Show when={!multi()}>
                           <text fg={theme.success}>{picked() ? " ✓" : ""}</text>
                         </Show>
                       </box>
 
-                      <box paddingLeft={3}>
-                        <text fg={theme.textMuted}>{opt.description}</text>
-                      </box>
+                      <Show when={opt.description}>
+                        <box paddingLeft={5}>
+                          <text fg={theme.border}>{opt.description}</text>
+                        </box>
+                      </Show>
                     </box>
                   )
                 }}
@@ -407,23 +401,23 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
                   }}
                 >
                   <box flexDirection="row">
-                    <box backgroundColor={other() ? theme.backgroundElement : undefined} paddingRight={1}>
-                      <text fg={other() ? tint(theme.textMuted, theme.secondary, 0.6) : theme.textMuted}>
-                        {`${options().length + 1}.`}
-                      </text>
-                    </box>
-                    <box backgroundColor={other() ? theme.backgroundElement : undefined}>
-                      <text fg={other() ? theme.secondary : customPicked() ? theme.success : theme.text}>
-                        {multi() ? `[${customPicked() ? "✓" : " "}] Type your own answer` : "Type your own answer"}
-                      </text>
-                    </box>
+                    <text width={2} flexShrink={0} fg={theme.primary}>
+                      {other() ? "›" : ""}
+                    </text>
+                    <text
+                      fg={other() ? theme.text : customPicked() ? theme.success : theme.textMuted}
+                      attributes={other() ? TextAttributes.BOLD : undefined}
+                    >
+                      <span style={{ fg: theme.border }}>{`${options().length + 1}. `}</span>
+                      {multi() ? `[${customPicked() ? "✓" : " "}] something else` : "something else"}
+                    </text>
 
                     <Show when={!multi()}>
                       <text fg={theme.success}>{customPicked() ? " ✓" : ""}</text>
                     </Show>
                   </box>
                   <Show when={store.editing}>
-                    <box paddingLeft={3}>
+                    <box paddingLeft={5}>
                       <textarea
                         ref={(val: TextareaRenderable) => {
                           textarea = val
@@ -446,7 +440,7 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
                     </box>
                   </Show>
                   <Show when={!store.editing && input()}>
-                    <box paddingLeft={3}>
+                    <box paddingLeft={5}>
                       <text fg={theme.textMuted}>{input()}</text>
                     </box>
                   </Show>
@@ -487,10 +481,10 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
         paddingBottom={1}
         justifyContent="space-between"
       >
-        <box flexDirection="row" gap={2}>
+        <box flexDirection="row" gap={2} paddingLeft={1}>
           <Show when={!single()}>
             <text fg={theme.text}>
-              {"⇆"} <span style={{ fg: theme.textMuted }}>tab</span>
+              tab <span style={{ fg: theme.textMuted }}>next question</span>
             </text>
           </Show>
           <Show when={!confirm()}>

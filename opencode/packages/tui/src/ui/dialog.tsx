@@ -8,6 +8,10 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import { useBindings, useOpencodeModeStack } from "../keymap"
 import { useClipboard } from "../context/clipboard"
 
+/**
+ * Dialogs float as a rounded card in the upper middle of the screen, over a lightly dimmed backdrop.
+ * The card is one step up from the canvas, so it reads as its own surface without a heavy frame.
+ */
 export function Dialog(
   props: ParentProps<{
     size?: "medium" | "large" | "xlarge"
@@ -20,9 +24,9 @@ export function Dialog(
 
   let dismiss = false
   const width = () => {
-    if (props.size === "xlarge") return 116
-    if (props.size === "large") return 88
-    return 60
+    if (props.size === "xlarge") return 118
+    if (props.size === "large") return 90
+    return 64
   }
 
   return (
@@ -42,10 +46,10 @@ export function Dialog(
       alignItems="center"
       position="absolute"
       zIndex={3000}
-      paddingTop={dimensions().height / 4}
+      paddingTop={Math.floor(dimensions().height / 5)}
       left={0}
       top={0}
-      backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
+      backgroundColor={RGBA.fromInts(0, 0, 0, 110)}
     >
       <box
         onMouseUp={(e: { stopPropagation(): void }) => {
@@ -56,7 +60,8 @@ export function Dialog(
           e.stopPropagation()
         }}
         width={width()}
-        maxWidth={dimensions().width - 2}
+        maxWidth={dimensions().width - 4}
+        maxHeight={Math.max(8, dimensions().height - Math.floor(dimensions().height / 5) - 2)}
         backgroundColor={theme.backgroundPanel}
         paddingTop={1}
       >

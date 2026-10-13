@@ -170,29 +170,52 @@ Engineering graph
     └── ● Tools · build
 ```
 
+### It remembers the task after compaction
+
+Long sessions get compacted, and a model-written summary can drop the goal, a decision, or which
+files were touched. RIFT does not rely on it. It keeps the engineering context of each session in
+`.rift/tasks/<session>/`, refreshed after every turn:
+
+```
+.rift/tasks/<session>/
+├── state.json            goal, plan, decisions, touched files, git, verification
+├── plan.md
+├── decisions.md
+├── touched-files.json
+├── verification.json
+└── checkpoints/          the handoff written at each compaction
+```
+
+When a session compacts, RIFT writes a checkpoint first, then appends that handoff to the summary.
+It is built from what RIFT recorded (your requests, the plan, the engineering graph, `git status`,
+the last check results), not written by a model, so the agent picks up with the same goal, plan
+and decisions it had before. The folder is git-ignored. Set `"task_state": false` to turn it off.
+
 ### Vibe Mode
 
 A strong model plans and reviews each step while a cheaper one does the work, so you get good
 decisions without paying frontier prices for every edit.
 
-### RIFT Video
+### Remotion
 
-Type `/video` and a sentence, in any project:
+Type `/remotion` and a sentence, in any project (`/video` still works):
 
 ```
-/video 30-second vertical launch video for this project, for developers
+/remotion 30-second vertical launch video for this project, for developers
 ```
 
-RIFT writes a storyboard, turns it into a typed spec, checks every scene as a still image, and
-renders an MP4 whose resolution, length and frame rate it verifies before calling it done. Under
-the hood it is a [Remotion](https://www.remotion.dev) engine that ships inside RIFT: the first
-`/video` in a project runs `rift video init`, which writes it to `video/` (or `.rift/video/` if
-that name is taken) and installs its dependencies. Rendering needs Node 20+; no paid services.
+RIFT makes videos with [Remotion](https://www.remotion.dev), using Remotion's official Agent
+Skills for the Remotion know-how. It writes a storyboard first, builds the composition, checks a
+still from every scene before rendering, and confirms the MP4's resolution, length and frame rate
+before calling it done.
 
-![Frames from a 20-second /video short: one agent claims the tests pass, RIFT runs them](assets/releases/v0.1.13/video-versus.png)
+- `rift remotion setup` installs the skills (`npx skills add remotion-dev/skills`) in the project,
+  or for your user with `-g`. RIFT also loads skills from Claude Code plugins you have installed,
+  so `claude plugin install remotion@remotion` works for RIFT too.
+- `rift remotion new <name>` creates a Remotion project; `rift remotion studio` opens Remotion
+  Studio for hand-tuning.
 
-Launches, explainers, terminal and code demos, charts, attention maps, captions, manga panels and
-ANSI art: see the [engine README](video/README.md) for the scene catalog and how to extend it.
+Rendering needs Node 20+; no paid services.
 
 ### Share a session
 
@@ -223,10 +246,10 @@ rift /path/to/project             # start somewhere else
 rift run "fix the failing test"   # non-interactive, for scripts and CI
 rift --continue                   # resume the last session
 rift import <share-link>          # bring a shared session into this project
-rift video init                   # set up the video engine in this project
+rift remotion setup               # install Remotion's skills for /remotion
 ```
 
-In a session, `/share` copies a link to it, `/unshare` takes it down, and `/video` makes a video.
+In a session, `/share` copies a link to it, `/unshare` takes it down, and `/remotion` makes a video.
 
 | Key         | Action                                        |
 | ----------- | --------------------------------------------- |
@@ -271,7 +294,7 @@ off everywhere.
 Coming from OpenCode? Your existing `opencode.json`, auth and sessions keep working — RIFT reads
 both names and leaves your old directory where it is.
 
-Full reference: [configuration docs](opencode/packages/web/src/content/docs/config.mdx).
+Full reference: the config schema in [opencode/packages/core/src/v1/config/config.ts](opencode/packages/core/src/v1/config/config.ts).
 
 ## FAQ
 

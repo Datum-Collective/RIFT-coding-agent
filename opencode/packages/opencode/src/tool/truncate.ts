@@ -121,6 +121,14 @@ const layer = Layer.effect(
         }
       }
 
+      // One line longer than the whole budget (minified JSON, say) would otherwise leave nothing.
+      if (hitBytes && out.length === 0) {
+        const line = Buffer.from(lines[i], "utf-8")
+        const part = direction === "head" ? line.subarray(0, maxBytes) : line.subarray(line.length - maxBytes)
+        out.push(part.toString("utf-8"))
+        bytes = part.length
+      }
+
       const removed = hitBytes ? totalBytes - bytes : lines.length - out.length
       const unit = hitBytes ? "bytes" : "lines"
       const preview = out.join("\n")

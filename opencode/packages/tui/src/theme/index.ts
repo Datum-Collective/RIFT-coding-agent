@@ -23,6 +23,7 @@ import nord from "./assets/nord.json" with { type: "json" }
 import onedark from "./assets/one-dark.json" with { type: "json" }
 import opencode from "./assets/opencode.json" with { type: "json" }
 import orng from "./assets/orng.json" with { type: "json" }
+import rift from "./assets/rift.json" with { type: "json" }
 import osakaJade from "./assets/osaka-jade.json" with { type: "json" }
 import palenight from "./assets/palenight.json" with { type: "json" }
 import rosepine from "./assets/rosepine.json" with { type: "json" }
@@ -128,6 +129,7 @@ export type ThemeJson = {
 }
 
 export const DEFAULT_THEMES: Record<string, ThemeJson> = {
+  rift,
   aura,
   ayu,
   catppuccin,

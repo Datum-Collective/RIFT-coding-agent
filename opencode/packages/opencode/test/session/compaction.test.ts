@@ -9,6 +9,8 @@ import * as Stream from "effect/Stream"
 import { Config } from "@/config/config"
 import { LLM } from "../../src/session/llm"
 import { SessionCompaction } from "../../src/session/compaction"
+import { TaskState } from "../../src/session/task-state"
+import path from "path"
 import { Token } from "@/util/token"
 import { Plugin } from "../../src/plugin"
 import { provideTmpdirInstance, TestInstance } from "../fixture/fixture"
@@ -1132,6 +1134,90 @@ describe("session.compaction.process", () => {
         ),
       ).toBe(false)
     }).pipe(withCompaction({ plugin: autocontinue(false) })),
+  )
+
+  itCompaction.instance(
+    "carries RIFT's recorded task state across compaction and writes it to .rift/tasks",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const ssn = yield* SessionNs.Service
+        const session = yield* ssn.create({})
+        const msg = yield* createUserMessage(session.id, "Add a login page")
+        const msgs = yield* ssn.messages({ sessionID: session.id })
+
+        yield* SessionCompaction.use.process({ parentID: msg.id, messages: msgs, sessionID: session.id, auto: false })
+
+        const summary = (yield* ssn.messages({ sessionID: session.id })).find(
+          (item) => item.info.role === "assistant" && item.info.summary,
+        )
+        const handoff = summary?.parts.find(
+          (part): part is SessionV1.TextPart => part.type === "text" && !!part.metadata?.[TaskState.METADATA_KEY],
+        )
+        expect(handoff?.synthetic).toBe(true)
+        expect(handoff?.text).toContain("Add a login page")
+        const base = path.join(test.directory, ".rift", "tasks", session.id)
+        expect((yield* Effect.promise(() => Bun.file(path.join(base, "state.json")).json())).goal).toBe(
+          "Add a login page",
+        )
+        expect(yield* Effect.promise(() => Bun.file(path.join(base, "checkpoints", `${summary!.info.id}.md`)).text())).toBe(
+          handoff!.text,
+        )
+      }).pipe(withCompaction()),
+    { git: true },
+  )
+
+  itCompaction.instance(
+    "writes no checkpoint when the summary fails",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const ssn = yield* SessionNs.Service
+        const session = yield* ssn.create({})
+        const msg = yield* createUserMessage(session.id, "Add a login page")
+        const msgs = yield* ssn.messages({ sessionID: session.id })
+
+        yield* SessionCompaction.use.process({ parentID: msg.id, messages: msgs, sessionID: session.id, auto: false })
+
+        const parts = (yield* ssn.messages({ sessionID: session.id })).flatMap((item) => item.parts)
+        expect(parts.some((part) => part.type === "text" && !!part.metadata?.[TaskState.METADATA_KEY])).toBe(false)
+        expect(
+          yield* Effect.promise(() =>
+            Bun.file(path.join(test.directory, ".rift", "tasks", session.id, "state.json")).exists(),
+          ),
+        ).toBe(false)
+      }).pipe(withCompaction({ result: "compact" })),
+    { git: true },
+  )
+
+  itCompaction.instance(
+    "does not record task state when task_state is off",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const ssn = yield* SessionNs.Service
+        const session = yield* ssn.create({})
+        const msg = yield* createUserMessage(session.id, "Add a login page")
+        const msgs = yield* ssn.messages({ sessionID: session.id })
+
+        yield* SessionCompaction.use.process({ parentID: msg.id, messages: msgs, sessionID: session.id, auto: false })
+
+        const parts = (yield* ssn.messages({ sessionID: session.id })).flatMap((item) => item.parts)
+        expect(parts.some((part) => part.type === "text" && !!part.metadata?.[TaskState.METADATA_KEY])).toBe(false)
+        expect(yield* Effect.promise(() => Bun.file(path.join(test.directory, ".rift", "tasks", ".gitignore")).exists())).toBe(
+          false,
+        )
+      }).pipe(
+        withCompaction({
+          config: Layer.succeed(
+            Config.Service,
+            TestConfig.make({
+              get: () => Effect.succeed({ ...(Schema.decodeUnknownSync(ConfigV1.Info)({}) as ConfigV1.Info), task_state: false }),
+            }),
+          ),
+        }),
+      ),
+    { git: true },
   )
 
   it.instance(

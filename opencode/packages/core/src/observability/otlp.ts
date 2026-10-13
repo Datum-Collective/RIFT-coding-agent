@@ -52,28 +52,4 @@ export function loggers() {
   return [OtlpLogger.make({ url: `${endpoint}/v1/logs`, resource: resource(), headers })]
 }
 
-export async function tracingLayer() {
-  if (!endpoint) return Layer.empty
-  const NodeSdk = await import("@effect/opentelemetry/NodeSdk")
-  const OTLP = await import("@opentelemetry/exporter-trace-otlp-http")
-  const SdkBase = await import("@opentelemetry/sdk-trace-base")
-  const { AsyncLocalStorageContextManager } = await import("@opentelemetry/context-async-hooks")
-  const { context } = await import("@opentelemetry/api")
-
-  // The Effect Node SDK does not register a global context manager, but the AI SDK uses it to parent spans.
-  const manager = new AsyncLocalStorageContextManager()
-  manager.enable()
-  context.setGlobalContextManager(manager)
-
-  return NodeSdk.layer(() => ({
-    resource: resource(),
-    spanProcessor: new SdkBase.BatchSpanProcessor(
-      new OTLP.OTLPTraceExporter({
-        url: `${endpoint}/v1/traces`,
-        headers,
-      }),
-    ),
-  }))
-}
-
 export * as Otlp from "./otlp"

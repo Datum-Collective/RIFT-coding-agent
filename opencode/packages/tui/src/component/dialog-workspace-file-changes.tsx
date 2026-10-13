@@ -114,14 +114,17 @@ export function DialogWorkspaceFileChanges(props: {
             <box
               paddingLeft={2}
               paddingRight={2}
-              backgroundColor={item === store.active ? theme.primary : undefined}
+              
               onMouseUp={() => {
                 setStore("active", item)
                 props.onSelect(item)
                 dialog.clear()
               }}
             >
-              <text fg={item === store.active ? theme.selectedListItemText : theme.textMuted}>{item}</text>
+              <text fg={item === store.active ? theme.text : theme.textMuted} attributes={item === store.active ? TextAttributes.BOLD : undefined}>
+                <span style={{ fg: theme.primary }}>{item === store.active ? "› " : "  "}</span>
+                {item}
+              </text>
             </box>
           )}
         </For>

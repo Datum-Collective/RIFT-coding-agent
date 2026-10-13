@@ -1,7 +1,6 @@
 export * as Npm from "./npm"
 
 import path from "path"
-import npa from "npm-package-arg"
 import { Effect, Schema, Context, Layer, Option, FileSystem } from "effect"
 import { NodeFileSystem } from "@effect/platform-node"
 import { FSUtil } from "./fs-util"
@@ -114,6 +113,8 @@ const layer = Layer.effect(
 
     const add = Effect.fn("Npm.add")(function* (pkg: string) {
       const dir = directory(pkg)
+      // Loaded here rather than at module load: only package installs need npm's spec parser.
+      const npa = (yield* Effect.promise(() => import("npm-package-arg"))).default
       const name = (() => {
         try {
           return npa(pkg).name ?? pkg

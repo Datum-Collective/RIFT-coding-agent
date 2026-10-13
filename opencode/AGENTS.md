@@ -1,8 +1,7 @@
-- To regenerate the legacy JavaScript SDK, run `./packages/sdk/js/script/build.ts`.
-- After changing the public Protocol or Server `HttpApi`, run `bun run generate` from `packages/client`. Do not edit `src/generated` or `src/generated-effect` directly.
-- Keep runtime dependencies directed from Schema to Core and Protocol, then from Core and Protocol to Server. Client runtime code may depend on Schema and Protocol but never Core or Server; `sdk-next` composes Client, Core, and Server.
-- The default branch in this repo is `dev`.
-- Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
+- After changing the Server `HttpApi`, regenerate the JavaScript SDK with `bun run build` in `packages/sdk/js` (it reads the spec from `packages/opencode/script/openapi.ts`). Do not edit `packages/sdk/js/src/v2/gen` by hand.
+- Keep runtime dependencies directed from Schema to Core and Protocol, then from Core and Protocol to Server.
+- Before changing a TUI screen, read `../docs/design/tui.md`: the glyph gutter, colour tokens and component rules every screen follows.
+- The default branch is `main`; diff against `origin/main`.
 
 ## Branch Names
 
@@ -14,7 +13,7 @@ Examples: `session-recovery`, `fix-scroll-state`, `regenerate-sdk`.
 
 Use conventional commit-style messages and PR titles: `type(scope): summary`.
 
-Valid types are `feat`, `fix`, `docs`, `chore`, `refactor`, and `test`. Scopes are optional; use the affected package or area when helpful, e.g. `core`, `opencode`, `tui`, `app`, `desktop`, `sdk`, or `plugin`.
+Valid types are `feat`, `fix`, `perf`, `docs`, `chore`, `refactor`, and `test`. Scopes are optional; use the affected package or area when helpful, e.g. `core`, `opencode`, `tui`, `mcp`, `sdk`, or `plugin`.
 
 Examples: `fix(tui): simplify thinking toggle styling`, `docs: update contributing guide`, `chore(sdk): regenerate types`.
 

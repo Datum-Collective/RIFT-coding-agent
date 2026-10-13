@@ -2,8 +2,6 @@ import { createContext, useContext, type ParentProps, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useTheme } from "../context/theme"
 import { useTerminalDimensions } from "@opentui/solid"
-import { SplitBorder } from "./border"
-import { TextAttributes } from "@opentui/core"
 export type ToastOptions = {
   title?: string
   message: string
@@ -12,6 +10,9 @@ export type ToastOptions = {
 }
 type ToastInput = Omit<ToastOptions, "duration"> & { duration?: number }
 
+const GLYPH = { info: "·", success: "✓", warning: "!", error: "✕" } as const
+
+/** A notice in the top-right corner: a glyph, an optional bold title, the message. No frame. */
 export function Toast() {
   const toast = useToast()
   const { theme } = useTheme()
@@ -22,26 +23,21 @@ export function Toast() {
       {(current) => (
         <box
           position="absolute"
-          justifyContent="center"
-          alignItems="flex-start"
-          top={2}
-          right={2}
-          maxWidth={Math.min(60, dimensions().width - 6)}
-          paddingLeft={2}
-          paddingRight={2}
-          paddingTop={1}
-          paddingBottom={1}
+          top={1}
+          right={1}
+          maxWidth={Math.min(64, dimensions().width - 4)}
+          paddingLeft={1}
+          paddingRight={1}
           backgroundColor={theme.backgroundPanel}
-          borderColor={theme[current().variant]}
-          border={["left", "right"]}
-          customBorderChars={SplitBorder.customBorderChars}
+          flexDirection="row"
         >
-          <Show when={current().title}>
-            <text attributes={TextAttributes.BOLD} marginBottom={1} fg={theme.text}>
-              {current().title}
-            </text>
-          </Show>
-          <text fg={theme.text} wrapMode="word" width="100%">
+          <text width={2} flexShrink={0} fg={current().variant === "info" ? theme.primary : theme[current().variant]}>
+            {GLYPH[current().variant]}
+          </text>
+          <text fg={current().variant === "error" ? theme.error : theme.textMuted} wrapMode="word" flexShrink={1}>
+            <Show when={current().title}>
+              <span style={{ fg: theme.text, bold: true }}>{current().title} </span>
+            </Show>
             {current().message}
           </text>
         </box>

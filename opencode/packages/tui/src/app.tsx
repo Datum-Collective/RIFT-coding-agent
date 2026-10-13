@@ -44,7 +44,7 @@ import { DialogModel } from "./component/dialog-model"
 import { DialogVibeModels } from "./component/dialog-vibe-models"
 import { MissionControl } from "./component/control/mission-control"
 import { useConnected } from "./component/use-connected"
-import { DialogMcp } from "./component/dialog-mcp"
+import { DialogMcp, DialogMcpApproval } from "./component/dialog-mcp"
 import { DialogStatus } from "./component/dialog-status"
 import { DialogDebug } from "./component/dialog-debug"
 import { DialogThemeList } from "./component/dialog-theme-list"
@@ -52,7 +52,6 @@ import { DialogHelp } from "./ui/dialog-help"
 import { DialogAgent } from "./component/dialog-agent"
 import { DialogSessionList } from "./component/dialog-session-list"
 import { DialogWorkspaceList } from "./component/dialog-workspace-list"
-import { DialogConsoleOrg } from "./component/dialog-console-org"
 import { ThemeProvider, useTheme } from "./context/theme"
 import { Home } from "./routes/home"
 import { Session } from "./routes/session"
@@ -513,6 +512,22 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
     })
   })
 
+  // A project's .mcp.json server asks once before it may start. Ask when nothing else is on screen.
+  const askedMcp = new Set<string>()
+  createEffect(() => {
+    const waiting = Object.entries(sync.data.mcp)
+      .filter(([name, status]) => status.status === "needs_approval" && !askedMcp.has(name))
+      .map(([name]) => name)
+    if (!waiting.length || dialog.stack.length > 0) return
+    const name = waiting[0]
+    askedMcp.add(name)
+    void sdk.client.mcp.servers().then((x) => {
+      const server = x.data?.find((item) => item.name === name)
+      if (server && server.status.status === "needs_approval" && dialog.stack.length === 0)
+        dialog.replace(() => <DialogMcpApproval server={server} />)
+    })
+  })
+
   let continued = false
   createEffect(() => {
     // When using -c, session list is loaded in blocking phase, so we can navigate at "partial"
@@ -755,9 +770,10 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       {
         name: "mcp.list",
-        title: "Toggle MCPs",
+        title: "MCP servers",
         category: "Agent",
-        slashName: "mcps",
+        slashName: "mcp",
+        slashAliases: ["mcps"],
         run: () => {
           dialog.replace(() => <DialogMcp />)
         },
@@ -821,21 +837,6 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         },
         category: "Provider",
       },
-      ...(sync.data.console_state.switchableOrgCount > 1
-        ? [
-            {
-              name: "console.org.switch",
-              title: "Switch org",
-              suggested: Boolean(sync.data.console_state.activeOrgName),
-              slashName: "org",
-              slashAliases: ["orgs", "switch-org"],
-              run: () => {
-                dialog.replace(() => <DialogConsoleOrg />)
-              },
-              category: "Provider",
-            },
-          ]
-        : []),
       {
         name: "opencode.status",
         title: "View status",
@@ -884,8 +885,9 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       {
         name: "help.show",
-        title: "Help",
+        title: "Keyboard shortcuts",
         slashName: "help",
+        slashAliases: ["keys", "shortcuts"],
         run: () => {
           dialog.replace(() => <DialogHelp />)
         },

@@ -50,12 +50,13 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       }
       const connected = yield* provider.list()
       const credentials = yield* authStore.all().pipe(Effect.orDie)
+      // Public copies are cached per source object, so this is cheap after the first request.
       const providers = Object.assign(
-        mapValues(filtered, (item) => Provider.fromModelsDevProvider(item)),
-        connected,
+        mapValues(filtered, (item) => Provider.publicFromModelsDev(item)),
+        mapValues(connected, (item) => Provider.toPublicInfoCached(item)),
       )
       return {
-        all: Object.values(providers).map(Provider.toPublicInfo),
+        all: Object.values(providers),
         default: Provider.defaultModelIDs(providers),
         connected: Object.keys(providers).filter((id) => id in connected || credentials[id]),
       }

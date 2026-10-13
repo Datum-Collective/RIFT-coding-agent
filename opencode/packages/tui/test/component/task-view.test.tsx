@@ -80,7 +80,7 @@ test("renders the task header with state, models and diff totals", async () => {
       },
     }),
   )
-  expect(out).toContain("TASK")
+  expect(out).toContain("Task ─")
   expect(out).toContain("Add retry logic to the API client")
   expect(out).toContain("executing")
   expect(out).toContain("opus-5 → haiku-4.5")
@@ -101,10 +101,10 @@ test("renders plan steps with their status glyphs", async () => {
       },
     }),
   )
-  expect(out).toContain("PLAN")
+  expect(out).toContain("Plan ─")
   expect(out).toContain("✓ 1. Add the retry helper")
-  expect(out).toContain("● 2. Wire it into the client")
-  expect(out).toContain("○ 3. Add tests")
+  expect(out).toContain("▸ 2. Wire it into the client")
+  expect(out).toContain("· 3. Add tests")
 })
 
 test("collapses execution into states with durations, not a transcript", async () => {
@@ -117,10 +117,10 @@ test("collapses execution into states with durations, not a transcript", async (
       ],
     }),
   )
-  expect(out).toContain("EXECUTION")
+  expect(out).toContain("Execution ─")
   expect(out).toContain("✓ Analyzing code")
   expect(out).toContain("2.1s")
-  expect(out).toContain("✗ Running tests")
+  expect(out).toContain("✕ Running tests")
   expect(out).toContain("2 failed")
 })
 
@@ -140,9 +140,9 @@ test("shows verification results and a claims mismatch", async () => {
       },
     }),
   )
-  expect(out).toContain("VERIFICATION")
+  expect(out).toContain("Verification ─")
   expect(out).toContain("✓ bun run typecheck")
-  expect(out).toContain("✗ bun test")
+  expect(out).toContain("✕ bun test")
   expect(out).toContain("permission denied")
   expect(out).toContain("summary does not match the diff (1)")
   expect(out).toContain("20 files changed")
@@ -150,13 +150,13 @@ test("shows verification results and a claims mismatch", async () => {
 
 test("surfaces a blocked task above everything else", async () => {
   const out = await frame(makeTask({ state: "blocked", blocked: { permissions: 2, questions: 1 } }))
-  expect(out).toContain("NEEDS YOU")
+  expect(out).toContain("Needs you ─")
   expect(out).toContain("2 permission requests")
   expect(out).toContain("1 question")
-  const needs = out.indexOf("NEEDS YOU")
+  const needs = out.indexOf("Needs you ─")
   expect(needs).toBeGreaterThan(-1)
   // It sits directly under the task header, before plan or execution.
-  expect(needs).toBeLessThan(out.indexOf("EXECUTION") === -1 ? Number.MAX_SAFE_INTEGER : out.indexOf("EXECUTION"))
+  expect(needs).toBeLessThan(out.indexOf("Execution ─") === -1 ? Number.MAX_SAFE_INTEGER : out.indexOf("Execution ─"))
 })
 
 test("shows context pressure only when the limit is known", async () => {
@@ -170,12 +170,12 @@ test("offers review of the changed files, pointing at the existing diff viewer",
       changes: { files: [{ file: "src/a.ts", added: 1, removed: 0 }], added: 1, removed: 0 },
     }),
   )
-  expect(out).toContain("REVIEW")
+  expect(out).toContain("Review ─")
   expect(out).toContain("1 file to review")
 })
 
 test("has no review section when nothing changed", async () => {
-  expect(await frame(makeTask())).not.toContain("REVIEW")
+  expect(await frame(makeTask())).not.toContain("Review ─")
 })
 
 test("tells the user when nothing has happened instead of rendering an empty frame", async () => {
@@ -196,7 +196,7 @@ test("fills the width without overflowing from 80 to 200 columns", async () => {
     const out = await frame(rich, width, 44)
     for (const line of out.split("\n")) expect(line.length).toBeLessThanOrEqual(width)
     // Every section still renders, and the rules stretch to the terminal.
-    for (const section of ["TASK", "PLAN", "EXECUTION", "CHANGES", "VERIFICATION", "REVIEW"]) {
+    for (const section of ["Task ─", "Plan ─", "Execution ─", "Changes ─", "Verification ─", "Review ─"]) {
       expect(out).toContain(section)
     }
     expect(out).toContain("─".repeat(Math.min(40, width - 20)))

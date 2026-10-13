@@ -1064,7 +1064,7 @@ describe("tool.shell abort", () => {
         projectRoot,
         Effect.gen(function* () {
           const tool = yield* initShell()
-          expect(tool.description).toContain("commands will time out after 500ms")
+          expect(tool.description).toContain("Default timeout 500ms")
           const result = yield* tool.execute(
             {
               command: `sleep 60`,

@@ -6,7 +6,6 @@ import type { Agent } from "@/agent/agent"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { Global } from "@opencode-ai/core/global"
-import { SkillPlugin } from "@opencode-ai/core/plugin/skill"
 import { Permission } from "@/permission"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Config } from "@/config/config"
@@ -23,16 +22,6 @@ const AGENTS_EXTERNAL_DIR = ".agents"
 const EXTERNAL_SKILL_PATTERN = "skills/**/SKILL.md"
 const OPENCODE_SKILL_PATTERN = "{skill,skills}/**/SKILL.md"
 const SKILL_PATTERN = "**/SKILL.md"
-
-// Built-in skill that ships with opencode. The model's intuition for what an
-// opencode.json should look like is often wrong, and opencode hard-fails on
-// invalid config, so users hit cryptic startup errors. Loading this skill
-// when the model is asked to touch opencode's own config files gives it the
-// actual schemas instead of guesses.
-const CUSTOMIZE_OPENCODE_SKILL_NAME = "customize-opencode"
-const CUSTOMIZE_OPENCODE_SKILL_DESCRIPTION =
-  "Use ONLY when the user is editing or creating opencode's own configuration: opencode.json, opencode.jsonc, files under .opencode/, or files under ~/.config/opencode/. Also use when creating or fixing opencode agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring opencode itself."
-const CUSTOMIZE_OPENCODE_SKILL_BODY = SkillPlugin.CustomizeOpencodeContent
 
 export const Info = Schema.Struct({
   name: Schema.String,
@@ -170,6 +159,44 @@ const scan = Effect.fnUntraced(function* (
   }
 })
 
+/**
+ * Where the plugins in Claude Code's `~/.claude/plugins/installed_plugins.json` keep their skills:
+ * the folders a plugin's `.claude-plugin/plugin.json` lists under `skills`, or its `skills/` folder
+ * when it lists none. Returned as scan roots with the glob to use under each.
+ */
+export const claudePluginSkillDirs = Effect.fnUntraced(function* (fsys: FSUtil.Interface, home: string) {
+  const manifest = yield* fsys
+    .readJson(path.join(home, CLAUDE_EXTERNAL_DIR, "plugins", "installed_plugins.json"))
+    .pipe(Effect.catch(() => Effect.succeed(undefined)))
+  const plugins = (manifest as { plugins?: Record<string, Array<{ installPath?: unknown }>> } | undefined)?.plugins
+  if (!plugins || typeof plugins !== "object") return [] as Array<{ root: string; pattern: string }>
+  const roots: Array<{ root: string; pattern: string }> = []
+  for (const installs of Object.values(plugins)) {
+    if (!Array.isArray(installs)) continue
+    for (const install of installs) {
+      if (typeof install?.installPath !== "string") continue
+      const base = install.installPath
+      const meta = yield* fsys
+        .readJson(path.join(base, ".claude-plugin", "plugin.json"))
+        .pipe(Effect.catch(() => Effect.succeed(undefined)))
+      const listed = (meta as { skills?: unknown } | undefined)?.skills
+      if (Array.isArray(listed) && listed.length) {
+        for (const item of listed) {
+          if (typeof item !== "string") continue
+          const dir = path.resolve(base, item)
+          // Stay inside the plugin: a manifest cannot point RIFT at arbitrary folders.
+          if (!dir.startsWith(path.resolve(base) + path.sep)) continue
+          if (yield* fsys.isDir(dir)) roots.push({ root: dir, pattern: "SKILL.md" })
+        }
+        continue
+      }
+      const dir = path.join(base, "skills")
+      if (yield* fsys.isDir(dir)) roots.push({ root: dir, pattern: "**/SKILL.md" })
+    }
+  }
+  return roots
+})
+
 const discoverSkills = Effect.fnUntraced(function* (
   config: Config.Interface,
   discovery: Discovery.Interface,
@@ -191,6 +218,14 @@ const discoverSkills = Effect.fnUntraced(function* (
       const root = path.join(global.home, dir)
       if (!(yield* fsys.isDir(root))) continue
       yield* scan(state, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "global" })
+    }
+
+    // Skills from Claude Code plugins (`claude plugin install ...`), e.g. Remotion's, so a plugin
+    // installed for Claude Code works in RIFT too. Only the plugins Claude Code lists as installed.
+    if (!disableClaudeCodeSkills) {
+      for (const item of yield* claudePluginSkillDirs(fsys, global.home)) {
+        yield* scan(state, item.root, item.pattern, { dot: true, scope: "global" })
+      }
     }
 
     const upDirs = yield* fsys
@@ -273,14 +308,6 @@ const layer = Layer.effect(
     const state = yield* InstanceState.make(
       Effect.fn("Skill.state")(function* () {
         const s: State = { skills: {}, dirs: new Set() }
-        // Register the built-in skill BEFORE disk discovery so a user-disk
-        // skill with the same name can override it.
-        s.skills[CUSTOMIZE_OPENCODE_SKILL_NAME] = {
-          name: CUSTOMIZE_OPENCODE_SKILL_NAME,
-          description: CUSTOMIZE_OPENCODE_SKILL_DESCRIPTION,
-          location: "<built-in>",
-          content: CUSTOMIZE_OPENCODE_SKILL_BODY,
-        }
         yield* loadSkills(s, yield* InstanceState.get(discovered), events)
         return s
       }),
@@ -317,6 +344,22 @@ const layer = Layer.effect(
     return Service.of({ get, require, all, dirs, available })
   }),
 )
+
+// Skill names are all the prompt carries; the description and body arrive when the skill is loaded.
+const SKILL_NAME_LIMIT = 40
+
+export function names(list: Info[]) {
+  const sorted = list
+    .filter((skill) => skill.description !== undefined)
+    .map((skill) => skill.name)
+    .toSorted((a, b) => a.localeCompare(b))
+  if (sorted.length === 0) return undefined
+  const shown = sorted.slice(0, SKILL_NAME_LIMIT)
+  const more = sorted.length - shown.length
+  return [
+    `Skills (load one with the skill tool when the task matches it): ${shown.join(", ")}${more > 0 ? ` and ${more} more` : ""}.`,
+  ].join("\n")
+}
 
 export function fmt(list: Info[], opts: { verbose: boolean }) {
   const described = list.filter((skill) => skill.description !== undefined)

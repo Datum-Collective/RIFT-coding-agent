@@ -5,7 +5,6 @@ import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import path from "path"
 import { pathToFileURL } from "url"
 import { Auth } from "../../src/auth"
-import { Account } from "../../src/account/account"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { Workspace } from "../../src/control-plane/workspace"
 import { Plugin } from "../../src/plugin/index"
@@ -14,7 +13,6 @@ import { InstanceStore } from "../../src/project/instance-store"
 import { InstanceState } from "../../src/effect/instance-state"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
-import { AccountTest } from "../fake/account"
 import { AuthTest } from "../fake/auth"
 import { NpmTest } from "../fake/npm"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
@@ -24,7 +22,6 @@ const noopBootstrapLayer = Layer.succeed(InstanceBootstrap.Service, InstanceBoot
 const it = testEffect(
   AppNodeBuilder.build(LayerNode.group([Plugin.node, Workspace.node, InstanceStore.node, Ripgrep.node]), [
     [Auth.node, AuthTest.empty],
-    [Account.node, AccountTest.empty],
     [Npm.node, NpmTest.noop],
     [InstanceStore.bootstrapNode, noopBootstrapLayer],
     [RuntimeFlags.node, RuntimeFlags.layer({ disableDefaultPlugins: true, experimentalWorkspaces: true })],

@@ -75,7 +75,7 @@ export function DialogSessionDeleteFailed(props: {
               paddingRight={1}
               paddingTop={1}
               paddingBottom={1}
-              backgroundColor={item.id === store.active ? theme.primary : undefined}
+              backgroundColor={item.id === store.active ? theme.backgroundElement : undefined}
               onMouseUp={() => {
                 setStore("active", item.id)
                 void confirm()
@@ -83,7 +83,7 @@ export function DialogSessionDeleteFailed(props: {
             >
               <text
                 attributes={TextAttributes.BOLD}
-                fg={item.id === store.active ? theme.selectedListItemText : theme.text}
+                fg={item.id === store.active ? theme.primary : theme.text}
               >
                 {item.title}
               </text>

@@ -115,6 +115,10 @@ export const Info = Schema.Struct({
     description:
       "After the agent edits files, load this URL in a real browser and report whether it rendered and what the console said, e.g. http://localhost:3000",
   }),
+  task_state: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Keep each session's goal, plan, decisions, touched files and verification in .rift/tasks, and append them to every compaction summary so they survive compaction. Defaults to true",
+  }),
   verify_claims: Schema.optional(Schema.Boolean).annotate({
     description:
       "After verification, have a model compare the agent's own summary against the real diff and flag mismatches. Costs one extra model call per turn that edits files. Defaults to true",

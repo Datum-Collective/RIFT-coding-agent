@@ -20,9 +20,9 @@ import { useRoute, useRouteData } from "../../context/route"
 import { useProject } from "../../context/project"
 import { useSync } from "../../context/sync"
 import { useEvent } from "../../context/event"
-import { SplitBorder } from "../../ui/border"
+import { EmptyBorder, RoundedBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
-import { Spinner } from "../../component/spinner"
+import { Spinner, SPINNER_FRAMES } from "../../component/spinner"
 import { createSyntaxStyleMemo, generateSubtleSyntax, selectedForeground, useTheme } from "../../context/theme"
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
@@ -84,6 +84,9 @@ import { getRevertDiffFiles } from "../../util/revert-diff"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useOpencodeKeymap } from "../../keymap"
 import { usePathFormatter } from "../../context/path-format"
 import { LocationProvider } from "../../context/location"
+import { verification, VERIFICATION_METADATA_KEY } from "../../util/task"
+import { useDirectory } from "../../context/directory"
+import { RiftVersion } from "@opencode-ai/core/installation/version"
 
 addDefaultParsers(parsers.parsers)
 
@@ -178,6 +181,41 @@ function use() {
   return ctx
 }
 
+/** Width of the context rail beside the transcript. */
+const RAIL_WIDTH = 42
+
+/** The top of every transcript: a small card saying what this is, which model, and where. */
+function SessionIntro() {
+  const { theme } = useTheme()
+  const local = useLocal()
+  const directory = useDirectory()
+  return (
+    <box paddingTop={1} paddingBottom={1} flexShrink={0} flexDirection="row">
+      <box
+        border
+        customBorderChars={RoundedBorder}
+        borderColor={theme.borderSubtle}
+        paddingLeft={1}
+        paddingRight={2}
+        flexShrink={1}
+      >
+        <text fg={theme.textMuted} wrapMode="none">
+          <span style={{ fg: theme.primary, bold: true }}>◆ RIFT</span>
+          <span style={{ fg: theme.border }}> {RiftVersion}</span>
+          <span style={{ fg: theme.textMuted }}>{"   "}the coding agent that checks its own work</span>
+        </text>
+        <text fg={theme.textMuted} wrapMode="none">
+          {"  "}
+          <span style={{ fg: theme.text }}>{local.model.parsed().model}</span>
+          <span style={{ fg: theme.border }}> {local.model.parsed().provider}</span>
+          {"   "}
+          {directory()}
+        </text>
+      </box>
+    </box>
+  )
+}
+
 export function Session() {
   const setEpilogue = useEpilogue()
   const clipboard = useClipboard()
@@ -270,13 +308,13 @@ export function Session() {
   const [diffWrapMode] = kv.signal<"word" | "none">("diff_wrap_mode", "word")
   const [_animationsEnabled, _setAnimationsEnabled] = kv.signal("animations_enabled", true)
   const [showGenericToolOutput, setShowGenericToolOutput] = kv.signal("generic_tool_output_visibility", false)
-  // The task panel is the primary view; the transcript is the detail view behind it.
-  // A session opens on the task view: what the agent is doing, what changed, whether it needs you. The
-  // full conversation is one keypress away, and whichever view was chosen is remembered.
-  const [viewMode, setViewMode] = kv.signal<"task" | "log">("view_mode", "task")
+  // The transcript is the primary view. The task view (status, plan, checks) is one keypress away,
+  // and its essentials also live in the context rail, so whichever view was chosen is remembered.
+  const [viewMode, setViewMode] = kv.signal<"task" | "log">("view_mode", "log")
   const task = useTask(() => route.sessionID)
 
-  const wide = createMemo(() => dimensions().width > 120)
+  // The panel docks beside the transcript only when both still have room to breathe.
+  const wide = createMemo(() => dimensions().width >= 130)
   const sidebarVisible = createMemo(() => {
     if (session()?.parentID) return false
     if (sidebarOpen()) return true
@@ -284,7 +322,7 @@ export function Session() {
     return false
   })
   const showTimestamps = createMemo(() => timestamps() === "show")
-  const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() ? 42 : 0) - 4)
+  const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() && wide() ? RAIL_WIDTH : 0) - 4)
   const providers = createMemo(() => Model.index(sync.data.provider))
 
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
@@ -1233,7 +1271,7 @@ export function Session() {
         }}
       >
         <box flexDirection="row" flexGrow={1} minHeight={0}>
-          <box flexGrow={1} minHeight={0} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
+          <box flexGrow={1} minHeight={0} paddingLeft={2} paddingRight={2} paddingBottom={1}>
             <Show when={session()}>
               <scrollbox
                 ref={(r) => (scroll = r)}
@@ -1253,7 +1291,7 @@ export function Session() {
                 flexGrow={1}
                 scrollAcceleration={scrollAcceleration()}
               >
-                <box height={1} />
+                <SessionIntro />
                 <Show when={viewMode() === "task"}>
                   <TaskView task={task()} width={contentWidth()} />
                 </Show>
@@ -1285,38 +1323,37 @@ export function Session() {
                                 onMouseUp={handleUnrevert}
                                 marginTop={1}
                                 flexShrink={0}
-                                border={["left"]}
-                                customBorderChars={SplitBorder.customBorderChars}
-                                borderColor={theme.backgroundPanel}
+                                backgroundColor={hover() ? theme.backgroundElement : undefined}
                               >
-                                <box
-                                  paddingTop={1}
-                                  paddingBottom={1}
-                                  paddingLeft={2}
-                                  backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
-                                >
-                                  <text fg={theme.textMuted}>{revert()!.reverted.length} message reverted</text>
+                                <box flexDirection="row">
+                                  <text width={2} flexShrink={0} fg={theme.warning}>
+                                    ↺
+                                  </text>
                                   <text fg={theme.textMuted}>
+                                    <span style={{ fg: theme.text, bold: true }}>
+                                      {revert()!.reverted.length} message{revert()!.reverted.length === 1 ? "" : "s"} undone
+                                    </span>
+                                    {"  "}
                                     <span style={{ fg: theme.text }}>{redoShortcut()}</span> or /redo to restore
                                   </text>
-                                  <Show when={revert()!.diffFiles?.length}>
-                                    <box marginTop={1}>
-                                      <For each={revert()!.diffFiles}>
-                                        {(file) => (
-                                          <text fg={theme.text}>
-                                            {file.filename}
-                                            <Show when={file.additions > 0}>
-                                              <span style={{ fg: theme.diffAdded }}> +{file.additions}</span>
-                                            </Show>
-                                            <Show when={file.deletions > 0}>
-                                              <span style={{ fg: theme.diffRemoved }}> -{file.deletions}</span>
-                                            </Show>
-                                          </text>
-                                        )}
-                                      </For>
-                                    </box>
-                                  </Show>
                                 </box>
+                                <Show when={revert()!.diffFiles?.length}>
+                                  <box paddingLeft={2}>
+                                    <For each={revert()!.diffFiles}>
+                                      {(file) => (
+                                        <text fg={theme.textMuted}>
+                                          {file.filename}
+                                          <Show when={file.additions > 0}>
+                                            <span style={{ fg: theme.diffAdded }}> +{file.additions}</span>
+                                          </Show>
+                                          <Show when={file.deletions > 0}>
+                                            <span style={{ fg: theme.diffRemoved }}> −{file.deletions}</span>
+                                          </Show>
+                                        </text>
+                                      )}
+                                    </For>
+                                  </box>
+                                </Show>
                               </box>
                             )
                           })()}
@@ -1404,16 +1441,8 @@ export function Session() {
                 <Sidebar sessionID={route.sessionID} />
               </Match>
               <Match when={!wide()}>
-                <box
-                  position="absolute"
-                  top={0}
-                  left={0}
-                  right={0}
-                  bottom={0}
-                  alignItems="flex-end"
-                  backgroundColor={RGBA.fromInts(0, 0, 0, 70)}
-                >
-                  <Sidebar sessionID={route.sessionID} />
+                <box position="absolute" top={0} left={0} right={0} bottom={0} alignItems="flex-end">
+                  <Sidebar sessionID={route.sessionID} overlay />
                 </box>
               </Match>
             </Switch>
@@ -1432,108 +1461,95 @@ function UserMessage(props: {
   pending?: number
 }) {
   const ctx = use()
-  const local = useLocal()
-  const text = createMemo(() => {
-    const texts = props.parts
-      .map((x) => {
-        if (x.type === "text" && !x.synthetic) {
-          return x.text
-        }
-        return null
-      })
-      .filter(Boolean)
-    return texts.join("\n\n")
-  })
+  const text = createMemo(() =>
+    props.parts
+      .flatMap((x) => (x.type === "text" && !x.synthetic ? [x.text] : []))
+      .join("\n\n"),
+  )
   const files = createMemo(() => props.parts.flatMap((x) => (x.type === "file" ? [x] : [])))
   const { theme } = useTheme()
   const [hover, setHover] = createSignal(false)
   const queued = createMemo(() => props.pending !== undefined && props.index > props.pending)
-  const color = createMemo(() => local.agent.color(props.message.agent))
-  const queuedFg = createMemo(() => selectedForeground(theme, color()))
-  const metadataVisible = createMemo(() => queued() || ctx.showTimestamps())
-
   const compaction = createMemo(() => props.parts.find((x) => x.type === "compaction"))
 
   return (
     <>
       <Show when={text()}>
+        {/* A user turn reads like the shell prompt it came from: ❯ and what was typed. */}
         <box
           id={props.message.id}
           ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
           marginTop={props.index === 0 ? 0 : 1}
+          flexShrink={0}
+          onMouseOver={() => setHover(true)}
+          onMouseOut={() => setHover(false)}
+          onMouseUp={props.onMouseUp}
+          backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
+          paddingTop={1}
+          paddingBottom={1}
+          paddingRight={2}
         >
-          <box
-            onMouseOver={() => {
-              setHover(true)
-            }}
-            onMouseOut={() => {
-              setHover(false)
-            }}
-            onMouseUp={props.onMouseUp}
-            paddingTop={1}
-            paddingBottom={1}
-            backgroundColor={hover() ? theme.backgroundElement : undefined}
-            flexShrink={0}
-          >
-            {/* What the user typed reads as a prompt line, not a filled panel. */}
-            <box flexDirection="row">
-              <text fg={color()}>&gt; </text>
-              <text flexGrow={1} fg={theme.text}>
-                {text()}
-              </text>
-            </box>
-            <Show when={files().length}>
-              <box flexDirection="row" paddingBottom={metadataVisible() ? 1 : 0} paddingTop={1} gap={1} flexWrap="wrap">
-                <For each={files()}>
-                  {(file) => {
-                    const directory = file.mime === "application/x-directory"
-                    return (
-                      <text fg={theme.text}>
-                        <span style={{ bg: theme.secondary, fg: theme.background }}>
-                          {directory ? " Directory " : " File "}
-                        </span>
-                        <span style={{ bg: theme.backgroundElement, fg: theme.textMuted }}> {file.filename} </span>
-                      </text>
-                    )
-                  }}
-                </For>
-              </box>
-            </Show>
-            <Show
-              when={queued()}
-              fallback={
-                <Show when={ctx.showTimestamps()}>
-                  <text fg={theme.textMuted}>
-                    <span style={{ fg: theme.textMuted }}>
-                      {Locale.todayTimeOrDateTime(props.message.time.created)}
-                    </span>
-                  </text>
-                </Show>
-              }
-            >
-              <text fg={theme.textMuted}>
-                <span style={{ bg: color(), fg: queuedFg(), bold: true }}> QUEUED </span>
-              </text>
-            </Show>
+          <box flexDirection="row">
+            <text width={2} flexShrink={0} fg={queued() ? theme.textMuted : theme.primary} attributes={TextAttributes.BOLD}>
+              ❯
+            </text>
+            <text flexGrow={1} fg={queued() ? theme.textMuted : theme.text} attributes={TextAttributes.BOLD}>
+              {text()}
+            </text>
           </box>
+          <Show when={files().length || queued() || ctx.showTimestamps()}>
+            <box flexDirection="row" paddingLeft={2} gap={2} flexWrap="wrap">
+              <For each={files()}>
+                {(file) => (
+                  <text fg={theme.textMuted}>
+                    <span style={{ fg: theme.secondary }}>@</span>
+                    {file.filename}
+                    {file.mime === "application/x-directory" ? "/" : ""}
+                  </text>
+                )}
+              </For>
+              <Show when={queued()}>
+                <text fg={theme.warning}>queued</text>
+              </Show>
+              <Show when={!queued() && ctx.showTimestamps()}>
+                <text fg={theme.textMuted}>{Locale.todayTimeOrDateTime(props.message.time.created)}</text>
+              </Show>
+            </box>
+          </Show>
         </box>
       </Show>
       <Show when={compaction()}>
-        <box
-          marginTop={1}
-          border={["top"]}
-          title=" Compaction "
-          titleAlignment="center"
-          borderColor={theme.borderActive}
-        />
+        <box marginTop={1} flexShrink={0}>
+          <text fg={theme.textMuted}>
+            <span style={{ fg: theme.border }}>── </span>compacted · earlier turns summarised above this line
+          </text>
+        </box>
       </Show>
     </>
   )
 }
 
+/** Splits a message's parts into display runs, folding consecutive exploration calls into one group. */
+const EXPLORE_TOOLS = new Set(["read", "glob", "grep", "list"])
+type PartRun = { kind: "part"; part: Part } | { kind: "explore"; parts: ToolPart[] }
+export function partRuns(parts: readonly Part[], showDetails: boolean): PartRun[] {
+  const runs: PartRun[] = []
+  for (const part of parts) {
+    const explore = part.type === "tool" && EXPLORE_TOOLS.has(part.tool) && part.state.status !== "error"
+    if (explore) {
+      if (!showDetails && part.state.status === "completed") continue
+      const last = runs.at(-1)
+      if (last?.kind === "explore") last.parts.push(part as ToolPart)
+      else runs.push({ kind: "explore", parts: [part as ToolPart] })
+      continue
+    }
+    runs.push({ kind: "part", part })
+  }
+  return runs
+}
+
 function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; last: boolean }) {
   const ctx = use()
-  const local = useLocal()
   const { theme } = useTheme()
   const sync = useSync()
   const messages = createMemo(() => sync.data.message[props.message.sessionID] ?? [])
@@ -1551,31 +1567,49 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
     return props.message.time.completed - user.time.created
   })
 
+  const runs = createMemo(() => partRuns(props.parts, ctx.showDetails()))
+  const interrupted = () => props.message.error?.name === "MessageAbortedError"
   const childShortcut = useCommandShortcut("session.child.first")
   const backgroundShortcut = useCommandShortcut("session.background")
+  const mode = () =>
+    props.message.mode === "vibe-planner"
+      ? "planner"
+      : props.message.mode === "vibe-executor"
+        ? "executor"
+        : props.message.mode === "build"
+          ? undefined
+          : props.message.mode
 
   return (
     <>
-      <For each={props.parts}>
-        {(part, index) => {
-          const component = createMemo(() => PART_MAPPING[part.type as keyof typeof PART_MAPPING])
-          return (
-            <Show when={component()}>
-              <Dynamic
-                last={index() === props.parts.length - 1}
-                component={component()}
-                part={part as any}
-                message={props.message}
-              />
-            </Show>
-          )
-        }}
+      <For each={runs()}>
+        {(run, index) => (
+          <Switch>
+            <Match when={run.kind === "explore" && run}>
+              {(item) => <Explored parts={item().parts} />}
+            </Match>
+            <Match when={run.kind === "part" && run}>
+              {(item) => {
+                const component = createMemo(() => PART_MAPPING[item().part.type as keyof typeof PART_MAPPING])
+                return (
+                  <Show when={component()}>
+                    <Dynamic
+                      last={index() === runs().length - 1}
+                      component={component()}
+                      part={item().part as any}
+                      message={props.message}
+                    />
+                  </Show>
+                )
+              }}
+            </Match>
+          </Switch>
+        )}
       </For>
       <Show when={props.parts.some((x) => x.type === "tool" && x.tool === "task")}>
-        <box paddingTop={1} paddingLeft={3}>
-          <text fg={theme.text}>
-            {childShortcut()}
-            <span style={{ fg: theme.textMuted }}> view subagents</span>
+        <box paddingLeft={2} flexShrink={0}>
+          <text fg={theme.textMuted}>
+            <span style={{ fg: theme.text }}>{childShortcut()}</span> subagents
             <Show
               when={
                 sync.data.capabilities.experimentalBackgroundSubagents &&
@@ -1588,64 +1622,38 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
                 )
               }
             >
-              <span style={{ fg: theme.textMuted }}> · </span>
-              {backgroundShortcut()}
-              <span style={{ fg: theme.textMuted }}> background</span>
+              {"  "}
+              <span style={{ fg: theme.text }}>{backgroundShortcut()}</span> background
             </Show>
           </text>
         </box>
       </Show>
-      <Show when={props.message.error && props.message.error.name !== "MessageAbortedError"}>
-        <box
-          ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
-          border={["left"]}
-          paddingTop={1}
-          paddingBottom={1}
-          paddingLeft={2}
-          marginTop={1}
-          backgroundColor={theme.backgroundPanel}
-          customBorderChars={SplitBorder.customBorderChars}
-          borderColor={theme.error}
-        >
-          <text fg={theme.textMuted}>{errorMessage(props.message.error)}</text>
+      <Show when={props.message.error && !interrupted()}>
+        <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} marginTop={1} flexDirection="row" flexShrink={0}>
+          <text width={2} flexShrink={0} fg={theme.error}>
+            ✕
+          </text>
+          <text flexGrow={1} fg={theme.error}>
+            {errorMessage(props.message.error)}
+          </text>
         </box>
       </Show>
-      <Switch>
-        <Match when={props.last || final() || props.message.error?.name === "MessageAbortedError"}>
-          <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3}>
-            <text marginTop={1}>
-              <span
-                style={{
-                  fg:
-                    props.message.error?.name === "MessageAbortedError"
-                      ? theme.textMuted
-                      : local.agent.color(props.message.agent),
-                }}
-              >
-                ●{" "}
-              </span>
-              <span
-                style={{
-                  fg: props.message.mode === "vibe-planner" ? theme.accent : theme.text,
-                }}
-              >
-                {props.message.mode === "vibe-planner"
-                  ? "Planner"
-                  : props.message.mode === "vibe-executor"
-                    ? "Executor"
-                    : Locale.titlecase(props.message.mode)}
-              </span>
-              <span style={{ fg: theme.textMuted }}> · {model()}</span>
-              <Show when={duration()}>
-                <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>
-              </Show>
-              <Show when={props.message.error?.name === "MessageAbortedError"}>
-                <span style={{ fg: theme.textMuted }}> · interrupted</span>
-              </Show>
-            </text>
-          </box>
-        </Match>
-      </Switch>
+      <Show when={(props.last && props.message.time.completed) || final() || interrupted()}>
+        {/* Turn footer: how long it took and who answered, in the faintest ink on screen. */}
+        <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={2} marginTop={1} flexShrink={0}>
+          <text fg={theme.textMuted}>
+            <span style={{ fg: theme.border }}>─ </span>
+            <Show when={duration()}>{Locale.duration(duration())} · </Show>
+            {model()}
+            <Show when={mode()}>
+              {(value) => <span style={{ fg: props.message.mode === "vibe-planner" ? theme.accent : theme.textMuted }}> · {value()}</span>}
+            </Show>
+            <Show when={interrupted()}>
+              <span style={{ fg: theme.warning }}> · interrupted</span>
+            </Show>
+          </text>
+        </box>
+      </Show>
     </>
   )
 }
@@ -1658,14 +1666,18 @@ const PART_MAPPING = {
 
 const INLINE_TOOL_ICON_WIDTH = 2
 
-/** Single marker for every tool call; the label carries the meaning. */
-export const TOOL_BULLET = "⏺"
+/** Gutter glyph for a finished tool call. The verb after it carries the meaning. */
+export const TOOL_BULLET = "·"
+
+/** Collapsed tool output shows this many lines; a click shows all of it. */
+const OUTPUT_PREVIEW_LINES = 6
+/** Diffs taller than this collapse to it. */
+const DIFF_PREVIEW_ROWS = 24
 
 function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: AssistantMessage }) {
   const { theme } = useTheme()
   const ctx = use()
-  // Collapsed by default in hide mode: a single line throughout, so the
-  // layout never shifts. Click to open the full markdown block, click to close.
+  // Collapsed by default in hide mode: one line throughout, so the layout never shifts.
   const [expanded, setExpanded] = createSignal(false)
 
   const content = createMemo(() => {
@@ -1674,7 +1686,6 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
   })
   const opaque = createMemo(() => !content() && Boolean(props.part.metadata))
   // Reasoning is finalized when the server sets `time.end` (see processor.ts).
-  // Flips independently of the parent message completing.
   const isDone = createMemo(() => props.part.time.end !== undefined)
   const inMinimal = createMemo(() => ctx.thinkingMode() === "hide")
   const duration = createMemo(() => {
@@ -1683,6 +1694,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
   })
   const summary = createMemo(() => reasoningSummary(content()))
   const syntax = createSyntaxStyleMemo(() => generateSubtleSyntax(theme))
+  const open = () => !inMinimal() || expanded()
 
   const toggle = () => {
     if (!inMinimal() || opaque()) return
@@ -1691,25 +1703,19 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
 
   return (
     <Show when={content() || opaque()}>
-      <box
-        ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
-        paddingLeft={3}
-        marginTop={1}
-        flexDirection="column"
-        flexShrink={0}
-      >
+      <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} marginTop={1} flexDirection="column" flexShrink={0}>
         <box onMouseUp={toggle}>
           <ReasoningHeader
             toggleable={inMinimal() && !opaque()}
-            open={!inMinimal() || expanded()}
+            open={open()}
             done={isDone()}
             title={summary().title}
             duration={isDone() ? Locale.duration(duration()) : undefined}
             encrypted={opaque()}
           />
         </box>
-        <Show when={!opaque() && (!inMinimal() || expanded()) && summary().body}>
-          <box paddingLeft={inMinimal() ? 2 : 0} marginTop={1}>
+        <Show when={!opaque() && open() && summary().body}>
+          <box paddingLeft={INLINE_TOOL_ICON_WIDTH} marginTop={1}>
             <code
               filetype="markdown"
               drawUnstyledText={false}
@@ -1735,27 +1741,25 @@ function ReasoningHeader(props: {
   encrypted?: boolean
 }) {
   const { theme } = useTheme()
-  const fg = () =>
-    props.open
-      ? RGBA.fromValues(theme.warning.r, theme.warning.g, theme.warning.b, theme.thinkingOpacity)
-      : theme.warning
-  const completed = () => {
-    if (props.encrypted) return `Thought${props.duration ? ` · ${props.duration}` : ""}`
-    const detail = [props.title, props.duration].filter(Boolean).join(" · ")
-    return `${props.toggleable ? (props.open ? "- " : "+ ") : ""}Thought${detail ? `: ${detail}` : ""}`
-  }
+  const detail = () => [props.duration, props.encrypted ? "encrypted" : props.title].filter(Boolean).join(" · ")
 
   return (
     <Switch>
       <Match when={!props.done}>
-        <box flexDirection="row">
-          <Spinner color={fg()}>{props.title ? "Thinking: " + props.title : "Thinking"}</Spinner>
-        </box>
+        <Spinner color={theme.textMuted}>{props.title ? "thinking · " + props.title : "thinking"}</Spinner>
       </Match>
       <Match when={true}>
-        <text fg={fg()} wrapMode="none">
-          {completed()}
-        </text>
+        <box flexDirection="row">
+          <text width={INLINE_TOOL_ICON_WIDTH} flexShrink={0} fg={theme.border}>
+            ∴
+          </text>
+          <text fg={theme.textMuted} attributes={TextAttributes.ITALIC} wrapMode="none" flexGrow={1}>
+            thought{detail() ? " " + detail() : ""}
+            <Show when={props.toggleable}>
+              <span style={{ fg: theme.border }}>{props.open ? "  ▾" : "  ▸"}</span>
+            </Show>
+          </text>
+        </box>
       </Match>
     </Switch>
   )
@@ -1765,8 +1769,14 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
   const ctx = use()
   const { theme, syntax } = useTheme()
   return (
+    <Show when={!props.part.metadata?.[VERIFICATION_METADATA_KEY]} fallback={<ChecksPart part={props.part} message={props.message} />}>
     <Show when={props.part.text.trim()}>
-      <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3} marginTop={1} flexShrink={0}>
+      <box
+        ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
+        paddingLeft={INLINE_TOOL_ICON_WIDTH}
+        marginTop={1}
+        flexShrink={0}
+      >
         <markdown
           syntaxStyle={syntax()}
           streaming={true}
@@ -1779,16 +1789,133 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
         />
       </box>
     </Show>
+    </Show>
   )
 }
 
-// Pending messages moved to individual tool pending functions
+/**
+ * RIFT's verification report, rendered from its structured twin: one row per check with its real
+ * outcome. The prose (with failing output) opens on click.
+ */
+function ChecksPart(props: { part: TextPart; message: AssistantMessage }) {
+  const { theme, syntax } = useTheme()
+  const ctx = use()
+  const sync = useSync()
+  const [open, setOpen] = createSignal(false)
+  const busy = createMemo(() => (sync.data.session_status[props.message.sessionID]?.type ?? "idle") !== "idle")
+  const result = createMemo(() =>
+    verification({ messages: [{ id: props.message.id, role: "assistant" }], parts: () => [props.part], busy: busy() }),
+  )
+  const glyph = () => {
+    const state = result().state
+    if (state === "passed") return { text: "✓", color: theme.success }
+    if (state === "failed") return { text: "✕", color: theme.error }
+    if (state === "running") return { text: "…", color: theme.primary }
+    return { text: "·", color: theme.warning }
+  }
+  const counts = createMemo(() => {
+    const checks = result().checks
+    const passed = checks.filter((check) => check.status === "passed").length
+    const failed = checks.filter((check) => check.status === "failed" || check.status === "timed_out").length
+    const notRun = checks.length - passed - failed
+    return [passed && `${passed} passed`, failed && `${failed} failed`, notRun && `${notRun} not run`].filter(Boolean).join(" · ")
+  })
+  const checkGlyph = (status: string) =>
+    status === "passed"
+      ? { text: "✓", color: theme.success }
+      : status === "failed" || status === "timed_out"
+        ? { text: "✕", color: theme.error }
+        : status === "queued"
+          ? { text: "…", color: theme.primary }
+          : { text: "·", color: theme.border }
+  const claims = () => result().claims
+
+  return (
+    <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} marginTop={1} flexShrink={0} onMouseUp={() => setOpen((value) => !value)}>
+      <box flexDirection="row">
+        <text width={INLINE_TOOL_ICON_WIDTH} flexShrink={0} fg={glyph().color}>
+          {glyph().text}
+        </text>
+        <text fg={theme.textMuted} flexGrow={1}>
+          <span style={{ fg: theme.text, bold: true }}>Checks</span>
+          <Show
+            when={result().checks.length || result().browser || result().evidence?.length}
+            fallback={<span style={{ fg: theme.textMuted }}>{"  "}not configured · set verify_commands to run tests after each task</span>}
+          >
+            <Show when={counts()}>
+              <span style={{ fg: theme.textMuted }}>{"  "}{counts()}</span>
+            </Show>
+          </Show>
+          <span style={{ fg: theme.border }}>{open() ? "  ▾" : "  ▸"}</span>
+        </text>
+      </box>
+      <For each={result().checks}>
+        {(check) => (
+          <box paddingLeft={INLINE_TOOL_ICON_WIDTH} flexDirection="row">
+            <text width={INLINE_TOOL_ICON_WIDTH} flexShrink={0} fg={checkGlyph(check.status).color}>
+              {checkGlyph(check.status).text}
+            </text>
+            <text fg={theme.textMuted} flexGrow={1}>
+              <span style={{ fg: theme.text }}>{check.command}</span>
+              <Show when={check.where}> in {check.where}</Show>
+              <Show when={check.ms >= 1000}>  {Locale.duration(check.ms)}</Show>
+              <Show when={check.status === "timed_out"}>
+                <span style={{ fg: theme.error }}>{"  "}timed out</span>
+              </Show>
+              <Show when={check.status === "not_run"}>{"  "}not run{check.reason ? ` (${check.reason})` : ""}</Show>
+            </text>
+          </box>
+        )}
+      </For>
+      <Show when={result().browser}>
+        {(browser) => (
+          <box paddingLeft={INLINE_TOOL_ICON_WIDTH} flexDirection="row">
+            <text width={INLINE_TOOL_ICON_WIDTH} flexShrink={0} fg={checkGlyph(browser().status).color}>
+              {checkGlyph(browser().status).text}
+            </text>
+            <text fg={theme.textMuted} flexGrow={1}>
+              <span style={{ fg: theme.text }}>{browser().url}</span>
+              {browser().status === "passed"
+                ? "  rendered, no console errors"
+                : browser().status === "failed"
+                  ? `  ${browser().errors.length} console error${browser().errors.length === 1 ? "" : "s"}`
+                  : `  not checked${browser().reason ? ` (${browser().reason})` : ""}`}
+            </text>
+          </box>
+        )}
+      </Show>
+      <Show when={claims() && claims()!.status !== "off"}>
+        <box paddingLeft={INLINE_TOOL_ICON_WIDTH} flexDirection="row">
+          <text width={INLINE_TOOL_ICON_WIDTH} flexShrink={0} fg={claims()!.status === "mismatch" ? theme.error : claims()!.status === "ok" ? theme.success : theme.border}>
+            {claims()!.status === "mismatch" ? "✕" : claims()!.status === "ok" ? "✓" : "·"}
+          </text>
+          <text fg={theme.textMuted} flexGrow={1}>
+            <span style={{ fg: theme.text }}>summary vs diff</span>
+            {(() => {
+              const value = claims()!
+              if (value.status === "ok") return "  matches"
+              if (value.status === "pending") return "  checking"
+              if (value.status === "mismatch") return `  ${value.items.length} claim${value.items.length === 1 ? "" : "s"} not in the diff`
+              if (value.status === "not_run") return `  not run (${value.reason})`
+              return ""
+            })()}
+          </text>
+        </box>
+      </Show>
+      <Show when={open()}>
+        <box paddingLeft={INLINE_TOOL_ICON_WIDTH} marginTop={1}>
+          <markdown syntaxStyle={syntax()} content={props.part.text.trim()} conceal={ctx.conceal()} fg={theme.textMuted} bg={theme.background} />
+        </box>
+      </Show>
+    </box>
+  )
+}
 
 function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMessage }) {
   const ctx = use()
   const display = createMemo(() => toolDisplay(props.part.tool))
 
-  // Hide tool if showDetails is false and tool completed successfully
+  // Completed calls disappear when tool details are hidden.
   const shouldHide = createMemo(() => {
     if (ctx.showDetails()) return false
     if (props.part.state.status !== "completed") return false
@@ -1819,14 +1946,8 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
         <Match when={display() === "bash"}>
           <Shell {...toolprops} />
         </Match>
-        <Match when={display() === "glob"}>
-          <Glob {...toolprops} />
-        </Match>
-        <Match when={display() === "read"}>
-          <Read {...toolprops} />
-        </Match>
-        <Match when={display() === "grep"}>
-          <Grep {...toolprops} />
+        <Match when={display() === "glob" || display() === "read" || display() === "grep"}>
+          <Explored parts={[props.part]} />
         </Match>
         <Match when={display() === "webfetch"}>
           <WebFetch {...toolprops} />
@@ -1876,41 +1997,54 @@ type ToolProps = {
   output?: string
   part: ToolPart
 }
-function GenericTool(props: ToolProps) {
+
+/** A tool's verb, in the strong ink; the rest of the row stays muted. */
+function Verb(props: { children: JSX.Element }) {
+  const { theme } = useTheme()
+  return <span style={{ fg: theme.text, bold: true }}>{props.children}</span>
+}
+
+function elapsed(part: ToolPart) {
+  if (part.state.status !== "completed" && part.state.status !== "error") return undefined
+  const ms = part.state.time.end - part.state.time.start
+  return ms >= 1000 ? Locale.duration(ms) : undefined
+}
+
+/** Output under a faint rule, collapsed to a few lines with a count of the rest. */
+function OutputBlock(props: { text: string; color?: RGBA; lines?: number }) {
   const { theme } = useTheme()
   const ctx = use()
-  const output = createMemo(() => props.output?.trim() ?? "")
   const [expanded, setExpanded] = createSignal(false)
-  const maxLines = 3
-  const maxChars = createMemo(() => maxLines * Math.max(20, ctx.width - 6))
-  const collapsed = createMemo(() => collapseToolOutput(output(), maxLines, maxChars()))
-  const limited = createMemo(() => {
-    if (expanded() || !collapsed().overflow) return output()
-    return collapsed().output
-  })
-
+  const max = () => props.lines ?? OUTPUT_PREVIEW_LINES
+  const lines = createMemo(() => props.text.split("\n"))
+  const collapsed = createMemo(() => collapseToolOutput(props.text, max(), max() * Math.max(20, ctx.width - 8)))
+  const hidden = () => Math.max(0, lines().length - max())
   return (
-    <Show
-      when={props.output && ctx.showGenericToolOutput()}
-      fallback={
-        <InlineTool icon={TOOL_BULLET} pending="Writing command…" complete={true} part={props.part}>
-          {props.tool} {input(props.input)}
-        </InlineTool>
-      }
-    >
-      <BlockTool
-        title={`# ${props.tool} ${input(props.input)}`}
-        part={props.part}
-        onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
-      >
-        <box gap={1}>
-          <text fg={theme.text}>{limited()}</text>
-          <Show when={collapsed().overflow}>
-            <text fg={theme.textMuted}>{expanded() ? "Click to collapse" : "Click to expand"}</text>
-          </Show>
-        </box>
-      </BlockTool>
-    </Show>
+    <box flexShrink={0} onMouseUp={() => collapsed().overflow && setExpanded((value) => !value)}>
+      <text fg={props.color ?? theme.textMuted}>
+        {expanded() || !collapsed().overflow ? props.text : collapsed().output.replace(/\n…$/, "")}
+      </text>
+      <Show when={collapsed().overflow}>
+        <text fg={theme.border}>
+          {expanded() ? "▴ collapse" : hidden() > 0 ? `… ${hidden()} more line${hidden() === 1 ? "" : "s"}` : "… more"}
+        </text>
+      </Show>
+    </box>
+  )
+}
+
+function GenericTool(props: ToolProps) {
+  const ctx = use()
+  const output = createMemo(() => stripAnsi(props.output?.trim() ?? ""))
+  return (
+    <>
+      <InlineTool icon={TOOL_BULLET} pending={`${props.tool}…`} complete={true} part={props.part}>
+        <Verb>{props.tool}</Verb> {input(props.input)}
+      </InlineTool>
+      <Show when={output() && ctx.showGenericToolOutput()}>
+        <OutputBlock text={output()} />
+      </Show>
+    </>
   )
 }
 
@@ -1930,6 +2064,7 @@ function InlineTool(props: {
   const { theme } = useTheme()
   const ctx = use()
   const sync = useSync()
+  const kv = useKV()
   const renderer = useRenderer()
   const [hover, setHover] = createSignal(false)
   const [errorExpanded, setErrorExpanded] = createSignal(false)
@@ -1952,19 +2087,19 @@ function InlineTool(props: {
 
   const failed = createMemo(() => Boolean(error() && !denied()))
   const clickable = createMemo(() => Boolean(props.onClick || failed()))
+  const running = createMemo(() => props.part.state.status === "running" || props.part.state.status === "pending")
   const fg = createMemo(() => {
     if (props.color) return props.color
     if (permission()) return theme.warning
     if (failed()) return theme.error
-    if (hover() && props.onClick) return theme.text
-    if (props.complete) return theme.textMuted
-    return theme.text
+    if (hover() && clickable()) return theme.text
+    return theme.textMuted
   })
 
   return (
     <InlineToolRow
-      icon={props.icon}
-      iconColor={props.iconColor}
+      icon={permission() ? "?" : props.icon}
+      iconColor={permission() ? theme.warning : (props.iconColor ?? theme.border)}
       color={fg()}
       errorColor={theme.error}
       failed={failed()}
@@ -1974,7 +2109,9 @@ function InlineTool(props: {
       complete={props.complete}
       pending={props.pending}
       failure={props.failure}
-      spinner={props.spinner}
+      spinner={props.spinner ?? (running() && !permission() && Boolean(props.complete))}
+      spinnerColor={theme.primary}
+      animate={kv.get("animations_enabled", true)}
       separate={props.separate}
       onMouseOver={() => clickable() && setHover(true)}
       onMouseOut={() => setHover(false)}
@@ -2005,18 +2142,23 @@ export function InlineToolRow(props: {
   pending: string
   failure?: string
   spinner?: boolean
+  spinnerColor?: RGBA
+  /** Off when the user disabled animations; a static ellipsis replaces the spinner. */
+  animate?: boolean
   separate?: boolean
   children: JSX.Element
   onMouseOver?: () => void
   onMouseOut?: () => void
   onMouseUp?: () => void
 }) {
+  const glyph = () => (props.failed ? "✕" : props.denied ? "⊘" : props.icon)
+  const glyphColor = () => (props.failed ? props.errorColor : (props.iconColor ?? props.color))
   return (
     <box
-      paddingLeft={3}
       onMouseOver={props.onMouseOver}
       onMouseOut={props.onMouseOut}
       onMouseUp={props.onMouseUp}
+      flexShrink={0}
       ref={(el: BoxRenderable) => {
         if (props.separate) alwaysSeparate.add(el)
         setPreLayoutSiblingMargin(el, (previous) => {
@@ -2027,42 +2169,33 @@ export function InlineToolRow(props: {
         })
       }}
     >
-      <Switch>
-        <Match when={props.spinner}>
-          <Spinner color={props.color} children={props.children} />
-        </Match>
-        <Match when={true}>
-          <Show
-            fallback={
-              <text
-                paddingLeft={3}
-                fg={props.color}
-                attributes={props.denied ? TextAttributes.STRIKETHROUGH : undefined}
-              >
-                ~ {props.pending}
-              </text>
-            }
-            when={props.complete || props.failed}
-          >
-            <box flexDirection="row">
-              <text
-                width={INLINE_TOOL_ICON_WIDTH}
-                fg={props.failed ? props.errorColor : (props.iconColor ?? props.color)}
-                attributes={props.denied ? TextAttributes.STRIKETHROUGH : undefined}
-              >
-                {props.icon}
-              </text>
-              <text
-                flexGrow={1}
-                fg={props.failed ? props.errorColor : props.color}
-                attributes={props.denied ? TextAttributes.STRIKETHROUGH : undefined}
-              >
-                {props.failed && !props.complete ? (props.failure ?? props.children) : props.children}
-              </text>
-            </box>
-          </Show>
-        </Match>
-      </Switch>
+      <box flexDirection="row">
+        <Show
+          when={props.spinner || !(props.complete || props.failed)}
+          fallback={
+            <text width={INLINE_TOOL_ICON_WIDTH} flexShrink={0} fg={glyphColor()}>
+              {glyph()}
+            </text>
+          }
+        >
+          <box width={INLINE_TOOL_ICON_WIDTH} flexShrink={0}>
+            <Show when={props.animate !== false} fallback={<text fg={props.spinnerColor ?? props.color}>…</text>}>
+              <spinner frames={SPINNER_FRAMES} interval={80} color={props.spinnerColor ?? props.color} />
+            </Show>
+          </box>
+        </Show>
+        <text
+          flexGrow={1}
+          fg={props.failed ? props.errorColor : props.color}
+          attributes={props.denied ? TextAttributes.STRIKETHROUGH : undefined}
+        >
+          {props.complete || props.failed
+            ? props.failed && !props.complete
+              ? (props.failure ?? props.children)
+              : props.children
+            : props.pending}
+        </text>
+      </box>
       <Show when={props.failed && props.errorExpanded}>
         <box paddingLeft={INLINE_TOOL_ICON_WIDTH}>
           <text fg={props.errorColor}>{props.error}</text>
@@ -2072,29 +2205,36 @@ export function InlineToolRow(props: {
   )
 }
 
+/** A tool with a body (shell output, a diff, a plan): one header row, the body indented under it. */
 function BlockTool(props: {
-  title?: string
-  children: JSX.Element
+  glyph: string
+  glyphColor?: RGBA
+  header: JSX.Element
+  children?: JSX.Element
   onClick?: () => void
   part?: ToolPart
   spinner?: boolean
+  /** True when there is nothing to show yet (a command still waiting on its first output). */
+  empty?: boolean
 }) {
   const { theme } = useTheme()
   const renderer = useRenderer()
+  const kv = useKV()
+  const ctx = use()
+  const sync = useSync()
   const [hover, setHover] = createSignal(false)
   const error = createMemo(() => (props.part?.state.status === "error" ? props.part.state.error : undefined))
+  // Waiting on the user outranks "running": show the question, not a spinner.
+  const waiting = createMemo(() => {
+    const callID = sync.data.permission[ctx.sessionID]?.at(0)?.tool?.callID
+    return Boolean(callID && props.part && callID === props.part.callID)
+  })
   return (
     <box
       ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
-      border={["left"]}
-      paddingTop={1}
-      paddingBottom={1}
-      paddingLeft={2}
       marginTop={1}
-      gap={1}
-      backgroundColor={hover() ? theme.backgroundMenu : theme.backgroundPanel}
-      customBorderChars={SplitBorder.customBorderChars}
-      borderColor={theme.background}
+      flexShrink={0}
+      backgroundColor={hover() ? theme.backgroundElement : undefined}
       onMouseOver={() => props.onClick && setHover(true)}
       onMouseOut={() => setHover(false)}
       onMouseUp={() => {
@@ -2102,23 +2242,46 @@ function BlockTool(props: {
         props.onClick?.()
       }}
     >
-      <Show when={props.title}>
-        {(title) => (
-          <Show
-            when={props.spinner}
-            fallback={
-              <text paddingLeft={3} fg={theme.textMuted}>
-                {title()}
-              </text>
-            }
-          >
-            <Spinner color={theme.textMuted}>{title().replace(/^# /, "")}</Spinner>
-          </Show>
-        )}
+      <box flexDirection="row">
+        <Show
+          when={props.spinner && !waiting()}
+          fallback={
+            <text
+              width={INLINE_TOOL_ICON_WIDTH}
+              flexShrink={0}
+              fg={waiting() ? theme.warning : error() ? theme.error : (props.glyphColor ?? theme.primary)}
+            >
+              {waiting() ? "?" : error() ? "✕" : props.glyph}
+            </text>
+          }
+        >
+          <box width={INLINE_TOOL_ICON_WIDTH} flexShrink={0}>
+            <Show when={kv.get("animations_enabled", true)} fallback={<text fg={theme.primary}>…</text>}>
+              <spinner frames={SPINNER_FRAMES} interval={80} color={theme.primary} />
+            </Show>
+          </box>
+        </Show>
+        <text flexGrow={1} fg={theme.textMuted}>
+          {props.header}
+        </text>
+      </box>
+      <Show when={props.children && !props.empty}>
+        {/* The body sits in a soft card under its header, like a code block in a document. */}
+        <box
+          marginLeft={INLINE_TOOL_ICON_WIDTH}
+          marginTop={1}
+          backgroundColor={theme.backgroundPanel}
+          paddingLeft={1}
+          paddingRight={1}
+          flexShrink={0}
+        >
+          {props.children}
+        </box>
       </Show>
-      {props.children}
       <Show when={error()}>
-        <text fg={theme.error}>{error()}</text>
+        <box paddingLeft={INLINE_TOOL_ICON_WIDTH}>
+          <text fg={theme.error}>{error()}</text>
+        </box>
       </Show>
     </box>
   )
@@ -2127,206 +2290,295 @@ function BlockTool(props: {
 function Shell(props: ToolProps) {
   const { theme } = useTheme()
   const pathFormatter = usePathFormatter()
-  const ctx = use()
-  const isRunning = createMemo(() => props.part.state.status === "running")
+  const isRunning = createMemo(() => props.part.state.status === "running" || props.part.state.status === "pending")
   const output = createMemo(() => stripAnsi(stringValue(props.metadata.output)?.trim() ?? ""))
-  const [expanded, setExpanded] = createSignal(false)
-  const maxLines = 10
-  const maxChars = createMemo(() => maxLines * Math.max(20, ctx.width - 6))
-  const collapsed = createMemo(() => collapseToolOutput(output(), maxLines, maxChars()))
-  const limited = createMemo(() => {
-    if (expanded() || !collapsed().overflow) return output()
-    return collapsed().output
-  })
+  const exit = createMemo(() => numberValue(props.metadata.exit))
+  const command = createMemo(() => stringValue(props.input.command) ?? "")
 
-  const workdirDisplay = createMemo(() => {
-    const workdir = stringValue(props.input.workdir)
-    if (!workdir || workdir === ".") return undefined
-    const formatted = pathFormatter.format(workdir)
-    if (formatted === ".") return undefined
-    return formatted
-  })
-
-  const title = createMemo(() => {
-    const wd = workdirDisplay()
-    if (!wd) return
-    return `# Running in ${wd}`
+  const workdir = createMemo(() => {
+    const value = stringValue(props.input.workdir)
+    if (!value || value === ".") return undefined
+    const formatted = pathFormatter.format(value)
+    return formatted === "." ? undefined : formatted
   })
 
   return (
-    <Switch>
-      <Match when={stringValue(props.metadata.output) !== undefined}>
-        <BlockTool
-          title={title()}
-          part={props.part}
-          onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
-        >
-          <box gap={1}>
-            <Show when={isRunning()} fallback={<text fg={theme.text}>$ {stringValue(props.input.command)}</text>}>
-              <Spinner color={theme.text}>{stringValue(props.input.command)}</Spinner>
-            </Show>
-            <Show when={output()}>
-              <text fg={theme.text}>{limited()}</text>
-            </Show>
-            <Show when={collapsed().overflow}>
-              <text fg={theme.textMuted}>{expanded() ? "Click to collapse" : "Click to expand"}</text>
-            </Show>
-          </box>
-        </BlockTool>
-      </Match>
-      <Match when={true}>
-        <InlineTool
-          icon={TOOL_BULLET}
-          pending="Writing command…"
-          complete={stringValue(props.input.command)}
-          part={props.part}
-        >
-          {stringValue(props.input.command)}
+    <Show
+      when={command()}
+      fallback={
+        <InlineTool icon="$" pending="writing command…" complete={false} part={props.part}>
+          {""}
         </InlineTool>
-      </Match>
-    </Switch>
+      }
+    >
+      <BlockTool
+        glyph="$"
+        spinner={isRunning()}
+        empty={!output()}
+        part={props.part}
+        header={
+          <>
+            <span style={{ fg: theme.text }}>{command()}</span>
+            <Show when={workdir()}>{(dir) => <span style={{ fg: theme.textMuted }}>{"  "}in {dir()}</span>}</Show>
+            <Show when={elapsed(props.part)}>{(time) => <span style={{ fg: theme.textMuted }}>{"  "}{time()}</span>}</Show>
+            <Show when={exit() !== undefined && exit() !== 0}>
+              <span style={{ fg: theme.error }}>{"  "}exit {exit()}</span>
+            </Show>
+          </>
+        }
+      >
+        <Show when={output()}>
+          <OutputBlock text={output()} />
+        </Show>
+      </BlockTool>
+    </Show>
+  )
+}
+
+/** Counts added and removed lines in a unified diff. */
+export function diffStat(diff: string) {
+  let added = 0
+  let removed = 0
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+++") || line.startsWith("---")) continue
+    if (line.startsWith("+")) added++
+    else if (line.startsWith("-")) removed++
+  }
+  return { added, removed }
+}
+
+function DiffStat(props: { added: number; removed: number }) {
+  const { theme } = useTheme()
+  return (
+    <>
+      <Show when={props.added}>
+        <span style={{ fg: theme.diffAdded }}>{"  "}+{props.added}</span>
+      </Show>
+      <Show when={props.removed}>
+        <span style={{ fg: theme.diffRemoved }}>{"  "}−{props.removed}</span>
+      </Show>
+    </>
+  )
+}
+
+/** A unified (or, on very wide terminals, split) diff, collapsed past a screenful. */
+function DiffBody(props: { diff: string; filePath: string }) {
+  const ctx = use()
+  const { theme, syntax } = useTheme()
+  const [expanded, setExpanded] = createSignal(false)
+  const view = createMemo(() => {
+    if (ctx.tui.diff_style === "stacked") return "unified"
+    return ctx.width > 160 ? "split" : "unified"
+  })
+  const rows = createMemo(() => props.diff.split("\n").filter((line) => !/^(---|\+\+\+|Index:|=+$|diff )/.test(line)).length)
+  const tall = () => rows() > DIFF_PREVIEW_ROWS
+  return (
+    <box flexShrink={0}>
+      <box maxHeight={tall() && !expanded() ? DIFF_PREVIEW_ROWS : undefined} overflow="hidden">
+        <diff
+          diff={props.diff}
+          view={view()}
+          filetype={filetype(props.filePath)}
+          syntaxStyle={syntax()}
+          showLineNumbers={true}
+          width="100%"
+          wrapMode={ctx.diffWrapMode()}
+          fg={theme.text}
+          addedBg={theme.diffAddedBg}
+          removedBg={theme.diffRemovedBg}
+          contextBg={theme.diffContextBg}
+          addedSignColor={theme.diffHighlightAdded}
+          removedSignColor={theme.diffHighlightRemoved}
+          lineNumberFg={theme.diffLineNumber}
+          lineNumberBg={theme.diffContextBg}
+          addedLineNumberBg={theme.diffAddedLineNumberBg}
+          removedLineNumberBg={theme.diffRemovedLineNumberBg}
+        />
+      </box>
+      <Show when={tall()}>
+        <box onMouseUp={() => setExpanded((value) => !value)}>
+          <text fg={theme.border}>{expanded() ? "▴ collapse" : `… ${rows() - DIFF_PREVIEW_ROWS} more lines`}</text>
+        </box>
+      </Show>
+    </box>
   )
 }
 
 function Write(props: ToolProps) {
   const { theme, syntax } = useTheme()
   const pathFormatter = usePathFormatter()
-  const code = createMemo(() => {
-    return stringValue(props.input.content) ?? ""
-  })
+  const [expanded, setExpanded] = createSignal(false)
+  const code = createMemo(() => stringValue(props.input.content) ?? "")
+  const lines = createMemo(() => (code() ? code().split("\n").length : 0))
+  const shown = createMemo(() => (expanded() ? code() : code().split("\n").slice(0, 12).join("\n")))
 
   return (
     <Switch>
       <Match when={props.metadata.diagnostics !== undefined}>
-        <BlockTool title={"# Wrote " + pathFormatter.format(stringValue(props.input.filePath))} part={props.part}>
-          <line_number fg={theme.textMuted} minWidth={3} paddingRight={1}>
-            <code
-              conceal={false}
-              fg={theme.text}
-              filetype={filetype(stringValue(props.input.filePath))}
-              syntaxStyle={syntax()}
-              content={code()}
-            />
-          </line_number>
+        <BlockTool
+          glyph="±"
+          part={props.part}
+          onClick={lines() > 12 ? () => setExpanded((value) => !value) : undefined}
+          header={
+            <>
+              <span style={{ fg: theme.text, bold: true }}>{pathFormatter.format(stringValue(props.input.filePath))}</span>
+              <span style={{ fg: theme.textMuted }}>{"  "}new file</span>
+              <span style={{ fg: theme.diffAdded }}>{"  "}+{lines()}</span>
+            </>
+          }
+        >
+          <box>
+            <line_number fg={theme.diffLineNumber} minWidth={3} paddingRight={1}>
+              <code
+                conceal={false}
+                fg={theme.text}
+                filetype={filetype(stringValue(props.input.filePath))}
+                syntaxStyle={syntax()}
+                content={shown()}
+              />
+            </line_number>
+            <Show when={lines() > 12}>
+              <text fg={theme.border}>{expanded() ? "▴ collapse" : `… ${lines() - 12} more lines`}</text>
+            </Show>
+          </box>
           <Diagnostics diagnostics={props.metadata.diagnostics} filePath={stringValue(props.input.filePath) ?? ""} />
         </BlockTool>
       </Match>
       <Match when={true}>
-        <InlineTool
-          icon={TOOL_BULLET}
-          pending="Preparing write…"
-          complete={stringValue(props.input.filePath)}
-          part={props.part}
-        >
-          Write {pathFormatter.format(stringValue(props.input.filePath))}
+        <InlineTool icon="±" pending="preparing write…" complete={stringValue(props.input.filePath)} part={props.part}>
+          <Verb>Write</Verb> {pathFormatter.format(stringValue(props.input.filePath))}
         </InlineTool>
       </Match>
     </Switch>
   )
 }
 
-function Glob(props: ToolProps) {
-  const pathFormatter = usePathFormatter()
-  return (
-    <InlineTool
-      icon={TOOL_BULLET}
-      pending="Finding files…"
-      complete={stringValue(props.input.pattern)}
-      part={props.part}
-    >
-      Glob "{stringValue(props.input.pattern)}"{" "}
-      <Show when={stringValue(props.input.path)}>in {pathFormatter.format(stringValue(props.input.path))} </Show>
-      <Show when={numberValue(props.metadata.count)}>
-        ({numberValue(props.metadata.count)} {numberValue(props.metadata.count) === 1 ? "match" : "matches"})
-      </Show>
-    </InlineTool>
-  )
-}
-
-function Read(props: ToolProps) {
+/** Consecutive reads, searches and listings as one entry: what the agent looked at. */
+function Explored(props: { parts: ToolPart[] }) {
   const { theme } = useTheme()
+  const kv = useKV()
   const pathFormatter = usePathFormatter()
-  const isRunning = createMemo(() => props.part.state.status === "running")
-  const loaded = createMemo(() => {
-    if (props.part.state.status !== "completed") return []
-    if (props.part.state.time.compacted) return []
-    const value = props.metadata.loaded
-    if (!value || !Array.isArray(value)) return []
-    return value.filter((p): p is string => typeof p === "string")
-  })
-  return (
-    <>
-      <InlineTool
-        icon={TOOL_BULLET}
-        pending="Reading file…"
-        complete={stringValue(props.input.filePath)}
-        spinner={isRunning()}
-        part={props.part}
-      >
-        Read {pathFormatter.format(stringValue(props.input.filePath))} {input(props.input, ["filePath"])}
-      </InlineTool>
-      <For each={loaded()}>
-        {(filepath) => (
-          <box paddingLeft={3}>
-            <text paddingLeft={3} fg={theme.textMuted}>
-              ↳ Loaded {pathFormatter.format(filepath)}
-            </text>
-          </box>
-        )}
-      </For>
-    </>
-  )
-}
+  const running = createMemo(() => props.parts.some((part) => part.state.status === "running" || part.state.status === "pending"))
+  const describe = (part: ToolPart) => {
+    const input = part.state.input ?? {}
+    const metadata = part.state.status === "pending" ? {} : (part.state.metadata ?? {})
+    if (part.tool === "read") {
+      const extra = [numberValue(input.offset) && `from ${numberValue(input.offset)}`, numberValue(input.limit) && `${numberValue(input.limit)} lines`]
+        .filter(Boolean)
+        .join(", ")
+      return { verb: "Read", target: pathFormatter.format(stringValue(input.filePath)), detail: extra }
+    }
+    if (part.tool === "grep") {
+      const count = numberValue(metadata.matches)
+      return {
+        verb: "Search",
+        target: `${stringValue(input.pattern) ?? ""}${stringValue(input.path) ? " in " + pathFormatter.format(stringValue(input.path)) : ""}`,
+        detail: count === undefined ? "" : `${count} ${count === 1 ? "match" : "matches"}`,
+      }
+    }
+    if (part.tool === "glob") {
+      const count = numberValue(metadata.count)
+      return {
+        verb: "Find",
+        target: `${stringValue(input.pattern) ?? ""}${stringValue(input.path) ? " in " + pathFormatter.format(stringValue(input.path)) : ""}`,
+        detail: count === undefined ? "" : `${count} ${count === 1 ? "file" : "files"}`,
+      }
+    }
+    return { verb: "List", target: pathFormatter.format(stringValue(input.path) ?? "."), detail: "" }
+  }
+  const loaded = (part: ToolPart) => {
+    if (part.state.status !== "completed" || part.state.time.compacted) return []
+    const value = part.state.metadata?.loaded
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
+  }
 
-function Grep(props: ToolProps) {
-  const pathFormatter = usePathFormatter()
   return (
-    <InlineTool
-      icon={TOOL_BULLET}
-      pending="Searching content…"
-      complete={stringValue(props.input.pattern)}
-      part={props.part}
+    <Show
+      when={props.parts.length > 1}
+      fallback={
+        <InlineTool icon={TOOL_BULLET} pending="exploring…" complete={true} part={props.parts[0]}>
+          {(() => {
+            const item = describe(props.parts[0])
+            return (
+              <>
+                <Verb>{item.verb}</Verb> {item.target}
+                <Show when={item.detail}>
+                  <span style={{ fg: theme.border }}> · {item.detail}</span>
+                </Show>
+                <For each={loaded(props.parts[0])}>{(file) => <span style={{ fg: theme.border }}> · +{pathFormatter.format(file)}</span>}</For>
+              </>
+            )
+          })()}
+        </InlineTool>
+      }
     >
-      Grep "{stringValue(props.input.pattern)}"{" "}
-      <Show when={stringValue(props.input.path)}>in {pathFormatter.format(stringValue(props.input.path))} </Show>
-      <Show when={numberValue(props.metadata.matches)}>
-        ({numberValue(props.metadata.matches)} {numberValue(props.metadata.matches) === 1 ? "match" : "matches"})
-      </Show>
-    </InlineTool>
+      <box
+        flexShrink={0}
+        ref={(el: BoxRenderable) =>
+          setPreLayoutSiblingMargin(el, (previous) =>
+            previous instanceof BoxRenderable && (previous.height > 1 || alwaysSeparate.has(previous)) ? 1 : 0,
+          )
+        }
+      >
+        <InlineToolRow
+          icon={TOOL_BULLET}
+          iconColor={theme.border}
+          color={theme.textMuted}
+          complete={true}
+          pending=""
+          spinner={running()}
+          spinnerColor={theme.primary}
+          animate={kv.get("animations_enabled", true)}
+        >
+          <Verb>{running() ? "Exploring" : "Explored"}</Verb>
+          <span style={{ fg: theme.border }}> · {props.parts.length} calls</span>
+        </InlineToolRow>
+        <For each={props.parts}>
+          {(part) => {
+            const item = createMemo(() => describe(part))
+            return (
+              <box paddingLeft={INLINE_TOOL_ICON_WIDTH} flexDirection="row">
+                <text fg={theme.textMuted} flexGrow={1}>
+                  <span style={{ fg: theme.text }}>{item().verb.toLowerCase()}</span> {item().target}
+                  <Show when={item().detail}>
+                    <span style={{ fg: theme.border }}> · {item().detail}</span>
+                  </Show>
+                </text>
+              </box>
+            )
+          }}
+        </For>
+      </box>
+    </Show>
   )
 }
 
 function WebFetch(props: ToolProps) {
   return (
-    <InlineTool
-      icon={TOOL_BULLET}
-      pending="Fetching from the web…"
-      complete={stringValue(props.input.url)}
-      part={props.part}
-    >
-      WebFetch {stringValue(props.input.url)}
+    <InlineTool icon={TOOL_BULLET} pending="fetching…" complete={stringValue(props.input.url)} part={props.part}>
+      <Verb>Fetch</Verb> {stringValue(props.input.url)}
     </InlineTool>
   )
 }
 
 function BrowserOpen(props: ToolProps) {
   return (
-    <InlineTool
-      icon={TOOL_BULLET}
-      pending="Opening in browser…"
-      complete={stringValue(props.input.url)}
-      part={props.part}
-    >
-      BrowserOpen {stringValue(props.input.url)}
+    <InlineTool icon={TOOL_BULLET} pending="opening browser…" complete={stringValue(props.input.url)} part={props.part}>
+      <Verb>Open</Verb> {stringValue(props.input.url)}
     </InlineTool>
   )
 }
 
 function WebSearch(props: ToolProps) {
+  const { theme } = useTheme()
   return (
-    <InlineTool icon={TOOL_BULLET} pending="Searching web…" complete={stringValue(props.input.query)} part={props.part}>
-      {webSearchProviderLabel(props.metadata.provider)} "{stringValue(props.input.query)}"{" "}
-      <Show when={numberValue(props.metadata.numResults)}>({numberValue(props.metadata.numResults)} results)</Show>
+    <InlineTool icon={TOOL_BULLET} pending="searching the web…" complete={stringValue(props.input.query)} part={props.part}>
+      <Verb>Web</Verb> {stringValue(props.input.query)}
+      <span style={{ fg: theme.border }}>
+        {" "}
+        · {webSearchProviderLabel(props.metadata.provider)}
+        <Show when={numberValue(props.metadata.numResults)}> · {numberValue(props.metadata.numResults)} results</Show>
+      </span>
     </InlineTool>
   )
 }
@@ -2378,43 +2630,29 @@ function Task(props: ToolProps) {
     return assistant - first
   })
 
-  const content = createMemo(() => {
-    const description = stringValue(props.input.description)
-    if (!description) return ""
-    let content = [
-      formatSubagentTitle(
-        Locale.titlecase(stringValue(props.input.subagent_type) ?? "General"),
-        description,
-        props.metadata.background === true,
-      ),
-    ]
-
+  const detail = createMemo(() => {
     const retrying = retry()
-    if (isRunning() && retrying) {
-      content.push(`↳ ${formatSubagentRetry(retrying.attempt, Locale.truncate(retrying.message, 80))}`)
-    } else if (isRunning() && tools().length > 0) {
-      if (current()) {
-        const state = current()!.state
-        const title = state.status === "running" || state.status === "completed" ? state.title : undefined
-        content.push(`↳ ${Locale.titlecase(current()!.tool)} ${title}`)
-      } else content.push(`↳ ${formatSubagentToolcalls(tools().length)}`)
+    if (isRunning() && retrying) return formatSubagentRetry(retrying.attempt, Locale.truncate(retrying.message, 80))
+    if (isRunning() && tools().length > 0) {
+      const item = current()
+      if (!item) return formatSubagentToolcalls(tools().length)
+      const title = item.state.status === "running" || item.state.status === "completed" ? item.state.title : undefined
+      return `${Locale.titlecase(item.tool)} ${title}`
     }
-
-    if (!isRunning() && props.part.state.status === "completed") {
-      content.push(`↳ ${formatCompletedSubagentDetail(tools().length, Locale.duration(duration()))}`)
-    }
-
-    return content.join("\n")
+    if (!isRunning() && props.part.state.status === "completed")
+      return formatCompletedSubagentDetail(tools().length, Locale.duration(duration()))
+    return ""
   })
 
   return (
     <InlineTool
-      icon={props.part.state.status === "completed" ? "✓" : "│"}
+      icon="⇢"
+      iconColor={theme.primary}
       separate={true}
       color={retry() ? theme.error : undefined}
       spinner={isRunning()}
       complete={stringValue(props.input.description)}
-      pending="Delegating…"
+      pending="delegating…"
       part={props.part}
       onClick={() => {
         if (sessionID()) {
@@ -2424,7 +2662,16 @@ function Task(props: ToolProps) {
         if (status) void DialogAlert.show(dialog, "Retry Error", status.message)
       }}
     >
-      {content()}
+      <Verb>
+        {formatSubagentTitle(
+          Locale.titlecase(stringValue(props.input.subagent_type) ?? "General"),
+          stringValue(props.input.description) ?? "",
+          props.metadata.background === true,
+        )}
+      </Verb>
+      <Show when={detail()}>
+        <span style={{ fg: theme.textMuted }}>{"\n"}{detail()}</span>
+      </Show>
     </InlineTool>
   )
 }
@@ -2461,103 +2708,63 @@ function executeCalls(value: unknown): ExecuteCall[] {
 
 // The `execute` tool streams child tool calls through metadata, not a child session like Task.
 function Execute(props: ToolProps) {
-  const ctx = use()
   const { theme } = useTheme()
   const isLoading = createMemo(() => props.part.state.status === "pending" || props.part.state.status === "running")
   const calls = createMemo(() => executeCalls(props.metadata.toolCalls))
   const output = createMemo(() => stripAnsi(props.output?.trim() ?? ""))
   const hasRuntimeError = createMemo(() => props.metadata.error === true)
-  const outputPreview = createMemo(() => collapseToolOutput(output(), 4, 4 * Math.max(20, ctx.width - 6)).output)
-  const showOutput = createMemo(() => output() && hasRuntimeError())
-  const content = createMemo(() => {
-    const lines = ["execute"]
-    for (const call of calls()) {
-      const args = input(call.input ?? {})
-      lines.push(`↳ ${call.tool}${args ? ` ${args}` : ""}${call.status === "error" ? " (failed)" : ""}`)
-    }
-    return lines.join("\n")
-  })
 
   return (
-    <>
-      <InlineTool
-        icon={hasRuntimeError() ? "✗" : props.part.state.status === "completed" ? "✓" : "│"}
-        color={hasRuntimeError() ? theme.error : undefined}
-        spinner={isLoading()}
-        pending="execute"
-        complete={true}
-        part={props.part}
-      >
-        {content()}
-      </InlineTool>
-      <Show when={showOutput()}>
-        <box paddingLeft={3}>
-          <For each={outputPreview().split("\n")}>
-            {(line, index) => (
-              <text paddingLeft={3} fg={theme.error}>
-                {index() === 0 ? "↳ " : "  "}
-                {line}
-              </text>
-            )}
-          </For>
-        </box>
+    <BlockTool
+      glyph="›"
+      spinner={isLoading()}
+      glyphColor={hasRuntimeError() ? theme.error : theme.primary}
+      part={props.part}
+      header={<span style={{ fg: theme.text, bold: true }}>execute</span>}
+    >
+      <For each={calls()}>
+        {(call) => (
+          <box>
+            <text fg={call.status === "error" ? theme.error : theme.textMuted}>
+              {call.tool} {input(call.input ?? {})}
+              {call.status === "error" ? " · failed" : ""}
+            </text>
+          </box>
+        )}
+      </For>
+      <Show when={output() && hasRuntimeError()}>
+        <OutputBlock text={output()} color={theme.error} lines={4} />
       </Show>
-    </>
+    </BlockTool>
   )
 }
 
 function Edit(props: ToolProps) {
-  const ctx = use()
-  const { theme, syntax } = useTheme()
+  const { theme } = useTheme()
   const pathFormatter = usePathFormatter()
-
-  const view = createMemo(() => {
-    const diffStyle = ctx.tui.diff_style
-    if (diffStyle === "stacked") return "unified"
-    // Default to "auto" behavior
-    return ctx.width > 120 ? "split" : "unified"
-  })
-
-  const ft = createMemo(() => filetype(stringValue(props.input.filePath)))
-
   const diffContent = createMemo(() => stringValue(props.metadata.diff) ?? "")
+  const stat = createMemo(() => diffStat(diffContent()))
 
   return (
     <Switch>
       <Match when={stringValue(props.metadata.diff) !== undefined}>
-        <BlockTool title={"← Edit " + pathFormatter.format(stringValue(props.input.filePath))} part={props.part}>
-          <box paddingLeft={1}>
-            <diff
-              diff={diffContent()}
-              view={view()}
-              filetype={ft()}
-              syntaxStyle={syntax()}
-              showLineNumbers={true}
-              width="100%"
-              wrapMode={ctx.diffWrapMode()}
-              fg={theme.text}
-              addedBg={theme.diffAddedBg}
-              removedBg={theme.diffRemovedBg}
-              contextBg={theme.diffContextBg}
-              addedSignColor={theme.diffHighlightAdded}
-              removedSignColor={theme.diffHighlightRemoved}
-              lineNumberFg={theme.diffLineNumber}
-              lineNumberBg={theme.diffContextBg}
-              addedLineNumberBg={theme.diffAddedLineNumberBg}
-              removedLineNumberBg={theme.diffRemovedLineNumberBg}
-            />
-          </box>
+        <BlockTool
+          glyph="±"
+          part={props.part}
+          header={
+            <>
+              <span style={{ fg: theme.text, bold: true }}>{pathFormatter.format(stringValue(props.input.filePath))}</span>
+              <DiffStat added={stat().added} removed={stat().removed} />
+            </>
+          }
+        >
+          <DiffBody diff={diffContent()} filePath={stringValue(props.input.filePath) ?? ""} />
           <Diagnostics diagnostics={props.metadata.diagnostics} filePath={stringValue(props.input.filePath) ?? ""} />
         </BlockTool>
       </Match>
       <Match when={true}>
-        <InlineTool
-          icon={TOOL_BULLET}
-          pending="Preparing edit…"
-          complete={stringValue(props.input.filePath)}
-          part={props.part}
-        >
-          Edit {pathFormatter.format(stringValue(props.input.filePath))} {input({ replaceAll: props.input.replaceAll })}
+        <InlineTool icon="±" pending="preparing edit…" complete={stringValue(props.input.filePath)} part={props.part}>
+          <Verb>Edit</Verb> {pathFormatter.format(stringValue(props.input.filePath))}
         </InlineTool>
       </Match>
     </Switch>
@@ -2565,81 +2772,49 @@ function Edit(props: ToolProps) {
 }
 
 function ApplyPatch(props: ToolProps) {
-  const ctx = use()
-  const { theme, syntax } = useTheme()
+  const { theme } = useTheme()
   const pathFormatter = usePathFormatter()
-
   const files = createMemo(() => parseApplyPatchFiles(props.metadata.files))
 
-  const view = createMemo(() => {
-    const diffStyle = ctx.tui.diff_style
-    if (diffStyle === "stacked") return "unified"
-    return ctx.width > 120 ? "split" : "unified"
-  })
-
-  function Diff(p: { diff: string; filePath: string }) {
-    return (
-      <box paddingLeft={1}>
-        <diff
-          diff={p.diff}
-          view={view()}
-          filetype={filetype(p.filePath)}
-          syntaxStyle={syntax()}
-          showLineNumbers={true}
-          width="100%"
-          wrapMode={ctx.diffWrapMode()}
-          fg={theme.text}
-          addedBg={theme.diffAddedBg}
-          removedBg={theme.diffRemovedBg}
-          contextBg={theme.diffContextBg}
-          addedSignColor={theme.diffHighlightAdded}
-          removedSignColor={theme.diffHighlightRemoved}
-          lineNumberFg={theme.diffLineNumber}
-          lineNumberBg={theme.diffContextBg}
-          addedLineNumberBg={theme.diffAddedLineNumberBg}
-          removedLineNumberBg={theme.diffRemovedLineNumberBg}
-        />
-      </box>
-    )
-  }
-
-  function title(file: { type: string; relativePath: string; filePath: string; deletions: number }) {
-    if (file.type === "delete") return "# Deleted " + file.relativePath
-    if (file.type === "add") return "# Created " + file.relativePath
-    if (file.type === "move") return "# Moved " + pathFormatter.format(file.filePath) + " → " + file.relativePath
-    return "← Patched " + file.relativePath
+  function label(file: { type: string; relativePath: string; filePath: string }) {
+    if (file.type === "delete") return "deleted"
+    if (file.type === "add") return "new file"
+    if (file.type === "move") return "moved from " + pathFormatter.format(file.filePath)
+    return ""
   }
 
   return (
     <Switch>
       <Match when={files().length > 0}>
         <For each={files()}>
-          {(file) => (
-            <BlockTool title={title(file)} part={props.part}>
-              <Show
-                when={file.type !== "delete"}
-                fallback={
-                  <text fg={theme.diffRemoved}>
-                    -{file.deletions} line{file.deletions !== 1 ? "s" : ""}
-                  </text>
+          {(file) => {
+            const stat = createMemo(() => diffStat(file.patch))
+            return (
+              <BlockTool
+                glyph="±"
+                part={props.part}
+                header={
+                  <>
+                    <span style={{ fg: theme.text, bold: true }}>{file.relativePath}</span>
+                    <Show when={label(file)}>{(text) => <span style={{ fg: theme.textMuted }}>{"  "}{text()}</span>}</Show>
+                    <Show when={file.type === "delete"} fallback={<DiffStat added={stat().added} removed={stat().removed} />}>
+                      <span style={{ fg: theme.diffRemoved }}>{"  "}−{file.deletions}</span>
+                    </Show>
+                  </>
                 }
               >
-                <Diff diff={file.patch} filePath={file.filePath} />
-                <Diagnostics diagnostics={props.metadata.diagnostics} filePath={file.movePath ?? file.filePath} />
-              </Show>
-            </BlockTool>
-          )}
+                <Show when={file.type !== "delete"}>
+                  <DiffBody diff={file.patch} filePath={file.filePath} />
+                  <Diagnostics diagnostics={props.metadata.diagnostics} filePath={file.movePath ?? file.filePath} />
+                </Show>
+              </BlockTool>
+            )
+          }}
         </For>
       </Match>
       <Match when={true}>
-        <InlineTool
-          icon={TOOL_BULLET}
-          pending="Preparing patch…"
-          failure="Patch failed"
-          complete={false}
-          part={props.part}
-        >
-          Patch
+        <InlineTool icon="±" pending="preparing patch…" failure="Patch failed" complete={false} part={props.part}>
+          <Verb>Patch</Verb>
         </InlineTool>
       </Match>
     </Switch>
@@ -2647,25 +2822,30 @@ function ApplyPatch(props: ToolProps) {
 }
 
 function TodoWrite(props: ToolProps) {
+  const { theme } = useTheme()
   const todos = createMemo(() => parseTodos(props.input.todos))
+  const done = createMemo(() => todos().filter((todo) => todo.status === "completed").length)
   return (
     <Switch>
       <Match when={parseTodos(props.metadata.todos).length}>
-        <BlockTool title="# Todos" part={props.part}>
+        <BlockTool
+          glyph="≡"
+          part={props.part}
+          header={
+            <>
+              <span style={{ fg: theme.text, bold: true }}>Plan</span>
+              <span style={{ fg: theme.textMuted }}>{"  "}{done()}/{todos().length}</span>
+            </>
+          }
+        >
           <box>
             <For each={todos()}>{(todo) => <TodoItem status={todo.status} content={todo.content} />}</For>
           </box>
         </BlockTool>
       </Match>
       <Match when={true}>
-        <InlineTool
-          icon={TOOL_BULLET}
-          pending="Updating todos…"
-          failure="Todo update failed"
-          complete={false}
-          part={props.part}
-        >
-          Updating todos…
+        <InlineTool icon="≡" pending="updating plan…" failure="Plan update failed" complete={false} part={props.part}>
+          <Verb>Plan</Verb>
         </InlineTool>
       </Match>
     </Switch>
@@ -2686,22 +2866,27 @@ function Question(props: ToolProps) {
   return (
     <Switch>
       <Match when={answers()}>
-        <BlockTool title="# Questions" part={props.part}>
-          <box gap={1}>
-            <For each={questions()}>
-              {(q, i) => (
-                <box flexDirection="column">
-                  <text fg={theme.textMuted}>{q.question}</text>
-                  <text fg={theme.text}>{format(answers()?.[i()])}</text>
-                </box>
-              )}
-            </For>
-          </box>
+        <BlockTool
+          glyph="?"
+          part={props.part}
+          header={<span style={{ fg: theme.text, bold: true }}>Asked {count()} question{count() !== 1 ? "s" : ""}</span>}
+        >
+          <For each={questions()}>
+            {(q, i) => (
+              <box>
+                <text fg={theme.textMuted}>{q.question}</text>
+                <text fg={theme.text}>
+                  <span style={{ fg: theme.primary }}>› </span>
+                  {format(answers()?.[i()])}
+                </text>
+              </box>
+            )}
+          </For>
         </BlockTool>
       </Match>
       <Match when={true}>
-        <InlineTool icon={TOOL_BULLET} pending="Asking questions…" complete={count()} part={props.part}>
-          Asked {count()} question{count() !== 1 ? "s" : ""}
+        <InlineTool icon="?" pending="asking…" complete={count()} part={props.part}>
+          <Verb>Asking</Verb> {count()} question{count() !== 1 ? "s" : ""}
         </InlineTool>
       </Match>
     </Switch>
@@ -2710,8 +2895,8 @@ function Question(props: ToolProps) {
 
 function Skill(props: ToolProps) {
   return (
-    <InlineTool icon={TOOL_BULLET} pending="Loading skill…" complete={stringValue(props.input.name)} part={props.part}>
-      Skill "{stringValue(props.input.name)}"
+    <InlineTool icon={TOOL_BULLET} pending="loading skill…" complete={stringValue(props.input.name)} part={props.part}>
+      <Verb>Skill</Verb> {stringValue(props.input.name)}
     </InlineTool>
   )
 }

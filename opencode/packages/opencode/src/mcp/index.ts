@@ -34,8 +34,17 @@ import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { McpCatalog } from "./catalog"
 import { McpEvent } from "@opencode-ai/schema/mcp-event"
 import { McpBrowser } from "./browser"
+import { McpConfig } from "./config"
 
 const DEFAULT_TIMEOUT = 30_000
+/**
+ * Servers start on first use. The first model request waits this long for them, once; a server
+ * that is slower joins later turns (and `mcp_search` can wait for it). Override with
+ * RIFT_MCP_STARTUP_WAIT (ms).
+ */
+const FIRST_USE_WAIT = () => Number(process.env.OPENCODE_MCP_STARTUP_WAIT ?? process.env.RIFT_MCP_STARTUP_WAIT ?? 5_000)
+/** Remote servers that drop are retried after 1, 2, 4, 8 and 16 seconds. */
+const RECONNECT_DELAYS = [1_000, 2_000, 4_000, 8_000, 16_000]
 const CLIENT_OPTIONS = {
   capabilities: {
     // https://github.com/anomalyco/opencode/issues/11948
@@ -97,14 +106,41 @@ const StatusNeedsClientRegistration = Schema.Struct({
   error: Schema.String,
 }).annotate({ identifier: "MCPStatusNeedsClientRegistration" })
 
+const StatusPending = Schema.Struct({ status: Schema.Literal("pending") }).annotate({
+  identifier: "MCPStatusPending",
+})
+const StatusConnecting = Schema.Struct({ status: Schema.Literal("connecting") }).annotate({
+  identifier: "MCPStatusConnecting",
+})
+const StatusNeedsApproval = Schema.Struct({ status: Schema.Literal("needs_approval") }).annotate({
+  identifier: "MCPStatusNeedsApproval",
+})
+
 export const Status = Schema.Union([
   StatusConnected,
   StatusDisabled,
   StatusFailed,
   StatusNeedsAuth,
   StatusNeedsClientRegistration,
+  StatusPending,
+  StatusConnecting,
+  StatusNeedsApproval,
 ]).annotate({ identifier: "MCPStatus", discriminator: "status" })
 export type Status = Schema.Schema.Type<typeof Status>
+
+export const Server = Schema.Struct({
+  name: Schema.String,
+  scope: Schema.Literals(["user", "project", "local", "runtime"]),
+  type: Schema.Literals(["local", "remote"]),
+  target: Schema.String,
+  status: Status,
+  tools: Schema.Array(Schema.String),
+  auth: Schema.optional(Schema.Literals(["authenticated", "expired", "not_authenticated"])),
+}).annotate({ identifier: "McpServer" })
+export type Server = Schema.Schema.Type<typeof Server>
+
+export const Approval = Schema.Literals(["once", "always", "deny"])
+export type Approval = Schema.Schema.Type<typeof Approval>
 
 // Store transports for OAuth servers to allow finishing auth
 type TransportWithAuth = StreamableHTTPClientTransport | SSEClientTransport
@@ -114,11 +150,6 @@ const pendingOAuthTransports = new Map<string, { transport: TransportWithAuth; p
 type PromptInfo = Awaited<ReturnType<MCPClient["listPrompts"]>>["prompts"][number]
 type ResourceInfo = Awaited<ReturnType<MCPClient["listResources"]>>["resources"][number]
 type ResourceTemplateInfo = Awaited<ReturnType<MCPClient["listResourceTemplates"]>>["resourceTemplates"][number]
-type McpEntry = NonNullable<ConfigV1.Info["mcp"]>[string]
-
-function isMcpConfigured(entry: McpEntry): entry is ConfigMCPV1.Info {
-  return typeof entry === "object" && entry !== null && "type" in entry
-}
 
 function remoteURL(value: string) {
   if (URL.canParse(value)) return new URL(value)
@@ -140,11 +171,23 @@ interface AuthResult {
 // --- Effect Service ---
 
 interface State {
+  /** Servers added at runtime through the API. */
   config: Record<string, ConfigMCPV1.Info>
+  /** Servers from config files, with their scope. */
+  entries: Record<string, McpConfig.Entry>
+  root: string
   status: Record<string, Status>
   clients: Record<string, MCPClient>
   defs: Record<string, MCPToolDef[]>
   instructions: Record<string, string>
+  /** In-flight connects, so callers can wait for them. */
+  pending: Map<string, Promise<void>>
+  /** Project servers approved for this run only. */
+  approvedOnce: Set<string>
+  started: boolean
+  firstWait?: Promise<void>
+  closed: boolean
+  bridge: EffectBridge.Shape
 }
 
 export interface ServerInstructions {
@@ -159,10 +202,18 @@ export interface McpTool {
   readonly def: MCPToolDef
   readonly client: MCPClient
   readonly timeout?: number
+  readonly server: string
 }
 
 export interface Interface {
   readonly status: () => Effect.Effect<Record<string, Status>>
+  /** Start every enabled, approved server that has not started yet. Does not wait. */
+  readonly start: () => Effect.Effect<void>
+  /** Wait for in-flight connects, up to `ms` (default: until they settle). */
+  readonly settle: (ms?: number) => Effect.Effect<void>
+  /** Per-server detail for /mcp and `rift mcp list`. Does not start anything. */
+  readonly servers: () => Effect.Effect<Server[]>
+  readonly approve: (name: string, decision: Approval) => Effect.Effect<Status, NotFoundError>
   readonly clients: () => Effect.Effect<Record<string, MCPClient>>
   readonly instructions: () => Effect.Effect<ServerInstructions[]>
   readonly tools: () => Effect.Effect<Record<string, McpTool>>
@@ -452,6 +503,8 @@ const layer = Layer.effect(
             Effect.ignore,
           ),
         )
+        const mcp = configFor(s, name)
+        if (mcp?.type === "remote" && !s.closed) reconnect(s, name, mcp)
       }
 
       client.setNotificationHandler(LoggingMessageNotificationSchema, (notification) =>
@@ -469,6 +522,21 @@ const layer = Layer.effect(
         s.defs[name] = listed
         await bridge.promise(events.publish(ToolsChanged, { server: name }).pipe(Effect.ignore))
       })
+    }
+
+    /** Retry a dropped remote server with backoff. Gives up quietly; /mcp can reconnect by hand. */
+    function reconnect(s: State, name: string, mcp: ConfigMCPV1.Info) {
+      const run = (async () => {
+        for (const delay of RECONNECT_DELAYS) {
+          await new Promise((resolve) => setTimeout(resolve, delay))
+          if (s.closed || s.clients[name] || s.status[name]?.status === "disabled") return
+          s.status[name] = { status: "connecting" }
+          await s.bridge.promise(connectInto(s, name, mcp))
+          const after: Status["status"] | undefined = (s.status as Record<string, Status | undefined>)[name]?.status
+          if (after === "connected" || after === "needs_auth") return
+        }
+      })()
+      s.pending.set(name, run.finally(() => s.pending.delete(name)))
     }
 
     function serverLog(name: string, params: LoggingMessageNotification["params"]) {
@@ -490,46 +558,35 @@ const layer = Layer.effect(
     }
 
     const state = yield* InstanceState.make<State>(
-      Effect.fn("MCP.state")(function* () {
+      Effect.fn("MCP.state")(function* (ctx) {
         const cfg = yield* cfgSvc.get()
         const bridge = yield* EffectBridge.make()
-        const config = cfg.mcp ?? {}
+        const entries = McpConfig.load({
+          directory: ctx.directory,
+          worktree: ctx.worktree,
+          local: cfg.mcp as Record<string, unknown> | undefined,
+          warn: (message, fields) => bridge.fork(Effect.logWarning(message, fields)),
+        })
+        const root = McpConfig.projectRoot(ctx.directory, ctx.worktree)
         const s: State = {
           config: {},
+          entries,
+          root,
           status: {},
           clients: {},
           defs: {},
           instructions: {},
+          pending: new Map(),
+          approvedOnce: new Set(),
+          started: false,
+          closed: false,
+          bridge,
         }
-
-        yield* Effect.forEach(
-          Object.entries(config),
-          ([key, mcp]) =>
-            Effect.gen(function* () {
-              if (!isMcpConfigured(mcp)) {
-                yield* Effect.logError("Ignoring MCP config entry without type", { key })
-                return
-              }
-
-              if (mcp.enabled === false) {
-                s.status[key] = { status: "disabled" }
-                return
-              }
-
-              const result = yield* create(key, mcp)
-              s.status[key] = result.status
-              if (result.mcpClient) {
-                s.clients[key] = result.mcpClient
-                s.defs[key] = result.defs!
-                if (result.instructions) s.instructions[key] = result.instructions
-                watch(s, key, result.mcpClient, bridge, mcp.timeout)
-              }
-            }),
-          { concurrency: "unbounded" },
-        )
+        for (const name of Object.keys(entries)) s.status[name] = initialStatus(s, name)
 
         yield* Effect.addFinalizer(() =>
           Effect.gen(function* () {
+            s.closed = true
             const clients = Object.values(s.clients)
             s.clients = {}
             s.defs = {}
@@ -558,6 +615,86 @@ const layer = Layer.effect(
         return s
       }),
     )
+
+    function configFor(s: State, name: string): ConfigMCPV1.Info | undefined {
+      return s.config[name] ?? s.entries[name]?.config
+    }
+
+    /** Where a server stands before anything has been started. */
+    function initialStatus(s: State, name: string): Status {
+      const entry = s.entries[name]
+      if (!entry || entry.config.enabled === false) return { status: "disabled" }
+      if (McpConfig.disabled(s.root).has(name)) return { status: "disabled" }
+      if (entry.scope === "project" && !s.approvedOnce.has(name)) {
+        const decision = McpConfig.decision(s.root, name)
+        if (decision === "deny") return { status: "disabled" }
+        if (decision !== "allow") return { status: "needs_approval" }
+      }
+      return { status: "pending" }
+    }
+
+    /** Connect one server and record the outcome in `s`. Never fails. */
+    const connectInto = Effect.fnUntraced(function* (s: State, name: string, mcp: ConfigMCPV1.Info) {
+      const result = yield* create(name, mcp)
+      if (s.closed) {
+        if (result.mcpClient) yield* Effect.tryPromise(() => result.mcpClient!.close()).pipe(Effect.ignore)
+        return
+      }
+      // A disable that arrived while connecting wins.
+      if (s.status[name]?.status === "disabled") {
+        if (result.mcpClient) yield* Effect.tryPromise(() => result.mcpClient!.close()).pipe(Effect.ignore)
+        return
+      }
+      s.status[name] = result.status
+      if (result.mcpClient) {
+        yield* storeClient(s, name, result.mcpClient, result.defs!, result.instructions, mcp.timeout)
+      }
+      yield* events.publish(ToolsChanged, { server: name }).pipe(Effect.ignore)
+    })
+
+    /** Start a server in the background unless it is running, starting, off, or awaiting approval. */
+    function launch(s: State, name: string) {
+      if (s.pending.has(name) || s.clients[name]) return
+      const status = s.status[name]?.status
+      if (status !== "pending" && status !== "failed") return
+      const mcp = configFor(s, name)
+      if (!mcp) return
+      s.status[name] = { status: "connecting" }
+      const run = s.bridge.promise(connectInto(s, name, mcp)).catch(() => {})
+      s.pending.set(name, run.finally(() => s.pending.delete(name)))
+    }
+
+    const startAll = Effect.fnUntraced(function* (s: State) {
+      if (s.started) return
+      s.started = true
+      const waiting = Object.keys(s.entries).filter((name) => s.status[name]?.status === "needs_approval")
+      if (waiting.length)
+        yield* events
+          .publish(TuiEvent.ToastShow, {
+            title: "MCP approval needed",
+            message: `This project's .mcp.json wants to start ${waiting.join(", ")}. Open /mcp to allow or deny.`,
+            variant: "warning",
+            duration: 10000,
+          })
+          .pipe(Effect.ignore)
+      for (const name of Object.keys(s.entries)) launch(s, name)
+    })
+
+    const waitPending = (s: State, ms?: number) =>
+      Effect.promise(() => {
+        const all = Promise.all([...s.pending.values()]).then(() => {})
+        if (ms === undefined) return all
+        return Promise.race([all, new Promise<void>((resolve) => setTimeout(resolve, ms))])
+      })
+
+    /** Start servers and wait for them once, on the first request that needs MCP. */
+    const ready = Effect.fnUntraced(function* () {
+      const s = yield* InstanceState.get(state)
+      yield* startAll(s)
+      s.firstWait ??= s.bridge.promise(waitPending(s, FIRST_USE_WAIT()))
+      yield* Effect.promise(() => s.firstWait!)
+      return s
+    })
 
     function closeClient(s: State, name: string) {
       const client = s.clients[name]
@@ -590,21 +727,59 @@ const layer = Layer.effect(
 
     const status = Effect.fn("MCP.status")(function* () {
       const s = yield* InstanceState.get(state)
-
-      const cfg = yield* cfgSvc.get()
-      const config = cfg.mcp ?? {}
       const result: Record<string, Status> = {}
-
-      for (const [key, mcp] of Object.entries(config)) {
-        if (!isMcpConfigured(mcp)) continue
+      for (const key of [...Object.keys(s.entries), ...Object.keys(s.config)]) {
         result[key] = s.status[key] ?? { status: "disabled" }
       }
-
-      for (const key of Object.keys(s.config)) {
-        result[key] = s.status[key] ?? { status: "disabled" }
-      }
-
       return result
+    })
+
+    const start = Effect.fn("MCP.start")(function* () {
+      yield* startAll(yield* InstanceState.get(state))
+    })
+
+    const settle = Effect.fn("MCP.settle")(function* (ms?: number) {
+      const s = yield* InstanceState.get(state)
+      yield* startAll(s)
+      yield* waitPending(s, ms)
+    })
+
+    const servers = Effect.fn("MCP.servers")(function* () {
+      const s = yield* InstanceState.get(state)
+      const names = [...new Set([...Object.keys(s.entries), ...Object.keys(s.config)])].sort()
+      return yield* Effect.forEach(names, (name) =>
+        Effect.gen(function* () {
+          const mcp = configFor(s, name)!
+          const remote = mcp.type === "remote"
+          return {
+            name,
+            scope: s.config[name] ? "runtime" : s.entries[name].scope,
+            type: mcp.type,
+            target: remote ? mcp.url : mcp.command.join(" "),
+            status: s.status[name] ?? { status: "disabled" },
+            tools: (s.defs[name] ?? []).map((tool) => tool.name),
+            ...(remote && mcp.oauth !== false && { auth: yield* getAuthStatus(name) }),
+          } satisfies Server
+        }),
+      )
+    })
+
+    const approve = Effect.fn("MCP.approve")(function* (name: string, decision: Approval) {
+      const s = yield* InstanceState.get(state)
+      if (!s.entries[name]) return yield* new NotFoundError({ name })
+      if (decision === "deny") {
+        McpConfig.remember(s.root, name, "deny")
+        s.approvedOnce.delete(name)
+        yield* closeClient(s, name)
+        s.status[name] = { status: "disabled" }
+      } else {
+        if (decision === "always") McpConfig.remember(s.root, name, "allow")
+        else s.approvedOnce.add(name)
+        s.status[name] = initialStatus(s, name)
+        launch(s, name)
+      }
+      yield* events.publish(ToolsChanged, { server: name }).pipe(Effect.ignore)
+      return s.status[name]
     })
 
     const clients = Effect.fn("MCP.clients")(function* () {
@@ -613,7 +788,7 @@ const layer = Layer.effect(
     })
 
     const instructions = Effect.fn("MCP.instructions")(function* () {
-      const s = yield* InstanceState.get(state)
+      const s = yield* ready()
       return Object.entries(s.instructions)
         .filter(([name]) => s.status[name]?.status === "connected")
         .sort(([a], [b]) => a.localeCompare(b))
@@ -645,43 +820,51 @@ const layer = Layer.effect(
       return { status: s.status }
     })
 
+    /** Turn a server on (remembered for this project) and connect it now. Also the "reconnect" action. */
     const connect = Effect.fn("MCP.connect")(function* (name: string) {
       const mcp = yield* requireMcpConfig(name)
+      const s = yield* InstanceState.get(state)
+      McpConfig.setDisabled(s.root, name, false)
+      if (s.entries[name]?.scope === "project" && initialStatus(s, name).status === "needs_approval") {
+        s.status[name] = { status: "needs_approval" }
+        return
+      }
       yield* createAndStore(name, { ...mcp, enabled: true })
+      yield* events.publish(ToolsChanged, { server: name }).pipe(Effect.ignore)
     })
 
+    /** Turn a server off for this project. The config file is not touched. */
     const disconnect = Effect.fn("MCP.disconnect")(function* (name: string) {
       yield* requireMcpConfig(name)
       const s = yield* InstanceState.get(state)
+      McpConfig.setDisabled(s.root, name, true)
       yield* closeClient(s, name)
       delete s.clients[name]
       s.status[name] = { status: "disabled" }
+      yield* events.publish(ToolsChanged, { server: name }).pipe(Effect.ignore)
     })
 
-    function requestTimeout(s: State, name: string, configured: McpEntry | undefined, fallback?: number) {
-      const staticTimeout = configured && isMcpConfigured(configured) ? configured.timeout : undefined
-      return s.config[name]?.timeout ?? staticTimeout ?? fallback
+    function requestTimeout(s: State, name: string, fallback?: number) {
+      return configFor(s, name)?.timeout ?? fallback
     }
 
     const tools = Effect.fn("MCP.tools")(function* () {
       const result: Record<string, McpTool> = {}
-      const s = yield* InstanceState.get(state)
+      const s = yield* ready()
 
       const cfg = yield* cfgSvc.get()
-      const config = cfg.mcp ?? {}
       const defaultTimeout = cfg.experimental?.mcp_timeout
 
       for (const [clientName, client] of Object.entries(s.clients)) {
         if (s.status[clientName]?.status !== "connected") continue
-        const mcpConfig = config[clientName]
         const listed = s.defs[clientName]
         if (!listed) {
           yield* Effect.logWarning("missing cached tools for connected server", { clientName })
           continue
         }
-        const timeout = requestTimeout(s, clientName, mcpConfig, defaultTimeout)
+        const timeout = requestTimeout(s, clientName, defaultTimeout)
         for (const def of listed) {
-          result[McpCatalog.toolName(clientName, def.name)] = { def, client, timeout }
+          result[McpCatalog.toolName(clientName, def.name)] = { def, client, timeout, server: clientName }
         }
       }
       return result
@@ -704,7 +887,7 @@ const layer = Layer.effect(
             McpCatalog.fetch(
               clientName,
               client,
-              (c) => listFn(c, requestTimeout(s, clientName, cfg.mcp?.[clientName], cfg.experimental?.mcp_timeout)),
+              (c) => listFn(c, requestTimeout(s, clientName, cfg.experimental?.mcp_timeout)),
               label,
               key,
             ).pipe(Effect.map((items) => Object.entries(items ?? {}))),
@@ -751,7 +934,7 @@ const layer = Layer.effect(
       }
       const cfg = yield* cfgSvc.get()
       return yield* Effect.tryPromise({
-        try: () => fn(client, requestTimeout(s, clientName, cfg.mcp?.[clientName], cfg.experimental?.mcp_timeout)),
+        try: () => fn(client, requestTimeout(s, clientName, cfg.experimental?.mcp_timeout)),
         catch: (error) => error,
       }).pipe(
         Effect.tapError((error) =>
@@ -788,13 +971,7 @@ const layer = Layer.effect(
     })
 
     const getMcpConfig = Effect.fnUntraced(function* (mcpName: string) {
-      const s = yield* InstanceState.get(state)
-      if (s.config[mcpName]) return s.config[mcpName]
-
-      const cfg = yield* cfgSvc.get()
-      const mcpConfig = cfg.mcp?.[mcpName]
-      if (!mcpConfig || !isMcpConfigured(mcpConfig)) return undefined
-      return mcpConfig
+      return configFor(yield* InstanceState.get(state), mcpName)
     })
 
     const requireMcpConfig = Effect.fnUntraced(function* (mcpName: string) {
@@ -958,11 +1135,8 @@ const layer = Layer.effect(
     })
 
     const getAuthStatus = Effect.fn("MCP.getAuthStatus")(function* (mcpName: string) {
-      const runtimeConfig = (yield* InstanceState.has(state))
-        ? (yield* InstanceState.get(state)).config[mcpName]
-        : undefined
-      const mcpConfig = runtimeConfig ?? (yield* cfgSvc.get()).mcp?.[mcpName]
-      if (!mcpConfig || !isMcpConfigured(mcpConfig) || mcpConfig.type !== "remote") return "not_authenticated"
+      const mcpConfig = configFor(yield* InstanceState.get(state), mcpName)
+      if (!mcpConfig || mcpConfig.type !== "remote") return "not_authenticated"
       const entry = yield* auth.getForUrl(mcpName, mcpConfig.url)
       if (!entry?.tokens) return "not_authenticated"
       if (entry.tokens.expiresAt && entry.tokens.expiresAt < Date.now() / 1000) return "expired"
@@ -971,6 +1145,10 @@ const layer = Layer.effect(
 
     return Service.of({
       status,
+      start,
+      settle,
+      servers,
+      approve,
       clients,
       instructions,
       tools,

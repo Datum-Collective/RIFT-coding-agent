@@ -168,5 +168,19 @@ describe("tool.browser", () => {
         }),
       ),
     )
+
+    it.effect("loads a url and screenshots it in one call, asking permission for the url", () =>
+      provideTmpdirInstance(() =>
+        Effect.gen(function* () {
+          asked.length = 0
+          const result = yield* exec({ action: "screenshot", url: `${base}/broken` })
+          expect(result.attachments?.[0]?.mime).toBe("image/png")
+          // Looking once should also say what rendered, so no separate open call is needed.
+          expect(result.output).toContain("Title: Broken page")
+          expect(result.output).toMatch(/missingFunction|not defined/)
+          expect(asked).toEqual([{ permission: "browser_open", patterns: [`${base}/broken`] }])
+        }),
+      ),
+    )
   }
 })

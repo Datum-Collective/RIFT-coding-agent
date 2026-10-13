@@ -1,4 +1,5 @@
 import type { BoxRenderable, TextareaRenderable, ScrollBoxRenderable } from "@opentui/core"
+import { TextAttributes } from "@opentui/core"
 import { pathToFileURL } from "bun"
 import fuzzysort from "fuzzysort"
 import path from "path"
@@ -15,7 +16,6 @@ import { useTuiPaths } from "../../context/runtime"
 import { useTuiConfig } from "../../config"
 import { useLocation } from "../../context/location"
 import { useTheme, selectedForeground } from "../../context/theme"
-import { SplitBorder } from "../../ui/border"
 import { useTerminalDimensions } from "@opentui/solid"
 import { Locale } from "../../util/locale"
 import type { PromptInfo } from "../../prompt/history"
@@ -719,6 +719,9 @@ export function Autocomplete(props: {
   let scroll: ScrollBoxRenderable
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
 
+  // Descriptions line up in one column, like a man page's option list.
+  const labelWidth = createMemo(() => Math.min(28, Math.max(8, ...options().map((option) => option.display.length))) + 2)
+
   return (
     <box
       visible={store.visible !== false}
@@ -727,12 +730,11 @@ export function Autocomplete(props: {
       left={position().x}
       width={position().width}
       zIndex={100}
-      {...SplitBorder}
-      borderColor={theme.border}
+      backgroundColor={theme.backgroundPanel}
     >
       <scrollbox
         ref={(r: ScrollBoxRenderable) => (scroll = r)}
-        backgroundColor={theme.backgroundMenu}
+        backgroundColor={theme.backgroundPanel}
         height={height()}
         scrollbarOptions={{ visible: false }}
         scrollAcceleration={scrollAcceleration()}
@@ -740,16 +742,14 @@ export function Autocomplete(props: {
         <Index
           each={options()}
           fallback={
-            <box paddingLeft={1} paddingRight={1}>
-              <text fg={theme.textMuted}>No matching items</text>
+            <box paddingLeft={2} paddingRight={1}>
+              <text fg={theme.textMuted}>nothing matches</text>
             </box>
           }
         >
           {(option, index) => (
             <box
-              paddingLeft={1}
               paddingRight={1}
-              backgroundColor={index === store.selected ? theme.primary : undefined}
               flexDirection="row"
               onMouseMove={() => {
                 setStore("input", "mouse")
@@ -764,12 +764,21 @@ export function Autocomplete(props: {
               }}
               onMouseUp={() => select()}
             >
-              <text fg={index === store.selected ? selectedForeground(theme) : theme.text} flexShrink={0}>
+              <text width={2} flexShrink={0} fg={theme.primary}>
+                {index === store.selected ? "›" : ""}
+              </text>
+              <text
+                fg={index === store.selected ? theme.text : theme.textMuted}
+                attributes={index === store.selected ? TextAttributes.BOLD : undefined}
+                flexShrink={0}
+                width={option().description ? labelWidth() : undefined}
+                wrapMode="none"
+              >
                 {option().display}
               </text>
               <Show when={option().description}>
-                <text fg={index === store.selected ? selectedForeground(theme) : theme.textMuted} wrapMode="none">
-                  {" " + option().description?.trimStart()}
+                <text fg={index === store.selected ? theme.textMuted : theme.border} wrapMode="none">
+                  {option().description?.trimStart()}
                 </text>
               </Show>
             </box>

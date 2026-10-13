@@ -39,6 +39,7 @@ function fakeMcp() {
   return MCP.Service.of({
     tools: () => Effect.succeed({}),
     clients: () => Effect.succeed({}),
+    status: () => Effect.succeed({}),
   } as Partial<MCP.Interface> as MCP.Interface)
 }
 

@@ -2,11 +2,11 @@ import { createStore } from "solid-js/store"
 import { dirname } from "node:path"
 import { createMemo, For, Match, Show, Switch } from "solid-js"
 import { Portal, useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
-import type { TextareaRenderable } from "@opentui/core"
-import { useTheme, selectedForeground } from "../../context/theme"
+import { TextAttributes, type TextareaRenderable } from "@opentui/core"
+import { useTheme } from "../../context/theme"
 import type { PermissionRequest } from "@opencode-ai/sdk/v2"
 import { useSDK } from "../../context/sdk"
-import { SplitBorder } from "../../ui/border"
+import { RoundedBorder } from "../../ui/border"
 import { useSync } from "../../context/sync"
 import { useProject } from "../../context/project"
 import { filetype } from "../../util/filetype"
@@ -398,17 +398,13 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
           const current = info()
 
           const header = () => (
-            <box flexDirection="column" gap={0}>
-              <box flexDirection="row" gap={1} flexShrink={0}>
-                <text fg={theme.warning}>{"△"}</text>
-                <text fg={theme.text}>Permission required</text>
-              </box>
-              <box flexDirection="row" gap={1} paddingLeft={2} flexShrink={0}>
-                <text fg={theme.textMuted} flexShrink={0}>
-                  {current.icon}
-                </text>
-                <text fg={theme.text}>{current.title}</text>
-              </box>
+            <box flexDirection="row" flexShrink={0}>
+              <text width={2} flexShrink={0} fg={theme.warning}>
+                ?
+              </text>
+              <text fg={theme.textMuted} flexGrow={1}>
+                <span style={{ fg: theme.text, bold: true }}>{current.title}</span> needs your approval
+              </text>
             </box>
           )
 
@@ -417,7 +413,7 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
               title="Permission required"
               header={header()}
               body={current.body}
-              options={{ once: "Allow once", always: "Allow always", reject: "Reject" }}
+              options={{ once: "Yes", always: "Yes, and don't ask again", reject: "No, tell RIFT what to do instead" }}
               escapeKey="reject"
               fullscreen
               onSelect={(option) => {
@@ -487,28 +483,25 @@ function RejectPrompt(props: { onConfirm: (message: string) => void; onCancel: (
 
   return (
     <box
-      backgroundColor={theme.backgroundPanel}
-      border={["left"]}
+      border
       borderColor={theme.error}
-      customBorderChars={SplitBorder.customBorderChars}
+      customBorderChars={RoundedBorder}
     >
-      <box gap={1} paddingLeft={1} paddingRight={3} paddingTop={1} paddingBottom={1}>
-        <box flexDirection="row" gap={1} paddingLeft={1}>
-          <text fg={theme.error}>{"△"}</text>
-          <text fg={theme.text}>Reject permission</text>
-        </box>
-        <box paddingLeft={1}>
-          <text fg={theme.textMuted}>Tell RIFT what to do differently</text>
-        </box>
+      <box paddingLeft={1} paddingRight={2} paddingTop={1} flexDirection="row">
+        <text width={2} flexShrink={0} fg={theme.error}>
+          ✕
+        </text>
+        <text fg={theme.textMuted}>
+          <span style={{ fg: theme.text, bold: true }}>Rejected.</span> Tell RIFT what to do instead.
+        </text>
       </box>
       <box
         flexDirection={narrow() ? "column" : "row"}
         flexShrink={0}
         paddingTop={1}
-        paddingLeft={2}
-        paddingRight={3}
+        paddingLeft={3}
+        paddingRight={2}
         paddingBottom={1}
-        backgroundColor={theme.backgroundElement}
         justifyContent={narrow() ? "flex-start" : "space-between"}
         alignItems={narrow() ? "flex-start" : "center"}
         gap={1}
@@ -621,6 +614,33 @@ function Prompt<const T extends Record<string, string>>(props: {
         },
       },
       {
+        key: "up",
+        desc: "Previous permission option",
+        group: "Permission",
+        cmd: () => {
+          const idx = keys.indexOf(store.selected)
+          setStore("selected", keys[(idx - 1 + keys.length) % keys.length])
+        },
+      },
+      {
+        key: "down",
+        desc: "Next permission option",
+        group: "Permission",
+        cmd: () => {
+          const idx = keys.indexOf(store.selected)
+          setStore("selected", keys[(idx + 1) % keys.length])
+        },
+      },
+      ...keys.map((option, index) => ({
+        key: String(index + 1),
+        desc: `Choose ${String(props.options[option])}`,
+        group: "Permission",
+        cmd: () => {
+          setStore("selected", option)
+          props.onSelect(option)
+        },
+      })),
+      {
         key: "return",
         desc: "Select permission option",
         group: "Permission",
@@ -644,83 +664,86 @@ function Prompt<const T extends Record<string, string>>(props: {
   const hint = createMemo(() => (store.expanded ? "minimize" : "fullscreen"))
   useRenderer()
 
+  // An approval is a sheet above the composer: what is asked, then numbered answers.
   const content = () => (
     <box
-      backgroundColor={theme.backgroundPanel}
-      border={["left"]}
+      backgroundColor={store.expanded ? theme.background : undefined}
+      border
       borderColor={theme.warning}
-      customBorderChars={SplitBorder.customBorderChars}
+      customBorderChars={RoundedBorder}
       {...(store.expanded
-        ? { top: dimensions().height * -1 + 1, bottom: 1, left: 2, right: 2, position: "absolute" }
+        ? { top: dimensions().height * -1 + 1, bottom: 0, left: 0, right: 0, position: "absolute" }
         : {
             top: 0,
-            maxHeight: 15,
+            maxHeight: 18,
             bottom: 0,
             left: 0,
             right: 0,
             position: "relative",
           })}
     >
-      <box gap={1} paddingLeft={1} paddingRight={3} paddingTop={1} paddingBottom={1} flexGrow={1}>
+      <box gap={1} paddingLeft={1} paddingRight={2} paddingTop={1} flexGrow={1}>
         <Show
           when={props.header}
           fallback={
-            <box flexDirection="row" gap={1} paddingLeft={1} flexShrink={0}>
-              <text fg={theme.warning}>{"△"}</text>
-              <text fg={theme.text}>{props.title}</text>
+            <box flexDirection="row" flexShrink={0}>
+              <text width={2} flexShrink={0} fg={theme.warning}>
+                ?
+              </text>
+              <text fg={theme.text} attributes={TextAttributes.BOLD}>
+                {props.title}
+              </text>
             </box>
           }
         >
-          <box paddingLeft={1} flexShrink={0}>
-            {props.header}
-          </box>
+          <box flexShrink={0}>{props.header}</box>
         </Show>
-        {props.body}
-      </box>
-      <box
-        flexDirection={narrow() ? "column" : "row"}
-        flexShrink={0}
-        gap={1}
-        paddingTop={1}
-        paddingLeft={2}
-        paddingRight={3}
-        paddingBottom={1}
-        backgroundColor={theme.backgroundElement}
-        justifyContent={narrow() ? "flex-start" : "space-between"}
-        alignItems={narrow() ? "flex-start" : "center"}
-      >
-        <box flexDirection="row" gap={1} flexShrink={0}>
-          <For each={keys}>
-            {(option) => (
-              <box
-                paddingLeft={1}
-                paddingRight={1}
-                backgroundColor={option === store.selected ? theme.warning : theme.backgroundMenu}
-                onMouseOver={() => setStore("selected", option)}
-                onMouseUp={() => {
-                  setStore("selected", option)
-                  props.onSelect(option)
-                }}
-              >
-                <text fg={option === store.selected ? selectedForeground(theme, theme.warning) : theme.textMuted}>
-                  {props.options[option]}
-                </text>
-              </box>
-            )}
-          </For>
+        <box paddingLeft={2} flexGrow={1} flexShrink={1}>
+          {props.body}
         </box>
-        <box flexDirection="row" gap={2} flexShrink={0}>
+      </box>
+      <box flexShrink={0} paddingTop={1} paddingLeft={1} paddingRight={2} paddingBottom={1}>
+        <For each={keys}>
+          {(option, index) => (
+            <box
+              flexDirection="row"
+              onMouseOver={() => setStore("selected", option)}
+              onMouseUp={() => {
+                setStore("selected", option)
+                props.onSelect(option)
+              }}
+            >
+              <text width={2} flexShrink={0} fg={theme.primary}>
+                {option === store.selected ? "›" : ""}
+              </text>
+              <text
+                fg={option === store.selected ? theme.text : theme.textMuted}
+                attributes={option === store.selected ? TextAttributes.BOLD : undefined}
+              >
+                <span style={{ fg: theme.border }}>{index() + 1}. </span>
+                {props.options[option]}
+                <Show when={option === props.escapeKey}>
+                  <span style={{ fg: theme.border }}> (esc)</span>
+                </Show>
+              </text>
+            </box>
+          )}
+        </For>
+        <box flexDirection="row" gap={2} paddingLeft={2} paddingTop={1} flexShrink={0}>
+          <text fg={theme.textMuted}>
+            <span style={{ fg: theme.text }}>1-{keys.length}</span> choose
+          </text>
+          <text fg={theme.textMuted}>
+            <span style={{ fg: theme.text }}>↑↓</span> move
+          </text>
+          <text fg={theme.textMuted}>
+            <span style={{ fg: theme.text }}>enter</span> confirm
+          </text>
           <Show when={props.fullscreen}>
-            <text fg={theme.text}>
-              {fullscreenHint()} <span style={{ fg: theme.textMuted }}>{hint()}</span>
+            <text fg={theme.textMuted}>
+              <span style={{ fg: theme.text }}>{fullscreenHint()}</span> {hint()}
             </text>
           </Show>
-          <text fg={theme.text}>
-            {"⇆"} <span style={{ fg: theme.textMuted }}>select</span>
-          </text>
-          <text fg={theme.text}>
-            enter <span style={{ fg: theme.textMuted }}>confirm</span>
-          </text>
         </box>
       </box>
     </box>

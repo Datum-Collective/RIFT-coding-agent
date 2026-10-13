@@ -50,11 +50,6 @@ export function FormatError(input: unknown): string | undefined {
     return `MCP server "${data}" failed. Note, opencode does not support MCP authentication yet.`
   }
 
-  // AccountServiceError, AccountTransportError: TaggedErrorClass
-  if (isTaggedError(input, "AccountServiceError") || isTaggedError(input, "AccountTransportError")) {
-    return stringField(input, "message") ?? ""
-  }
-
   // ProviderModelNotFoundError: { providerID: string, modelID: string, suggestions?: string[] }
   const providerModelNotFound = configData(input, "ProviderModelNotFoundError")
   if (providerModelNotFound) {
@@ -64,8 +59,8 @@ export function FormatError(input: unknown): string | undefined {
     return [
       `Model not found: ${stringField(providerModelNotFound, "providerID")}/${stringField(providerModelNotFound, "modelID")}`,
       ...(suggestions.length ? ["Did you mean: " + suggestions.join(", ")] : []),
-      `Try: \`opencode models\` to list available models`,
-      `Or check your config (opencode.json) provider/model names`,
+      `Try: \`rift models\` to list available models`,
+      `Or check the provider and model names in rift.json`,
     ].join("\n")
   }
 

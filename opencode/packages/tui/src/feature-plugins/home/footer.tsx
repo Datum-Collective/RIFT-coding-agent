@@ -22,7 +22,16 @@ function Directory(props: { api: TuiPluginApi }) {
     return out
   })
 
-  return <Show when={dir()}>{(value) => <text fg={theme().textMuted}>{value()}</text>}</Show>
+  // One line, always: a long path loses its start, never wraps.
+  return (
+    <Show when={dir()}>
+      {(value) => (
+        <text fg={theme().border} wrapMode="none" flexShrink={1}>
+          {value().length > 48 ? "…" + value().slice(-47) : value()}
+        </text>
+      )}
+    </Show>
+  )
 }
 
 function Mcp(props: { api: TuiPluginApi }) {
@@ -57,7 +66,7 @@ function Version(props: { api: TuiPluginApi }) {
 
   return (
     <box flexShrink={0}>
-      <text fg={theme().textMuted}>{RiftVersion}</text>
+      <text fg={theme().border}>{RiftVersion}</text>
     </box>
   )
 }
@@ -66,7 +75,6 @@ function View(props: { api: TuiPluginApi }) {
   return (
     <box
       width="100%"
-      paddingTop={1}
       paddingBottom={1}
       paddingLeft={2}
       paddingRight={2}

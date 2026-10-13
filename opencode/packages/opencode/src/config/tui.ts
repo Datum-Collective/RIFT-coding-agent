@@ -2,7 +2,6 @@ export * as TuiConfig from "./tui"
 
 import path from "path"
 import { mergeDeep, unique } from "remeda"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Cause, Context, Effect, Fiber, Layer } from "effect"
 import { ConfigParse } from "@/config/parse"
@@ -264,7 +263,7 @@ const layer = Layer.effect(
 
 export const node = LayerNode.make({ service: Service, layer, deps: [Npm.node, FSUtil.node] })
 
-const { runPromise } = makeRuntime(Service, AppNodeBuilder.build(node))
+const { runPromise } = makeRuntime(Service, LayerNode.compile(node))
 
 export async function waitForDependencies() {
   await runPromise((svc) => svc.waitForDependencies())

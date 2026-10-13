@@ -87,29 +87,4 @@ describe("opencode read-only commands (smoke)", () => {
     60_000,
   )
 
-  // `stats` aggregates token usage from the session DB. Empty DB → all zeros.
-  cliIt.live(
-    "stats: exits 0",
-    ({ opencode }) =>
-      Effect.gen(function* () {
-        const r = yield* opencode.spawn(["stats"])
-        opencode.expectExit(r, 0, "stats")
-      }),
-    60_000,
-  )
-
-  // `db path` prints the DB file location. Under harness isolation the DB
-  // resolves to SQLite's `:memory:` (no on-disk pollution between tests);
-  // in production it'd be a path under OPENCODE_TEST_HOME / XDG_DATA_HOME.
-  // Accept either form — both prove the resolver ran without crashing.
-  cliIt.live(
-    "db path: exits 0 and prints a path or :memory:",
-    ({ opencode }) =>
-      Effect.gen(function* () {
-        const r = yield* opencode.spawn(["db", "path"])
-        opencode.expectExit(r, 0, "db path")
-        expect(r.stdout.trim()).toMatch(/^(:memory:|[/\\].+\.(db|sqlite|sqlite3))$/i)
-      }),
-    60_000,
-  )
 })

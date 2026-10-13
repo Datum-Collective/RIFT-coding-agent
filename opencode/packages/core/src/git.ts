@@ -190,15 +190,32 @@ const layer = Layer.effect(
 
       const cwd = path.dirname(dotgit)
       const git = run(cwd, proc)
-      const topLevel = yield* git(["rev-parse", "--show-toplevel"])
-      const gitDir = yield* git(["rev-parse", "--git-dir"])
-      const commonDir = yield* git(["rev-parse", "--git-common-dir"])
-      if (gitDir.exitCode !== 0 || commonDir.exitCode !== 0) return undefined
+      // One process instead of three: rev-parse prints each answer on its own line, in order.
+      const combined = yield* git(["rev-parse", "--show-toplevel", "--git-dir", "--git-common-dir"])
+      const lines = combined.text.split("\n").map((line) => line.trim()).filter(Boolean)
+      const answers =
+        combined.exitCode === 0 && lines.length === 3
+          ? { topLevel: lines[0], gitDir: lines[1], commonDir: lines[2], hasTopLevel: true }
+          : yield* Effect.gen(function* () {
+              // --show-toplevel fails outside a work tree (a bare repo, inside .git), which fails the
+              // combined call; ask separately so that case behaves exactly as before.
+              const topLevel = yield* git(["rev-parse", "--show-toplevel"])
+              const gitDir = yield* git(["rev-parse", "--git-dir"])
+              const commonDir = yield* git(["rev-parse", "--git-common-dir"])
+              if (gitDir.exitCode !== 0 || commonDir.exitCode !== 0) return undefined
+              return {
+                topLevel: topLevel.text,
+                gitDir: gitDir.text,
+                commonDir: commonDir.text,
+                hasTopLevel: topLevel.exitCode === 0,
+              }
+            })
+      if (!answers) return undefined
 
       return new Repository({
-        worktree: AbsolutePath.make(topLevel.exitCode === 0 ? resolvePath(cwd, topLevel.text) : cwd),
-        gitDirectory: AbsolutePath.make(resolvePath(cwd, gitDir.text)),
-        commonDirectory: AbsolutePath.make(resolvePath(cwd, commonDir.text)),
+        worktree: AbsolutePath.make(answers.hasTopLevel ? resolvePath(cwd, answers.topLevel) : cwd),
+        gitDirectory: AbsolutePath.make(resolvePath(cwd, answers.gitDir)),
+        commonDirectory: AbsolutePath.make(resolvePath(cwd, answers.commonDir)),
       })
     })
 

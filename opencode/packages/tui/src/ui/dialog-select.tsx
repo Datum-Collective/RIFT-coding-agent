@@ -7,7 +7,7 @@ import {
   type Renderable,
 } from "@opentui/core"
 import type { Binding } from "@opentui/keymap"
-import { useTheme, selectedForeground } from "../context/theme"
+import { useTheme } from "../context/theme"
 import { entries, filter, flatMap, groupBy, pipe } from "remeda"
 import { batch, createEffect, createMemo, createSignal, For, Show, type JSX, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -526,37 +526,29 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   function FooterAction(action: { item: VisibleAction }) {
     if (!isActionItem(action.item))
       return (
-        <text>
-          <span style={{ fg: theme.text }}>
-            <b>{action.item.title}</b>{" "}
-          </span>
-          <span style={{ fg: theme.textMuted }}>{action.item.label}</span>
+        <text fg={theme.textMuted}>
+          <span style={{ fg: theme.text }}>{action.item.label}</span> {action.item.title}
         </text>
       )
     const item = action.item
     const active = createMemo(() => isActionFocused(item))
     const disabled = createMemo(() => isActionDisabled(item))
-    const fg = selectedForeground(theme)
     return (
-      <box
-        flexDirection="row"
-        backgroundColor={active() ? theme.primary : RGBA.fromInts(0, 0, 0, 0)}
-        onMouseUp={() => triggerAction(item)}
-      >
-        <text
-          fg={disabled() ? theme.textMuted : active() ? fg : theme.text}
-          attributes={active() ? TextAttributes.BOLD : undefined}
-        >
+      <box flexDirection="row" onMouseUp={() => triggerAction(item)}>
+        <text fg={disabled() ? theme.border : active() ? theme.primary : theme.textMuted}>
+          <span style={{ fg: disabled() ? theme.border : active() ? theme.primary : theme.text, bold: active() }}>
+            {active() ? "›" : ""}
+            {item.label}
+          </span>{" "}
           {item.title}
         </text>
-        <text fg={disabled() ? theme.textMuted : active() ? fg : theme.textMuted}> {item.label}</text>
       </box>
     )
   }
 
   return (
     <box gap={1} paddingBottom={1} flexGrow={1}>
-      <box paddingLeft={4} paddingRight={4}>
+      <box paddingLeft={2} paddingRight={2}>
         <box flexDirection="row" justifyContent="space-between">
           {props.titleView ?? (
             <text fg={theme.text} attributes={TextAttributes.BOLD}>
@@ -564,12 +556,16 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
             </text>
           )}
           <text fg={theme.textMuted} onMouseUp={() => dialog.clear()}>
-            esc
+            <span style={{ fg: theme.text }}>esc</span> close
           </text>
         </box>
         <Show when={props.renderFilter !== false}>
-          <box paddingTop={1}>
+          <box paddingTop={1} flexDirection="row">
+            <text width={2} flexShrink={0} fg={theme.primary}>
+              ❯
+            </text>
             <input
+              flexGrow={1}
               onInput={(e) => {
                 if (props.locked) return
                 batch(() => {
@@ -590,7 +586,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                   input.focus()
                 }, 1)
               }}
-              placeholder={props.placeholder ?? "Search"}
+              placeholder={props.placeholder ?? "type to filter"}
               placeholderColor={theme.textMuted}
             />
           </box>
@@ -601,8 +597,8 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
           when={grouped().length > 0}
           fallback={
             props.emptyView ?? (
-              <box paddingLeft={4} paddingRight={4} paddingTop={1}>
-                <text fg={theme.textMuted}>No results found</text>
+              <box paddingLeft={4} paddingRight={2}>
+                <text fg={theme.textMuted}>nothing matches</text>
               </box>
             )
           }
@@ -623,7 +619,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                       <Show
                         when={options[0]?.categoryView}
                         fallback={
-                          <text fg={theme.accent} attributes={TextAttributes.BOLD}>
+                          <text fg={theme.textMuted} attributes={TextAttributes.BOLD}>
                             {category}
                           </text>
                         }
@@ -664,19 +660,18 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                             moveTo(index)
                           }}
                         >
+                          {/* The selected row carries a › and bold ink, not a filled bar. */}
                           <box
                             flexDirection="row"
-                            paddingLeft={current() || option.gutter ? 1 : 3}
-                            paddingRight={3}
-                            gap={1}
+                            paddingLeft={1}
+                            paddingRight={2}
                             backgroundColor={
-                              active()
-                                ? actionFocused()
-                                  ? theme.backgroundElement
-                                  : (option.bg ?? theme.primary)
-                                : RGBA.fromInts(0, 0, 0, 0)
+                              active() ? (option.bg ?? (actionFocused() ? RGBA.fromInts(0, 0, 0, 0) : theme.backgroundElement)) : RGBA.fromInts(0, 0, 0, 0)
                             }
                           >
+                            <text width={2} flexShrink={0} fg={actionFocused() ? theme.textMuted : theme.primary}>
+                              {active() ? "›" : ""}
+                            </text>
                             <Show when={!current() && option.margin}>
                               <box position="absolute" left={1} flexShrink={0}>
                                 {option.margin}
@@ -697,8 +692,8 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                           </box>
                           <For each={option.details}>
                             {(detail) => (
-                              <box paddingLeft={3} paddingRight={3}>
-                                <text fg={theme.textMuted} wrapMode="none">
+                              <box paddingLeft={4} paddingRight={2}>
+                                <text fg={theme.border} wrapMode="none">
                                   {Locale.truncateMiddle(detail, Math.max(1, Math.min(76, dimensions().width - 12)))}
                                 </text>
                               </box>
@@ -715,7 +710,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
         </Show>
       </box>
       <Show when={props.footer || visibleActions().length} fallback={<box flexShrink={0} />}>
-        <box paddingRight={2} paddingLeft={4} flexDirection="row" justifyContent="space-between" flexShrink={0}>
+        <box paddingRight={2} paddingLeft={2} flexDirection="row" justifyContent="space-between" flexShrink={0}>
           <box flexDirection="row" gap={2}>
             {props.footer}
             <For each={left()}>{(item) => <FooterAction item={item} />}</For>
@@ -743,21 +738,15 @@ function Option(props: {
   onMouseOver?: () => void
 }) {
   const { theme } = useTheme()
-  const fg = selectedForeground(theme)
   const text = createMemo(() => {
-    if (props.active && !props.muted) return fg
     if (props.muted && (props.active || props.current)) return theme.textMuted
+    if (props.active) return theme.text
     if (props.current) return theme.primary
-    return theme.text
+    return theme.textMuted
   })
 
   return (
     <>
-      <Show when={props.current && !props.gutter}>
-        <text flexShrink={0} fg={text()} marginRight={0}>
-          ●
-        </text>
-      </Show>
       <Show when={props.gutter}>
         <box flexShrink={0} marginRight={0}>
           {props.gutter?.()}
@@ -769,7 +758,6 @@ function Option(props: {
         attributes={props.active && !props.muted ? TextAttributes.BOLD : undefined}
         overflow="hidden"
         wrapMode="none"
-        paddingLeft={3}
       >
         {props.titleView ??
           (props.truncateTitle === false
@@ -777,13 +765,16 @@ function Option(props: {
             : props.truncateTitle === "left"
               ? Locale.truncateLeft(props.title, props.titleWidth ?? 61)
               : Locale.truncate(props.title, props.titleWidth ?? 61))}
+        <Show when={props.current && !props.gutter}>
+          <span style={{ fg: theme.primary }}> ✓</span>
+        </Show>
         <Show when={props.description}>
-          <span style={{ fg: props.active && !props.muted ? fg : theme.textMuted }}> {props.description}</span>
+          <span style={{ fg: theme.border }}>{"  "}{props.description}</span>
         </Show>
       </text>
       <Show when={props.footer}>
         <box flexShrink={0}>
-          <text fg={props.active && !props.muted ? fg : theme.textMuted}>{props.footer}</text>
+          <text fg={props.active && !props.muted ? theme.textMuted : theme.border}>{props.footer}</text>
         </box>
       </Show>
     </>

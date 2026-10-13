@@ -4,13 +4,11 @@ import { Effect } from "effect"
 import path from "path"
 import { pathToFileURL } from "url"
 import { Agent } from "../../src/agent/agent"
-import { Account } from "../../src/account/account"
 import { Auth } from "../../src/auth"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { Plugin } from "../../src/plugin"
 import { Provider } from "../../src/provider/provider"
 import { Skill } from "../../src/skill"
-import { AccountTest } from "../fake/account"
 import { AuthTest } from "../fake/auth"
 import { NpmTest } from "../fake/npm"
 import { ProviderTest } from "../fake/provider"
@@ -29,7 +27,6 @@ const provider = ProviderTest.fake()
 const it = testEffect(
   AppNodeBuilder.build(LayerNode.group([Agent.node, Plugin.node]), [
     [Auth.node, AuthTest.empty],
-    [Account.node, AccountTest.empty],
     [Npm.node, NpmTest.noop],
     [Provider.node, provider.layer],
     [Skill.node, SkillTest.empty],

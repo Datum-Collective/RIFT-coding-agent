@@ -1,6 +1,8 @@
 import path from "path"
 import { fileURLToPath } from "url"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Stream } from "effect"
+import { ChildProcess } from "effect/unstable/process"
+import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import * as Tool from "./tool"
@@ -9,16 +11,17 @@ import { BrowserSession, type ConsoleEntry, type PageState } from "../browser/se
 import { find, NOT_FOUND } from "../browser/discover"
 
 export const Parameters = Schema.Struct({
-  action: Schema.Literals(["open", "read", "text", "click", "type", "screenshot"]).annotate({
-    description: "What to do with the page",
+  action: Schema.Literals(["open", "read", "text", "click", "type", "screenshot", "external"]).annotate({
+    description: "Page action",
   }),
   url: Schema.optional(Schema.String).annotate({
-    description: "URL to load: http(s)://, or file:// for a local page. Required for `open`",
+    description:
+      "http(s):// or file:// url; needed for open and external",
   }),
   selector: Schema.optional(Schema.String).annotate({
-    description: "CSS selector. Required for `click` and `type`, optional for `text`",
+    description: "CSS selector",
   }),
-  value: Schema.optional(Schema.String).annotate({ description: "Text to enter. Required for `type`" }),
+  value: Schema.optional(Schema.String).annotate({ description: "Text for type" }),
 })
 
 type Params = Schema.Schema.Type<typeof Parameters>
@@ -88,19 +91,54 @@ function required(value: string | undefined, name: string, action: string) {
   return value
 }
 
+function externalCommand(url: string) {
+  if (process.platform === "darwin") return ChildProcess.make("open", [url])
+  if (process.platform === "win32") return ChildProcess.make("cmd", ["/c", "start", "", url])
+  return ChildProcess.make("xdg-open", [url])
+}
+
 export const BrowserTool = Tool.define(
   "browser",
   Effect.gen(function* () {
+    const spawner = yield* ChildProcessSpawner
+
     return {
       description: DESCRIPTION,
       parameters: Parameters,
       execute: (params: Params, ctx: Tool.Context) =>
         Effect.gen(function* () {
+          if (params.action === "external") {
+            // Hand a page to the user's own browser. Nothing is read back, so no controlled browser is needed.
+            const raw = required(params.url, "url", "external")
+            const url = raw.startsWith("http://") ? raw.replace("http://", "https://") : raw
+            if (!url.startsWith("https://")) throw new Error("URL must start with http:// or https://")
+            yield* ctx.ask({
+              permission: "browser_open",
+              patterns: [url],
+              always: ["*"],
+              metadata: { url, action: "external" },
+            })
+            const code = yield* Effect.scoped(
+              Effect.gen(function* () {
+                const handle = yield* spawner.spawn(externalCommand(url))
+                yield* Effect.forkScoped(Stream.runDrain(handle.all))
+                return yield* handle.exitCode
+              }),
+            )
+            if (code !== 0) throw new Error(`Unable to open browser (exit code ${code})`)
+            return reply({ title: `Browser external ${url}`, output: `Opened ${url} in the default browser.` })
+          }
+
           if (!find()) throw new Error(NOT_FOUND)
 
           // Driving a browser can reach anything on the network, so it asks the same way the
           // URL-opening tool does rather than quietly acquiring a new capability.
-          const target = params.action === "open" ? required(params.url, "url", "open") : undefined
+          const target =
+            params.action === "open"
+              ? required(params.url, "url", "open")
+              : params.action === "screenshot"
+                ? params.url
+                : undefined
           if (target?.startsWith("file://")) {
             // A local page is a file read, so it asks exactly like the read tool does.
             const file = fileURLToPath(target)
@@ -171,12 +209,15 @@ export const BrowserTool = Tool.define(
               })
             }
             case "screenshot": {
+              // Loading and capturing in one call saves the agent a whole model turn per look.
+              const opened = target ? yield* Effect.promise(() => browser.navigate(target)) : undefined
               const data = yield* Effect.promise(() => browser.screenshot())
-              const state = yield* Effect.promise(() => browser.read())
+              const state = opened ?? (yield* Effect.promise(() => browser.read()))
+              const captured = `Captured a PNG of ${state.url} (${Math.round(data.length / 1024)} KB base64).`
               return reply({
                 title: `Browser screenshot ${state.url}`,
-                output: `Captured a PNG of ${state.url} (${Math.round(data.length / 1024)} KB base64).`,
-                metadata: { url: state.url },
+                output: opened ? [describePage(opened), captured].join("\n") : captured,
+                metadata: { url: state.url, status: opened?.status, console: opened?.console },
                 attachments: [
                   {
                     type: "file" as const,

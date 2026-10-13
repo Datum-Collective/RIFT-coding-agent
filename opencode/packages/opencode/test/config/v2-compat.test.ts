@@ -8,13 +8,11 @@ import { Npm } from "@opencode-ai/core/npm"
 import { Effect, Layer, Logger } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import path from "path"
-import { Account } from "../../src/account/account"
 import { Auth } from "../../src/auth"
 import { Config } from "../../src/config/config"
 import { ConfigParse } from "../../src/config/parse"
 import { ConfigV2Compat } from "../../src/config/v2-compat"
 import { Env } from "../../src/env"
-import { AccountTest } from "../fake/account"
 import { AuthTest } from "../fake/auth"
 import { NpmTest } from "../fake/npm"
 import { TestInstance } from "../fixture/fixture"
@@ -27,7 +25,6 @@ const lower = (input: unknown) => ConfigParse.schema(ConfigV1.Info, ConfigV2Comp
 const it = testEffect(
   LayerNode.compile(LayerNode.group([Config.node, FSUtil.node, Env.node, CrossSpawnSpawner.node]), [
     [Auth.node, AuthTest.empty],
-    [Account.node, AccountTest.empty],
     [Npm.node, NpmTest.noop],
     [
       httpClient,

@@ -658,15 +658,15 @@ export type Pty = {
 
 export type Todo = {
   /**
-   * Brief description of the task
+   * What to do
    */
   content: string
   /**
-   * Current status of the task: pending, in_progress, completed, cancelled
+   * pending, in_progress, completed or cancelled
    */
   status: string
   /**
-   * Priority level of the task: high, medium, low
+   * high, medium or low
    */
   priority: string
 }
@@ -691,12 +691,12 @@ export type EngineeringGraphCheck = {
 
 export type EngineeringGraphNode = {
   /**
-   * Stable id for this node, e.g. 'auth.api'
+   * Stable id, e.g. 'auth.api'
    */
   id: string
   parent_id?: string
   /**
-   * Short human-readable name for this node
+   * Short name
    */
   title: string
   status: "not_started" | "in_progress" | "blocked" | "testing" | "done" | "failed"
@@ -705,19 +705,19 @@ export type EngineeringGraphNode = {
    */
   owner: string
   /**
-   * Ids of nodes this node depends on
+   * Ids this node depends on
    */
   dependencies: Array<string>
   /**
-   * Files that implement this node
+   * Implementing files
    */
   files: Array<string>
   /**
-   * How RIFT should prove this node works
+   * How RIFT proves this node
    */
   checks: Array<EngineeringGraphCheck>
   /**
-   * Key decisions made for this node
+   * Key decisions
    */
   decisions: Array<string>
 }
@@ -2009,6 +2009,7 @@ export type Config = {
   verify_timeout_ms?: number
   verify_scope_warn_files?: number
   verify_browser_url?: string
+  task_state?: boolean
   verify_claims?: boolean
   verify_claims_model?: string
   default_agent?: string
@@ -2208,16 +2209,6 @@ export type Provider = {
 
 export type ExperimentalCapabilities = {
   backgroundSubagents: boolean
-}
-
-export type ConsoleState = {
-  consoleManagedProviders: Array<string>
-  activeOrgName?: string
-  switchableOrgCount: number
-}
-
-export type EffectHttpApiErrorInternalServerError = {
-  _tag: "InternalServerError"
 }
 
 export type ToolListItem = {
@@ -2492,21 +2483,46 @@ export type McpStatusNeedsClientRegistration = {
   error: string
 }
 
+export type McpStatusPending = {
+  status: "pending"
+}
+
+export type McpStatusConnecting = {
+  status: "connecting"
+}
+
+export type McpStatusNeedsApproval = {
+  status: "needs_approval"
+}
+
 export type McpStatus =
   | McpStatusConnected
   | McpStatusDisabled
   | McpStatusFailed
   | McpStatusNeedsAuth
   | McpStatusNeedsClientRegistration
+  | McpStatusPending
+  | McpStatusConnecting
+  | McpStatusNeedsApproval
 
-export type McpUnsupportedOAuthError = {
-  error: string
+export type McpServer = {
+  name: string
+  scope: "user" | "project" | "local" | "runtime"
+  type: "local" | "remote"
+  target: string
+  status: McpStatus
+  tools: Array<string>
+  auth?: "authenticated" | "expired" | "not_authenticated"
 }
 
 export type McpServerNotFoundError = {
   _tag: "McpServerNotFoundError"
   name: string
   message: string
+}
+
+export type McpUnsupportedOAuthError = {
+  error: string
 }
 
 export type Project = {
@@ -2633,6 +2649,10 @@ export type NotFoundError = {
   data: {
     message: string
   }
+}
+
+export type EffectHttpApiErrorInternalServerError = {
+  _tag: "InternalServerError"
 }
 
 export type TextPartInput = {
@@ -7640,104 +7660,6 @@ export type ExperimentalCapabilitiesGetResponses = {
 export type ExperimentalCapabilitiesGetResponse =
   ExperimentalCapabilitiesGetResponses[keyof ExperimentalCapabilitiesGetResponses]
 
-export type ExperimentalConsoleGetData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/console"
-}
-
-export type ExperimentalConsoleGetErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-  /**
-   * InternalServerError
-   */
-  500: EffectHttpApiErrorInternalServerError
-}
-
-export type ExperimentalConsoleGetError = ExperimentalConsoleGetErrors[keyof ExperimentalConsoleGetErrors]
-
-export type ExperimentalConsoleGetResponses = {
-  /**
-   * Active Console provider metadata
-   */
-  200: ConsoleState
-}
-
-export type ExperimentalConsoleGetResponse = ExperimentalConsoleGetResponses[keyof ExperimentalConsoleGetResponses]
-
-export type ExperimentalConsoleListOrgsData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/console/orgs"
-}
-
-export type ExperimentalConsoleListOrgsErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-  /**
-   * InternalServerError
-   */
-  500: EffectHttpApiErrorInternalServerError
-}
-
-export type ExperimentalConsoleListOrgsError =
-  ExperimentalConsoleListOrgsErrors[keyof ExperimentalConsoleListOrgsErrors]
-
-export type ExperimentalConsoleListOrgsResponses = {
-  /**
-   * Switchable Console orgs
-   */
-  200: {
-    orgs: Array<{
-      accountID: string
-      accountEmail: string
-      accountUrl: string
-      orgID: string
-      orgName: string
-      active: boolean
-    }>
-  }
-}
-
-export type ExperimentalConsoleListOrgsResponse =
-  ExperimentalConsoleListOrgsResponses[keyof ExperimentalConsoleListOrgsResponses]
-
-export type ExperimentalConsoleSwitchOrgData = {
-  body?: {
-    accountID: string
-    orgID: string
-  }
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/console/switch"
-}
-
-export type ExperimentalConsoleSwitchOrgResponses = {
-  /**
-   * Switch success
-   */
-  200: boolean
-}
-
-export type ExperimentalConsoleSwitchOrgResponse =
-  ExperimentalConsoleSwitchOrgResponses[keyof ExperimentalConsoleSwitchOrgResponses]
-
 export type ToolListData = {
   body?: never
   path?: never
@@ -8606,6 +8528,71 @@ export type McpAddResponses = {
 }
 
 export type McpAddResponse = McpAddResponses[keyof McpAddResponses]
+
+export type McpServersData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    start?: "true" | "false"
+  }
+  url: "/mcp/servers"
+}
+
+export type McpServersErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type McpServersError = McpServersErrors[keyof McpServersErrors]
+
+export type McpServersResponses = {
+  /**
+   * MCP servers with scope, status and tools
+   */
+  200: Array<McpServer>
+}
+
+export type McpServersResponse = McpServersResponses[keyof McpServersResponses]
+
+export type McpApproveData = {
+  body?: {
+    decision: "once" | "always" | "deny"
+  }
+  path: {
+    name: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/mcp/{name}/approve"
+}
+
+export type McpApproveErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * McpServerNotFoundError
+   */
+  404: McpServerNotFoundError
+}
+
+export type McpApproveError = McpApproveErrors[keyof McpApproveErrors]
+
+export type McpApproveResponses = {
+  /**
+   * Status after the decision
+   */
+  200: McpStatus
+}
+
+export type McpApproveResponse = McpApproveResponses[keyof McpApproveResponses]
 
 export type McpAuthRemoveData = {
   body?: never

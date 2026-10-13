@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import { AccountTransportError } from "../../src/account/schema"
 import { FormatError } from "../../src/cli/error"
 import { UI } from "../../src/cli/ui"
 
@@ -51,19 +50,6 @@ describe("cli.error", () => {
     expect(FormatError({ _tag: "ConfigJsonError", ...data })).toBe(expected)
   })
 
-  test("formats account transport errors clearly", () => {
-    const error = new AccountTransportError({
-      method: "POST",
-      url: "https://console.opencode.ai/auth/device/code",
-    })
-
-    const formatted = FormatError(error)
-
-    expect(formatted).toContain("Could not reach POST https://console.opencode.ai/auth/device/code.")
-    expect(formatted).toContain("This failed before the server returned an HTTP response.")
-    expect(formatted).toContain("Check your network, proxy, or VPN configuration and try again.")
-  })
-
   test("formats legacy and tagged provider model errors the same way", () => {
     const data = {
       providerID: "anthropic",
@@ -73,8 +59,8 @@ describe("cli.error", () => {
     const expected = [
       "Model not found: anthropic/claude-sonet-4",
       "Did you mean: claude-sonnet-4",
-      "Try: `opencode models` to list available models",
-      "Or check your config (opencode.json) provider/model names",
+      "Try: `rift models` to list available models",
+      "Or check the provider and model names in rift.json",
     ].join("\n")
 
     expect(FormatError({ name: "ProviderModelNotFoundError", data })).toBe(expected)

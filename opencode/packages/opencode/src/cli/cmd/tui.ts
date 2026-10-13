@@ -123,76 +123,10 @@ export const TuiThreadCommand = cmd({
         type: "boolean",
         hidden: true,
         default: false,
-      })
-      .option("mini", {
-        type: "boolean",
-        describe: "start the minimal interactive interface",
-        default: false,
-      })
-      .option("replay", {
-        type: "boolean",
-        hidden: true,
-      })
-      .option("no-replay", {
-        type: "boolean",
-        describe: "disable mini session history replay on resume and after resize",
-      })
-      .option("replay-limit", {
-        type: "number",
-        describe: "cap visible mini replay to the newest N messages",
-      })
-      .option("demo", {
-        type: "boolean",
-        hidden: true,
       }),
   handler: async (args) => {
-    if (args.replay === true) {
-      UI.error("--replay is not supported; replay is enabled by default")
-      process.exitCode = 1
-      return
-    }
-    const noReplay = args.replay === false || args.noReplay === true
-
-    if (args.mini) {
-      const network = ["--port", "--hostname", "--mdns", "--no-mdns", "--mdns-domain", "--cors"].find((option) =>
-        process.argv.some((arg) => arg === option || arg.startsWith(option + "=")),
-      )
-      if (network) {
-        UI.error(`${network} cannot be used with --mini`)
-        process.exitCode = 1
-        return
-      }
-
-      const { runMini } = await import("./run")
-      await runMini({
-        directory: resolveThreadDirectory(args.project),
-        continue: args.continue,
-        session: args.session,
-        fork: args.fork,
-        model: args.model,
-        agent: args.agent,
-        prompt: args.prompt,
-        replay: noReplay ? false : undefined,
-        replayLimit: args.replayLimit,
-        demo: args.demo,
-      })
-      return
-    }
-
-    const unsupported = [
-      ["--no-replay", noReplay],
-      ["--replay-limit", args.replayLimit !== undefined],
-      ["--demo", args.demo !== undefined],
-    ].find((entry) => entry[1])?.[0]
-    if (unsupported) {
-      UI.error(`${unsupported} requires --mini`)
-      process.exitCode = 1
-      return
-    }
-
     const unguard = win32InstallCtrlCGuard()
     try {
-      const { TuiConfig } = await import("@/config/tui")
       if (args.fork && !args.continue && !args.session) {
         UI.error("--fork requires --continue or --session")
         process.exitCode = 1
@@ -211,6 +145,8 @@ export const TuiThreadCommand = cmd({
       }
       const cwd = Filesystem.resolve(process.cwd())
 
+      // The worker boots the engine on its own thread. Start it before anything else is imported so
+      // that work overlaps with loading the TUI modules on this one.
       const worker = new Worker(file, {
         env: Object.fromEntries(
           Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
@@ -230,6 +166,13 @@ export const TuiThreadCommand = cmd({
         await withTimeout(client.call("shutdown", undefined), 5000).catch(() => {})
         worker.terminate()
       }
+
+      const [{ TuiConfig }, { Effect }, { run }, { createLegacyTuiPluginHost }] = await Promise.all([
+        import("@/config/tui"),
+        import("effect"),
+        import("../tui/layer"),
+        import("@/plugin/tui/runtime"),
+      ])
 
       const prompt = await input(args.prompt)
       const config = await TuiConfig.get()
@@ -271,9 +214,6 @@ export const TuiThreadCommand = cmd({
       }, 1000).unref?.()
 
       try {
-        const { Effect } = await import("effect")
-        const { run } = await import("../tui/layer")
-        const { createLegacyTuiPluginHost } = await import("@/plugin/tui/runtime")
         await Effect.runPromise(
           run({
             url: transport.url,

@@ -209,7 +209,7 @@ it.instance(
         cwd: "plugins/sub",
       })
 
-      expect((yield* mcp.tools())["rel-cwd_current_directory"]?.def.description).toBe(
+      expect((yield* mcp.tools())["mcp__rel-cwd__current_directory"]?.def.description).toBe(
         path.resolve(test.directory, "plugins/sub"),
       )
     }),
@@ -223,16 +223,16 @@ it.instance("tools() reuses cached definitions until a protocol notification", (
     yield* mcp.add("cache-server", remote(server.url))
     server.state.tools = [{ name: "next_tool", inputSchema: { type: "object", properties: {} } }]
 
-    expect(Object.keys(yield* mcp.tools())).toEqual(["cache-server_test_tool"])
+    expect(Object.keys(yield* mcp.tools())).toEqual(["mcp__cache-server__test_tool"])
     yield* Effect.promise(server.sendToolListChanged)
     yield* pollWithTimeout(
       Effect.gen(function* () {
         const keys = Object.keys(yield* mcp.tools())
-        return keys.includes("cache-server_next_tool") ? keys : undefined
+        return keys.includes("mcp__cache-server__next_tool") ? keys : undefined
       }),
       "tool cache did not refresh",
     )
-    expect(Object.keys(yield* mcp.tools())).toEqual(["cache-server_next_tool"])
+    expect(Object.keys(yield* mcp.tools())).toEqual(["mcp__cache-server__next_tool"])
   }),
 )
 
@@ -245,7 +245,7 @@ it.instance("instructions() returns non-empty connected server instructions with
     yield* mcp.add("blank-server", remote(blank.url))
 
     expect(yield* mcp.instructions()).toEqual([
-      { name: "guide-server", instructions: "Use lookup before mutate.", tools: ["guide-server_test_tool"] },
+      { name: "guide-server", instructions: "Use lookup before mutate.", tools: ["mcp__guide-server__test_tool"] },
     ])
     yield* mcp.disconnect("guide-server")
     expect(yield* mcp.instructions()).toEqual([])
@@ -274,7 +274,7 @@ it.instance("follows cursors when listing tools, prompts, resources, and templat
     const mcp = yield* MCP.Service
     yield* mcp.add("paged-server", remote(server.url))
 
-    expect(Object.keys(yield* mcp.tools())).toEqual(["paged-server_tool-one", "paged-server_tool-two"])
+    expect(Object.keys(yield* mcp.tools())).toEqual(["mcp__paged-server__tool-one", "mcp__paged-server__tool-two"])
     expect(Object.keys(yield* mcp.prompts())).toEqual(["paged-server:prompt-one", "paged-server:prompt-two"])
     expect(Object.keys(yield* mcp.resources())).toEqual(["paged-server:test://one", "paged-server:test://two"])
     expect(Object.keys(yield* mcp.resourceTemplates())).toEqual([
@@ -323,7 +323,7 @@ it.instance("disconnect removes protocol data and reconnect establishes a new se
     yield* Effect.promise(server.restart)
     yield* mcp.connect("reconnect-server")
     expect((yield* mcp.status())["reconnect-server"]?.status).toBe("connected")
-    expect(Object.keys(yield* mcp.tools())).toEqual(["reconnect-server_test_tool"])
+    expect(Object.keys(yield* mcp.tools())).toEqual(["mcp__reconnect-server__test_tool"])
   }),
 )
 
@@ -340,7 +340,7 @@ it.instance("add() closes the old protocol session when replacing a server", () 
       "replaced HTTP session was not aborted",
     )
     expect(second.state.aborted).toBe(0)
-    expect(Object.keys(yield* mcp.tools())).toEqual(["replace-server_test_tool"])
+    expect(Object.keys(yield* mcp.tools())).toEqual(["mcp__replace-server__test_tool"])
   }),
 )
 
@@ -356,7 +356,7 @@ it.instance("one failed server does not affect another connected server", () =>
 
     expect((yield* mcp.status())["good-server"]?.status).toBe("connected")
     expect((yield* mcp.status())["bad-server"]?.status).toBe("failed")
-    expect(Object.keys(yield* mcp.tools())).toEqual(["good-server_good_tool"])
+    expect(Object.keys(yield* mcp.tools())).toEqual(["mcp__good-server__good_tool"])
   }),
 )
 
@@ -374,7 +374,7 @@ it.instance("falls back when output schema refs fail SDK tool discovery", () =>
     const result = yield* mcp.add("schema-server", remote(server.url))
 
     expect(statusName(result.status, "schema-server")).toBe("connected")
-    expect(Object.keys(yield* mcp.tools())).toEqual(["schema-server_render_screen"])
+    expect(Object.keys(yield* mcp.tools())).toEqual(["mcp__schema-server__render_screen"])
   }),
 )
 
@@ -445,7 +445,7 @@ it.instance("connects resource-only, prompt-only, and tools-only servers", () =>
     yield* mcp.add("prompt-only", remote(prompts.url))
     yield* mcp.add("tools-only", remote(tools.url))
 
-    expect(Object.keys(yield* mcp.tools())).toEqual(["tools-only_test_tool"])
+    expect(Object.keys(yield* mcp.tools())).toEqual(["mcp__tools-only__test_tool"])
     expect(Object.keys(yield* mcp.prompts())).toEqual(["prompt-only:review"])
     expect(Object.keys(yield* mcp.resources())).toEqual(["resource-only:docs://readme"])
   }),
@@ -490,7 +490,7 @@ it.instance("tools() prefixes sanitized server and tool names", () =>
     const mcp = yield* MCP.Service
     yield* mcp.add("my.special-server", remote(server.url))
 
-    expect(Object.keys(yield* mcp.tools())).toEqual(["my_special-server_tool-a", "my_special-server_tool_b"])
+    expect(Object.keys(yield* mcp.tools())).toEqual(["mcp__my_special-server__tool-a", "mcp__my_special-server__tool_b"])
   }),
 )
 

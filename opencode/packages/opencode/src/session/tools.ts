@@ -4,6 +4,7 @@ import { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
 import { MCP } from "@/mcp"
 import { McpCatalog } from "@/mcp/catalog"
+import { McpSearch } from "@/mcp/search"
 import { Permission } from "@/permission"
 import { Tool } from "@/tool/tool"
 import { ToolJsonSchema } from "@/tool/json-schema"
@@ -30,6 +31,8 @@ const MCP_RESOURCE_TOOLS = {
   read: "read_mcp_resource",
 } as const
 const MAX_MCP_RESOURCE_BLOB_BYTES = 10 * 1024 * 1024
+/** One MCP tool result is capped near 25k tokens; the rest is saved to a file the model can read. */
+const MAX_MCP_RESULT_BYTES = 100 * 1024
 const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
   "application/pdf",
   "image/gif",
@@ -37,6 +40,46 @@ const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
   "image/png",
   "image/webp",
 ])
+
+/**
+ * The MCP tools for one step. Small catalogues go out in full. Past the threshold only the tools
+ * an earlier `mcp_search` loaded go out in full, and the rest are listed by name in `mcp_search`.
+ */
+const mcpCatalog = Effect.fnUntraced(function* (input: {
+  agent: Agent.Info
+  session: Session.Info
+  messages?: SessionV1.WithParts[]
+}) {
+  const mcp = yield* MCP.Service
+  const all = yield* mcp.tools()
+  const denied = Permission.disabled(
+    Object.keys(all),
+    Permission.merge(input.agent.permission, input.session.permission ?? []),
+  )
+  const allowed = Object.entries(all).filter(([key]) => !denied.has(key))
+  const connecting = Object.entries(yield* mcp.status())
+    .filter(([, status]) => status.status === "connecting")
+    .map(([name]) => name)
+  const defer = McpSearch.shouldDefer(allowed.map(([, entry]) => entry.def))
+  if (!defer && !connecting.length) return { full: allowed, deferred: [] as string[], connecting, search: false }
+  if (!defer) return { full: allowed, deferred: [] as string[], connecting, search: true }
+  const loaded = McpSearch.loaded(input.messages ?? [])
+  return {
+    full: allowed.filter(([key]) => loaded.has(key)),
+    deferred: allowed.filter(([key]) => !loaded.has(key)).map(([key]) => key),
+    connecting,
+    search: true,
+  }
+})
+
+const mcpSearchSchema = {
+  type: "object",
+  properties: {
+    query: { type: "string", description: 'Keywords, or "select:<full name>,<full name>"' },
+  },
+  required: ["query"],
+  additionalProperties: false,
+} as const
 
 export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
@@ -385,9 +428,32 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     })
   }
 
-  if (flags.experimentalCodeMode) return tools
+  const catalog = yield* mcpCatalog(input)
+  if (catalog.search) {
+    tools[McpSearch.TOOL] = tool({
+      description: McpSearch.description(catalog.deferred, catalog.connecting),
+      inputSchema: jsonSchema(ProviderTransform.schema(input.model, structuredClone(mcpSearchSchema) as any)),
+      execute: (args, opts) =>
+        run.promise(
+          Effect.gen(function* () {
+            const query = String(toRecord(args).query ?? "")
+            // A server that is still starting may hold the tool being asked for.
+            yield* mcp.settle()
+            const candidates = Object.entries(yield* mcp.tools()).map(([name, entry]) => ({ name, def: entry.def }))
+            const found = McpSearch.find(query, candidates)
+            const output = {
+              title: query,
+              metadata: { loaded: found.map((item) => item.name) },
+              output: McpSearch.render(found),
+            }
+            if (opts.abortSignal?.aborted) yield* input.processor.completeToolCall(opts.toolCallId, output)
+            return output
+          }),
+        ),
+    })
+  }
 
-  for (const [key, entry] of Object.entries(yield* mcp.tools())) {
+  for (const [key, entry] of catalog.full) {
     const item = McpCatalog.convertTool(entry.def, entry.client, entry.timeout)
     const execute = item.execute
     if (!execute) continue
@@ -461,7 +527,11 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             }
           }
 
-          const truncated = yield* truncate.output(textParts.join("\n\n"), {}, input.agent)
+          const truncated = yield* truncate.output(
+            textParts.join("\n\n"),
+            { maxBytes: MAX_MCP_RESULT_BYTES, maxLines: Number.MAX_SAFE_INTEGER },
+            input.agent,
+          )
           const metadata = {
             ...result.metadata,
             truncated: truncated.truncated,
@@ -579,18 +649,21 @@ export const definitions = Effect.fn("SessionTools.definitions")(function* (inpu
     })
   }
 
-  if (!flags.experimentalCodeMode) {
-    for (const [key, entry] of Object.entries(yield* mcp.tools())) {
-      const converted = McpCatalog.convertTool(entry.def, entry.client, entry.timeout)
-      const schema = yield* Effect.promise(() => Promise.resolve(asSchema(converted.inputSchema).jsonSchema))
-      const transformed = ProviderTransform.schema(input.model, { ...schema, properties: schema.properties ?? {} })
-      tools[key] = tool({
-        description: converted.description,
-        inputSchema: jsonSchema(transformed),
-      })
-    }
+  const catalog = yield* mcpCatalog(input)
+  if (catalog.search)
+    tools[McpSearch.TOOL] = tool({
+      description: McpSearch.description(catalog.deferred, catalog.connecting),
+      inputSchema: jsonSchema(ProviderTransform.schema(input.model, structuredClone(mcpSearchSchema) as any)),
+    })
+  for (const [key, entry] of catalog.full) {
+    const converted = McpCatalog.convertTool(entry.def, entry.client, entry.timeout)
+    const schema = yield* Effect.promise(() => Promise.resolve(asSchema(converted.inputSchema).jsonSchema))
+    const transformed = ProviderTransform.schema(input.model, { ...schema, properties: schema.properties ?? {} })
+    tools[key] = tool({
+      description: converted.description,
+      inputSchema: jsonSchema(transformed),
+    })
   }
-
   return tools
 })
 

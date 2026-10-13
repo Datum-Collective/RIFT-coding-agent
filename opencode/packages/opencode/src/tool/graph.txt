@@ -1,26 +1,5 @@
-Model the software being built as a live engineering graph, shown to the user beside the conversation. Every node is a requirement, and RIFT proves each one itself.
-
-## Shape
-- Exactly one root node with no `parent_id` (the product).
-- Feature nodes as children of the root (e.g. "Authentication", "Dashboard", "Deployment").
-- Requirement nodes beneath features, stated as something that can be proven (e.g. "Users can upload a 500MB video", "API", "Tests").
-- Always pass the full current node list: this call replaces the whole graph.
-
-## Evidence: you declare, RIFT proves
-You cannot mark anything as proven. For each node, declare in `checks` how it should be proven. After your turn RIFT runs every check and records the real result (exit code, HTTP status, console errors, screenshot) as evidence under that node. RIFT also records an Implementation result from the node's `files`.
-
-Each check has a `kind` and either a `command` or a `url`:
-- `command` (exits 0 when the check passes): typecheck, unit, integration, static, security, load. Set `cwd` to an absolute path when the project is not the working directory.
-- `url`: browser (loads the page and fails on console errors), screenshot (loads and captures it), http and production (fail on a 4xx/5xx response). `file://` works for local pages.
-
-Prefer narrow checks that prove this node: `bun test src/upload.test.ts` over the whole suite.
-
-## When to use
-On any multi-step build, create the tree as soon as its shape is known, then keep `status`, `files`, `checks` and `decisions` current as you work.
-
-## Fields per node
-- `status`: not_started, in_progress, blocked, testing, done, failed
-- `dependencies`: ids of other nodes this node is blocked on
-- `files`: files that implement this node
-- `checks`: how RIFT should prove this node works
-- `decisions`: key decisions made while working on this node
+Maintain the live engineering graph the user watches. You declare how each node is proven; RIFT runs the checks and records the evidence. You cannot mark a node proven.
+- One root node (no parent_id), features beneath it, provable requirements beneath those. Each call replaces the whole graph: pass every node.
+- Node status: not_started, in_progress, blocked, testing, done, failed.
+- Check kinds with a `command` (pass on exit 0; set cwd outside the working directory): typecheck, unit, integration, static, security, load. With a `url`: browser (fails on console errors), screenshot, http and production (fail on 4xx/5xx); file:// works.
+- Prefer narrow checks over the whole suite. Create the tree early on multi-step builds and keep it current.

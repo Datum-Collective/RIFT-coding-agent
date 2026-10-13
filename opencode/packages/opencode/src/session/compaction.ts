@@ -22,6 +22,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { buildPrompt } from "@opencode-ai/core/session/compaction"
 import { SessionCompactionEvent } from "@opencode-ai/schema/session-compaction-event"
+import { TaskState } from "./task-state"
 
 export const Event = SessionCompactionEvent
 
@@ -86,7 +87,8 @@ const serialize = (message: SessionV1.WithParts) => {
 
 function summaryText(message: SessionV1.WithParts) {
   const text = message.parts
-    .filter((part): part is SessionV1.TextPart => part.type === "text")
+    // RIFT's handoff is re-derived at every compaction, so it never feeds the next summary.
+    .filter((part): part is SessionV1.TextPart => part.type === "text" && !part.metadata?.[TaskState.METADATA_KEY])
     .map((part) => part.text.trim())
     .filter(Boolean)
     .join("\n\n")
@@ -199,6 +201,7 @@ const layer = Layer.effect(
     const provider = yield* Provider.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
+    const taskState = yield* TaskState.Service
 
     const isOverflow = Effect.fn("SessionCompaction.isOverflow")(function* (input: {
       tokens: SessionV1.Assistant["tokens"]
@@ -458,6 +461,22 @@ const layer = Layer.effect(
         return "stop"
       }
 
+      // Only a summary that exists gets a checkpoint; per-turn saves already cover a failed attempt.
+      const task = processor.message.error
+        ? undefined
+        : yield* taskState.save({ sessionID: input.sessionID, checkpoint: msg.id })
+      if (task) {
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          messageID: processor.message.id,
+          sessionID: input.sessionID,
+          type: "text",
+          synthetic: true,
+          text: TaskState.handoff(task),
+          metadata: { [TaskState.METADATA_KEY]: true },
+        })
+      }
+
       if (compactionPart && selected.tail_start_id && compactionPart.tail_start_id !== selected.tail_start_id) {
         yield* session.updatePart({
           ...compactionPart,
@@ -602,6 +621,7 @@ export const node = LayerNode.make({
     Provider.node,
     EventV2Bridge.node,
     RuntimeFlags.node,
+    TaskState.node,
   ],
 })
 

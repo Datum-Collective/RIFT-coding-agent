@@ -5,7 +5,11 @@ import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "e
 import { McpServerNotFoundError } from "../errors"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
-import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware/workspace-routing"
+import {
+  WorkspaceRoutingMiddleware,
+  WorkspaceRoutingQuery,
+  WorkspaceRoutingQueryFields,
+} from "../middleware/workspace-routing"
 import { described } from "./metadata"
 
 export const AddPayload = Schema.Struct({
@@ -21,6 +25,11 @@ export const AuthStartResponse = Schema.Struct({
 export const AuthCallbackPayload = Schema.Struct({
   code: Schema.String,
 })
+export const ServersQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  start: Schema.optional(Schema.Literals(["true", "false"])),
+})
+export const ApprovePayload = Schema.Struct({ decision: MCP.Approval })
 export const AuthRemoveResponse = Schema.Struct({
   success: Schema.Literal(true),
 })
@@ -31,6 +40,8 @@ export class UnsupportedOAuthError extends Schema.ErrorClass<UnsupportedOAuthErr
 
 export const McpPaths = {
   status: "/mcp",
+  servers: "/mcp/servers",
+  approve: "/mcp/:name/approve",
   auth: "/mcp/:name/auth",
   authCallback: "/mcp/:name/auth/callback",
   authAuthenticate: "/mcp/:name/auth/authenticate",
@@ -50,6 +61,29 @@ export const McpApi = HttpApi.make("mcp")
             identifier: "mcp.status",
             summary: "Get MCP status",
             description: "Get the status of all Model Context Protocol (MCP) servers.",
+          }),
+        ),
+        HttpApiEndpoint.get("servers", McpPaths.servers, {
+          query: ServersQuery,
+          success: described(Schema.Array(MCP.Server), "MCP servers with scope, status and tools"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "mcp.servers",
+            summary: "List MCP servers",
+            description: "List configured MCP servers with scope, status, auth and tool names. With start=true, also starts servers that have not started.",
+          }),
+        ),
+        HttpApiEndpoint.post("approve", McpPaths.approve, {
+          params: { name: Schema.String },
+          query: WorkspaceRoutingQuery,
+          payload: ApprovePayload,
+          success: described(MCP.Status, "Status after the decision"),
+          error: McpServerNotFoundError,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "mcp.approve",
+            summary: "Approve MCP server",
+            description: "Allow (once or always) or deny a project .mcp.json server.",
           }),
         ),
         HttpApiEndpoint.post("add", McpPaths.status, {
