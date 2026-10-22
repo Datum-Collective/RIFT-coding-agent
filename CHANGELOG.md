@@ -6,6 +6,7 @@ Release notes for RIFT versions, newest first. Entries for v0.1.10 to v0.1.13 ar
 
 ### Fixed
 - **The graph in the side panel builds while the agent works, not at the end.** It was drawn from the plan, the session diff and `graphwrite`. The diff only arrives after the turn, and models rarely write a plan or call `graphwrite`, so the panel stayed empty until the very end. It now shows the task the moment work starts, reads edited files from the edit tools as they run, credits each edit to the todo that was active when it happened, and groups files by directory when there is no plan. When the agent has declared a graph, edits it does not mention yet appear under it.
+- **"Invalid prompt: The messages do not match the ModelMessage[] schema" can no longer come from RIFT's own markers.** v0.2.1 stopped one route for them into the provider options. The request is now also checked just before it goes to the SDK, and anything in `providerOptions` that is not a record is dropped, so a marker added later cannot end a session either. A TUI started before v0.2.1 keeps its old code until it is restarted.
 
 ## v0.2.1 (2026-10-22)
 

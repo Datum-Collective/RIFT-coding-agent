@@ -462,6 +462,48 @@ function mapProviderOptions(
   })
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+/** Provider options are `{ [provider]: { ...settings } }`; anything else makes the SDK reject the whole prompt. */
+function onlyRecords(options: unknown) {
+  if (!isRecord(options)) return undefined
+  const kept = Object.entries(options).filter(([, value]) => isRecord(value))
+  if (kept.length === Object.keys(options).length) return options
+  return kept.length > 0 ? Object.fromEntries(kept) : undefined
+}
+
+type Optioned = { providerOptions?: unknown; content?: unknown }
+
+function withOptions<T extends Optioned>(item: T): T {
+  if (item.providerOptions === undefined) return item
+  const options = onlyRecords(item.providerOptions)
+  if (options === item.providerOptions) return item
+  const { providerOptions: _dropped, ...rest } = item
+  return (options ? { ...rest, providerOptions: options } : rest) as T
+}
+
+/**
+ * Last line of defence before the AI SDK validates the prompt. RIFT keeps its own markers in part
+ * metadata (`rift_task_state: true`, `compaction_continue: true`), and any of them reaching
+ * `providerOptions` ends the session with "Invalid prompt: The messages do not match the
+ * ModelMessage[] schema". That has happened by two different routes, so the request is checked
+ * here whatever put the marker there. Messages that are already clean are returned as they are.
+ */
+export function providerOptionRecords(msgs: ModelMessage[]): ModelMessage[] {
+  let changed = false
+  const cleaned = msgs.map((msg) => {
+    const own = withOptions<Optioned>(msg)
+    const parts = Array.isArray(own.content) ? (own.content as Optioned[]) : undefined
+    const content = parts?.map((part) => withOptions(part))
+    const partsChanged = content?.some((part, index) => part !== parts?.[index]) === true
+    if (own === msg && !partsChanged) return msg
+    changed = true
+    return (partsChanged ? { ...own, content } : own) as unknown as ModelMessage
+  })
+  return changed ? cleaned : msgs
+}
+
 export function message(msgs: ModelMessage[], model: Provider.Model, options: Record<string, unknown>) {
   msgs = unsupportedParts(msgs, model)
   msgs = normalizeMessages(msgs, model, options)
