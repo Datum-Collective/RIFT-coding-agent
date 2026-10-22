@@ -2,6 +2,11 @@
 
 Release notes for RIFT versions, newest first. Entries for v0.1.10 to v0.1.13 are only on the Releases page. Full notes and downloads: https://github.com/Datum-Collective/RIFT-coding-agent/releases
 
+## Unreleased
+
+### Fixed
+- **"Invalid prompt: The messages do not match the ModelMessage[] schema" can no longer come from RIFT's own markers.** v0.2.1 stopped one route for them into the provider options. The request is now also checked just before it goes to the SDK, and anything in `providerOptions` that is not a record is dropped, so a marker added later cannot end a session either. A TUI started before v0.2.1 keeps its old code until it is restarted.
+
 ## v0.2.1 (2026-10-22)
 
 The road goes ever on. Fixes for the prompt error, the browser tool, Vibe Mode and `/share`. Full notes: https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v0.2.1

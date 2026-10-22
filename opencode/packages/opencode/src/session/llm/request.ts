@@ -180,7 +180,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
 
   return {
     system,
-    messages,
+    messages: ProviderTransform.providerOptionRecords(messages),
     tools: Object.fromEntries(Object.entries(tools).toSorted(([a], [b]) => a.localeCompare(b))),
     params,
     messageTransformOptions: options,

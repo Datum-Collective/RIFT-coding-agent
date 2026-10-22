@@ -5,7 +5,7 @@ import { LLMRequestPrep } from "@/session/llm/request"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ModelsDev } from "@opencode-ai/core/models-dev"
-import { generateText, jsonSchema, type ModelMessage } from "ai"
+import { generateText, jsonSchema, modelMessageSchema, type ModelMessage } from "ai"
 import { createAmazonBedrock, type AmazonBedrockLanguageModelOptions } from "@ai-sdk/amazon-bedrock"
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { createVertexAnthropic } from "@ai-sdk/google-vertex/anthropic"
@@ -6207,5 +6207,43 @@ describe("ProviderTransform.options - kimi family adaptive thinking", () => {
     }
     const result = ProviderTransform.options({ model, sessionID: "s1", providerOptions: {} })
     expect(result.thinking).toBeUndefined()
+  })
+})
+
+describe("ProviderTransform.providerOptionRecords", () => {
+  const withOptions = (providerOptions: unknown) =>
+    [
+      { role: "user", content: [{ type: "text", text: "hi" }] },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "summary", providerOptions }, { type: "text", text: "plain" }],
+        providerOptions,
+      },
+    ] as unknown as ModelMessage[]
+
+  test("drops entries that are not records, from messages and from their parts", () => {
+    const cleaned = ProviderTransform.providerOptionRecords(
+      withOptions({ rift_task_state: true, compaction_continue: true, anthropic: { cacheControl: { type: "ephemeral" } } }),
+    )
+    const assistant = cleaned[1] as unknown as { providerOptions: unknown; content: Array<{ providerOptions?: unknown }> }
+    expect(assistant.providerOptions).toEqual({ anthropic: { cacheControl: { type: "ephemeral" } } })
+    expect(assistant.content[0]?.providerOptions).toEqual({ anthropic: { cacheControl: { type: "ephemeral" } } })
+  })
+
+  test("removes the key altogether when nothing valid is left", () => {
+    const cleaned = ProviderTransform.providerOptionRecords(withOptions({ rift_task_state: true }))
+    const assistant = cleaned[1] as unknown as { content: Array<Record<string, unknown>> }
+    expect("providerOptions" in cleaned[1]!).toBe(false)
+    expect("providerOptions" in assistant.content[0]!).toBe(false)
+  })
+
+  test("returns the same messages when every option is already a record", () => {
+    const messages = withOptions({ anthropic: { a: 1 } })
+    expect(ProviderTransform.providerOptionRecords(messages)).toBe(messages)
+  })
+
+  test("what it returns passes the SDK's own message schema", () => {
+    const cleaned = ProviderTransform.providerOptionRecords(withOptions({ rift_task_state: true, x: [1], y: null, z: "s" }))
+    for (const message of cleaned) expect(modelMessageSchema.safeParse(message).success).toBe(true)
   })
 })
