@@ -94,7 +94,8 @@ export type Task = {
   state: TaskState
   plan: Plan
   execution: Phase[]
-  changes: { files: ChangeFile[]; added: number; removed: number }
+  /** `live` is what the edit tools touched in the request in flight, ahead of the session diff. */
+  changes: { files: ChangeFile[]; added: number; removed: number; live?: string[] }
   verification: Verification
   blocked: { permissions: number; questions: number }
   models: { planner?: string; executor?: string; current?: string }
@@ -322,6 +323,61 @@ export function turnOf(input: TaskInput): readonly TaskMessage[] {
   return input.messages
 }
 
+const EDIT_TOOLS = new Set(["edit", "write", "apply_patch"])
+const PATCH_FILE = /^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/gm
+
+function touched(input: unknown): string[] {
+  if (typeof input !== "object" || input === null) return []
+  const file = "filePath" in input && typeof input.filePath === "string" ? [input.filePath] : []
+  const patch =
+    "patchText" in input && typeof input.patchText === "string"
+      ? [...input.patchText.matchAll(PATCH_FILE)].map((match) => match[1].trim())
+      : []
+  return [...file, ...patch]
+}
+
+/** The todo a `todowrite` call left in progress. */
+function activeTodo(input: unknown): string | undefined {
+  if (typeof input !== "object" || input === null || !("todos" in input) || !Array.isArray(input.todos)) return undefined
+  const todo = input.todos.find(
+    (item): item is { content: string } =>
+      typeof item === "object" && item !== null && item.status === "in_progress" && typeof item.content === "string",
+  )
+  return todo?.content
+}
+
+/**
+ * What the agent has changed in the request in flight, read from the edit tools as they run. The
+ * session diff only fills in once the turn is over, so without this the panels show nothing until
+ * the very end. `byStep` replays the `todowrite` calls in order, so an edit is credited to the
+ * todo that was in progress when it happened rather than to whichever is in progress now.
+ */
+export function edits(input: TaskInput): { files: string[]; byStep: Map<string, string[]> } {
+  const files = new Set<string>()
+  const byStep = new Map<string, Set<string>>()
+  let active: string | undefined
+  for (const message of turnOf(input)) {
+    for (const part of input.parts(message.id)) {
+      if (part.type !== "tool" || !part.tool || !part.state) continue
+      if (part.tool === "todowrite") {
+        active = activeTodo(part.state.input)
+        continue
+      }
+      if (!EDIT_TOOLS.has(part.tool) || (part.state.status !== "completed" && part.state.status !== "running")) continue
+      for (const file of touched(part.state.input)) {
+        files.add(file)
+        if (active) byStep.set(active, (byStep.get(active) ?? new Set()).add(file))
+      }
+    }
+  }
+  return { files: [...files], byStep: new Map([...byStep].map(([step, list]) => [step, [...list]])) }
+}
+
+/** The diff holds project-relative paths and the tools absolute ones, so one file has two spellings. */
+export function sameFile(a: string, b: string) {
+  return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`)
+}
+
 export function plan(input: TaskInput): Plan {
   let steps: PlanStep[] = []
   let running: number | undefined
@@ -355,12 +411,13 @@ export function plan(input: TaskInput): Plan {
 
   const todos = input.todos ?? []
   if (todos.length > 0) {
+    const edited = edits(input).byStep
     return {
       source: "todo",
       steps: todos.map((todo, index) => ({
         n: index + 1,
         text: todo.content,
-        files: [],
+        files: edited.get(todo.content) ?? [],
         signal: todoSignal(todo.status),
       })),
     }
@@ -552,7 +609,12 @@ export function task(input: TaskInput): Task {
   const questions = input.questions ?? 0
   const execution = phases(input)
   const verify = verification(input)
-  const files = [...(input.diff ?? [])]
+  const diff = [...(input.diff ?? [])]
+  const live = edits(input).files
+  const files = [
+    ...diff,
+    ...live.filter((file) => !diff.some((item) => sameFile(item.file, file))).map((file) => ({ file, added: 0, removed: 0 })),
+  ]
 
   const state: TaskState =
     permissions + questions > 0
@@ -578,6 +640,7 @@ export function task(input: TaskInput): Task {
       files,
       added: files.reduce((total, file) => total + file.added, 0),
       removed: files.reduce((total, file) => total + file.removed, 0),
+      live,
     },
     verification: verify,
     blocked: { permissions, questions },

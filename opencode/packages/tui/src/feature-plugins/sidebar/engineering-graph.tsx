@@ -17,7 +17,7 @@ import { createMemo, For, Show } from "solid-js"
 import { useTheme } from "../../context/theme"
 import { GLYPH, Label, signalColor, shortenPath } from "../../component/control/primitives"
 import { useTask } from "../../component/control/use-task"
-import { deriveGraph, evidenceFor } from "../../util/engineering-graph"
+import { deriveGraph, evidenceFor, withLiveEdits } from "../../util/engineering-graph"
 import type { Evidence, Signal } from "../../util/task"
 
 const id = "internal:sidebar-engineering-graph"
@@ -139,7 +139,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     return last && "agent" in last && typeof last.agent === "string" ? last.agent : "agent"
   })
   const declared = createMemo(() => props.api.state.session.graph(props.session_id))
-  const nodes = createMemo(() => (declared().length > 0 ? declared() : deriveGraph(task(), owner())))
+  const nodes = createMemo(() => (declared().length > 0 ? withLiveEdits(declared(), task()) : deriveGraph(task(), owner())))
   return <GraphPanel nodes={nodes()} evidence={evidenceFor(nodes(), task().verification)} />
 }
 
