@@ -2,7 +2,12 @@
 
 Release notes for RIFT versions, newest first. Entries for v0.1.10 to v0.1.13 are only on the Releases page. Full notes and downloads: https://github.com/Datum-Collective/RIFT-coding-agent/releases
 
-## Unreleased
+## v0.2.2 (2026-10-22)
+
+May it be a light to you in dark places. The graph builds while the agent works, the prompt error is closed off for good, and updating is a walk to Mount Doom. Full notes: https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v0.2.2
+
+### Added
+- **Updating is a journey.** On a real terminal, `rift upgrade` shows a marker walking from the Shire towards Mount Doom while it installs, then leaves a line from the books picked from the version. The TUI's update dialog shows the same line. Piped output, CI, `TERM=dumb` and `RIFT_NO_ANIMATION=1` keep the plain spinner.
 
 ### Fixed
 - **The graph in the side panel builds while the agent works, not at the end.** It was drawn from the plan, the session diff and `graphwrite`. The diff only arrives after the turn, and models rarely write a plan or call `graphwrite`, so the panel stayed empty until the very end. It now shows the task the moment work starts, reads edited files from the edit tools as they run, credits each edit to the todo that was active when it happened, and groups files by directory when there is no plan. When the agent has declared a graph, edits it does not mention yet appear under it.
