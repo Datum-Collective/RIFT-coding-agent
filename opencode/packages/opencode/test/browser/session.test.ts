@@ -38,6 +38,7 @@ const PAGES: Record<string, string> = {
           })
         </script>`,
   "/second": `<!doctype html><title>Second</title><p>landed</p>`,
+  "/slow": `<!doctype html><title>Slow</title>`,
   "/styled": `<!doctype html><link rel="stylesheet" href="/style.css"><p id="x">hi</p>
         <script>document.title = getComputedStyle(document.getElementById("x")).color</script>`,
 }
@@ -49,8 +50,9 @@ let css = ""
 beforeAll(() => {
   server = Bun.serve({
     port: 0,
-    fetch(request) {
+    async fetch(request) {
       const { pathname } = new URL(request.url)
+      if (pathname === "/slow") await Bun.sleep(5_000)
       if (pathname === "/missing") return new Response("gone", { status: 404 })
       if (pathname === "/style.css")
         return new Response(css, {
@@ -218,7 +220,18 @@ suite("browser session", () => {
   test("recovers when the tab's renderer crashes", async () =>
     withSession(async (session) => {
       await session.navigate(`${base}/`)
-      await session.navigate("chrome://crash").catch(() => {})
+      // The event Chrome sends when a renderer dies, delivered by hand: whether chrome://crash
+      // really kills the tab depends on the platform and the browser build.
+      const internals = session as unknown as {
+        tab: { sessionId: string }
+        cdp: { receive(raw: string): void }
+      }
+      const pending = session.navigate(`${base}/slow`).catch((error: Error) => error)
+      await Bun.sleep(300)
+      internals.cdp.receive(
+        JSON.stringify({ method: "Inspector.targetCrashed", params: {}, sessionId: internals.tab.sessionId }),
+      )
+      expect(String(await pending)).toMatch(/page crashed/)
       expect((await session.navigate(`${base}/second`)).title).toBe("Second")
     }))
 
