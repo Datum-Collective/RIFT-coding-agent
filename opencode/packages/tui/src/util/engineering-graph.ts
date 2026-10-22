@@ -7,7 +7,7 @@
  * ever comes from RIFT's verification record, never from anything the agent wrote.
  */
 import type { EngineeringGraphNode } from "@opencode-ai/sdk/v2"
-import type { Evidence, Signal, Task, TaskState, Verification } from "./task"
+import { sameFile, type Evidence, type Signal, type Task, type TaskState, type Verification } from "./task"
 
 const ROOT = "task"
 
@@ -30,7 +30,15 @@ const FROM_STATE: Record<TaskState, EngineeringGraphNode["status"]> = {
 }
 
 export function deriveGraph(task: Task, owner: string): EngineeringGraphNode[] {
-  if (task.plan.steps.length === 0 && task.changes.files.length === 0 && task.verification.checks.length === 0) return []
+  // Only an idle task with nothing recorded has nothing to show. Once the agent is working the
+  // root is there at once, and the plan and files fill in as they happen.
+  if (
+    task.state === "idle" &&
+    task.plan.steps.length === 0 &&
+    task.changes.files.length === 0 &&
+    task.verification.checks.length === 0
+  )
+    return []
   const root: EngineeringGraphNode = {
     id: ROOT,
     title: task.title || "This task",
@@ -54,7 +62,68 @@ export function deriveGraph(task: Task, owner: string): EngineeringGraphNode[] {
       decisions: [],
     }),
   )
-  return [root, ...steps]
+  return [root, ...(steps.length > 0 ? steps : areas(task))]
+}
+
+/**
+ * Without a plan, the files edited so far are grouped by directory so the panel still has a
+ * shape. Directories are named relative to the one every edited file shares; the group holding
+ * the newest edit is the one being worked in.
+ */
+function areas(task: Task): EngineeringGraphNode[] {
+  const files = task.changes.files.map((item) => item.file)
+  const dirs = files.map((file) => file.split("/").slice(0, -1))
+  const shared = dirs.reduce((common, dir) => {
+    const end = common.findIndex((segment, index) => dir[index] !== segment)
+    return end === -1 ? common.slice(0, Math.min(common.length, dir.length)) : common.slice(0, end)
+  }, dirs[0] ?? [])
+  const nameOf = (index: number) => dirs[index].slice(shared.length).join("/") || "Project files"
+  const groups = new Map<string, string[]>()
+  files.forEach((file, index) => groups.set(nameOf(index), [...(groups.get(nameOf(index)) ?? []), file]))
+  if (groups.size < 2) return []
+  const newest = nameOf(files.length - 1)
+  const working = task.state === "executing" || task.state === "planning"
+  return [...groups].map(
+    ([name, list], index): EngineeringGraphNode => ({
+      id: `${ROOT}.area.${index + 1}`,
+      parent_id: ROOT,
+      title: name,
+      status: working && name === newest ? "in_progress" : "done",
+      owner: "rift",
+      dependencies: [],
+      files: list,
+      checks: [],
+      decisions: [],
+    }),
+  )
+}
+
+/**
+ * An agent-declared graph is only as current as the agent's last `graphwrite`, and models call it
+ * rarely. Edits made this turn that no declared node lists are shown under the root, so the panel
+ * keeps moving between updates without overriding what the agent declared.
+ */
+export function withLiveEdits(
+  declared: readonly EngineeringGraphNode[],
+  task: Task,
+): readonly EngineeringGraphNode[] {
+  const claimed = declared.flatMap((node) => node.files)
+  const unclaimed = (task.changes.live ?? []).filter((file) => !claimed.some((other) => sameFile(other, file)))
+  if (unclaimed.length === 0) return declared
+  return [
+    ...declared,
+    {
+      id: `${ROOT}.live`,
+      parent_id: declared.find((node) => !node.parent_id)?.id,
+      title: "Edited since the last graph update",
+      status: task.state === "executing" || task.state === "planning" ? "in_progress" : "done",
+      owner: "rift",
+      dependencies: [],
+      files: unclaimed,
+      checks: [],
+      decisions: [],
+    },
+  ]
 }
 
 /**
