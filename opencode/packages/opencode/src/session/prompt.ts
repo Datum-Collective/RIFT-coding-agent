@@ -44,11 +44,13 @@ import { Image } from "@/image/image"
 import { decodeDataUrl } from "@/util/data-url"
 import { Process } from "@/util/process"
 import { Verify } from "./verify"
+import { CheckRunner } from "./check-runner"
+import { Stuck } from "./stuck"
 import { Evidence } from "./evidence"
 import { EngineeringGraph } from "./engineering-graph"
 import { TaskState } from "./task-state"
 import { ShellID } from "@/tool/shell/id"
-import { Cause, Effect, Exit, Latch, Layer, Option, Scope, Context, Schema, Types } from "effect"
+import { Cause, Effect, Exit, Fiber, Latch, Layer, Option, Scope, Context, Schema, Types } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { TaskTool, type TaskPromptOps } from "@/tool/task"
 import { SessionRunState } from "./run-state"
@@ -69,6 +71,10 @@ globalThis.AI_SDK_LOG_WARNINGS = false
 const decodeMessageInfo = Schema.decodeUnknownExit(SessionV1.Info)
 const decodeMessagePart = Schema.decodeUnknownExit(SessionV1.Part)
 const MAX_MCP_RESOURCE_BLOB_BYTES = 10 * 1024 * 1024
+const CLAIMS_TIMEOUT = "60 seconds"
+// Executor turns one Vibe Mode plan step may take before it counts as failed. A step is meant to
+// be small; one session spent 223 turns on a single step it could never finish.
+const VIBE_STEP_TURNS = 40
 const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
   "application/pdf",
   "image/gif",
@@ -795,6 +801,7 @@ const layer = Layer.effect(
       const rot = typeof brainRot === "boolean" ? brainRot : cfg.brain_rot === true
       return [
         ...env,
+        ...(cfg.graph_nudge === true ? [SystemPrompt.GRAPH_NUDGE] : []),
         ...instructions,
         ...(mcpInstructions ? [mcpInstructions] : []),
         ...(skills ? [skills] : []),
@@ -1312,6 +1319,8 @@ const layer = Layer.effect(
       summary: string
       files: string[]
       planner?: Provider.Model
+      /** Diffs with fewer changed lines skip the model; the deterministic pass covers them. */
+      minLines: number
     }) {
       if (!input.summary) return asClaims({ status: "off" })
       const agent = input.agent
@@ -1323,6 +1332,7 @@ const layer = Layer.effect(
         Effect.catchCause(() => Effect.succeed("")),
       )
       if (!diff) return asClaims({ status: "not_run", reason: "no diff available" })
+      if (Verify.diffSize(diff) < input.minLines) return asClaims({ status: "off" })
 
       const cfg = yield* config.get()
       const configured = cfg.verify_claims_model ? Provider.parseModel(cfg.verify_claims_model) : undefined
@@ -1331,7 +1341,17 @@ const layer = Layer.effect(
           ? getModel(configured.providerID, configured.modelID, input.sessionID)
           : input.planner
             ? Effect.succeed(input.planner)
-            : getModel(user.model.providerID, user.model.modelID, input.sessionID)
+            : // The verdict is a short comparison, so the provider's small model answers it in a
+              // fraction of the time; the session model is only the fallback.
+              provider
+                .getSmallModel(user.model.providerID)
+                .pipe(
+                  Effect.flatMap((small) =>
+                    small
+                      ? Effect.succeed(small)
+                      : getModel(user.model.providerID, user.model.modelID, input.sessionID),
+                  ),
+                )
       ).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
       if (!model) return asClaims({ status: "not_run", reason: "claims model unavailable" })
 
@@ -1341,6 +1361,7 @@ const layer = Layer.effect(
         modelID: model.id,
       })
 
+      let failed = false
       const text = yield* llm
         .stream({
           user,
@@ -1354,6 +1375,7 @@ const layer = Layer.effect(
               content: `The agent's summary of what it did:\n${input.summary}\n\nThe actual diff of the files it edited:\n${diff}`,
             },
           ],
+          // Some gateways (OpenCode Zen's free tier) refuse a request without the agent's tools.
           tools: yield* resolveVibeTools({ agent, model, session: input.session }),
           toolChoice: Provider.supportsStaticToolChoice(model) ? "none" : undefined,
           retries: 2,
@@ -1362,13 +1384,69 @@ const layer = Layer.effect(
           Stream.filter(LLMEvent.is.textDelta),
           Stream.map((event) => event.text),
           Stream.mkString,
-          Effect.catchCause(() => Effect.succeed("")),
+          // A stalled free endpoint once held this open for ten minutes; the report is worth less
+          // than that wait, so past the limit the claims check is simply reported as not run.
+          Effect.timeoutOption(CLAIMS_TIMEOUT),
+          Effect.catchCause(() =>
+            Effect.sync(() => {
+              failed = true
+              return Option.some("")
+            }),
+          ),
         )
 
-      const items = Verify.parseClaims(text)
+      if (Option.isNone(text)) return asClaims({ status: "not_run", reason: "claims model timed out" })
+      if (failed) return asClaims({ status: "not_run", reason: "claims model error" })
+      const items = Verify.parseClaims(text.value)
       if (!items) return asClaims({ status: "not_run", reason: "unreadable verdict" })
       if (items.length === 0) return asClaims({ status: "ok" })
       return asClaims({ status: "mismatch", items })
+    })
+
+    /**
+     * Starts the project's checks in the background once a step has edited files, so they run while
+     * the model works on its next step. Only commands that are already allowed run; nothing here
+     * ever prompts the user.
+     */
+    const backgroundVerification = new Map<SessionID, Fiber.Fiber<void>>()
+
+    const startLiveChecks = Effect.fn("SessionPrompt.startLiveChecks")(function* (input: {
+      sessionID: SessionID
+      messageID: MessageID
+      agent: Agent.Info
+      session: Session.Info
+    }) {
+      const cfg = yield* config.get()
+      if (cfg.verify === false || cfg.verify_live === false) return
+      const message = yield* MessageV2.get({ sessionID: input.sessionID, messageID: input.messageID }).pipe(
+        Effect.provideService(Database.Service, database),
+      )
+      const tools = message.parts.flatMap((part) =>
+        part.type === "tool" ? [{ tool: part.tool, status: part.state.status, input: part.state.input }] : [],
+      )
+      if (!Verify.editedFiles(tools)) return
+      const ctx = yield* InstanceState.context
+      const files = Verify.editedPaths(tools, ctx.directory)
+      if (!cfg.verify_commands?.length && CheckRunner.docsOnly(files)) return
+      const checks = yield* Effect.promise(() =>
+        Verify.resolve(ctx.directory, {
+          commands: cfg.verify_commands ? [...cfg.verify_commands] : undefined,
+          files,
+        }),
+      )
+      const ruleset = Permission.merge(input.agent.permission ?? [], input.session.permission ?? [])
+      const runnable: Verify.Check[] = []
+      for (const check of checks) {
+        if (yield* permission.allowed({ permission: ShellID.ToolID, patterns: [check.command], ruleset }))
+          runnable.push(check)
+      }
+      yield* Effect.promise(() =>
+        CheckRunner.kick(input.sessionID, {
+          dir: ctx.directory,
+          checks: runnable,
+          options: { timeoutMs: cfg.verify_timeout_ms ?? 10 * 60 * 1000, shell: Shell.acceptable(cfg.shell) },
+        }),
+      )
     })
 
     const runVerification = Effect.fn("SessionPrompt.runVerification")(function* (
@@ -1396,6 +1474,8 @@ const layer = Layer.effect(
       )
       if (!Verify.editedFiles(tools)) return
       const ctx = yield* InstanceState.context
+      // Documentation can't break a build or a test, so a docs-only turn costs nothing.
+      if (!cfg.verify_commands?.length && CheckRunner.docsOnly(Verify.editedPaths(tools, ctx.directory))) return
       yield* Effect.logInfo("verification", { "session.id": sessionID })
       const checks = yield* Effect.promise(() =>
         Verify.resolve(ctx.directory, {
@@ -1436,9 +1516,36 @@ const layer = Layer.effect(
       const ruleset = Permission.merge(agent?.permission ?? [], session.permission ?? [])
       const timeoutMs = cfg.verify_timeout_ms ?? 10 * 60 * 1000
 
+      const summaryText = last.parts
+        .flatMap((part) => (part.type === "text" ? [part.text] : []))
+        .join("\n")
+        .trim()
+      const edited = Verify.editedPaths(tools, ctx.directory)
+      // Identity of the tree being verified: results for it are shared with the live checks
+      // and with graph evidence, so nothing runs twice against the same code.
+      const tree = yield* Effect.promise(() => CheckRunner.fingerprint(ctx.directory))
+
       yield* Effect.gen(function* () {
+        // The claims check only reads the finished diff, so it runs alongside the checks
+        // instead of after them.
+        const pendingClaims =
+          cfg.verify_claims !== false
+            ? yield* checkClaims({
+                sessionID,
+                session,
+                agent,
+                user: all[userIndex],
+                summary: summaryText,
+                files: edited,
+                planner,
+                minLines: cfg.verify_claims_min_diff_lines ?? 40,
+              }).pipe(Effect.forkChild)
+            : undefined
+        if (pendingClaims) claims = { status: "pending" }
         yield* publish(false)
-        // Sequential on purpose: checks often share build caches and lockfiles.
+        // Permission prompts go one at a time; the allowed checks then run in parallel. typecheck,
+        // lint and test scripts read the tree and write only their own caches.
+        const allowed: Verify.Entry[] = []
         for (const entry of entries) {
           const command = entry.check.command
           // Verification runs shell commands, so it goes through the same permission rules as the bash tool.
@@ -1455,24 +1562,31 @@ const layer = Layer.effect(
               Effect.as(false),
               Effect.catch(() => Effect.succeed(true)),
             )
-          entry.result = denied
-            ? Verify.notRun(entry.check, "permission denied")
-            : yield* Effect.promise(async (signal) => {
-                try {
-                  return await Verify.runCheck(entry.check, ctx.directory, {
-                    timeoutMs,
-                    cancel: signal,
-                    shell: Shell.acceptable(cfg.shell),
-                  })
-                } catch (error) {
-                  return Verify.notRun(
-                    entry.check,
-                    `could not start: ${error instanceof Error ? error.message : String(error)}`,
-                  )
-                }
-              })
-          yield* publish(false)
+          if (denied) entry.result = Verify.notRun(entry.check, "permission denied")
+          else allowed.push(entry)
         }
+        yield* Effect.forEach(
+          allowed,
+          (entry) =>
+            Effect.promise((signal) =>
+              CheckRunner.run(entry.check, ctx.directory, tree, {
+                timeoutMs,
+                cancel: signal,
+                shell: Shell.acceptable(cfg.shell),
+              }).catch((error: unknown) =>
+                Verify.notRun(
+                  entry.check,
+                  `could not start: ${error instanceof Error ? error.message : String(error)}`,
+                ),
+              ),
+            ).pipe(
+              Effect.flatMap((result) => {
+                entry.result = result
+                return publish(false)
+              }),
+            ),
+          { concurrency: "unbounded", discard: true },
+        )
         // A UI change can typecheck and pass its tests while throwing on every render. With no
         // URL configured, a page the turn built is opened directly, so static sites get checked too.
         const page =
@@ -1505,6 +1619,7 @@ const layer = Layer.effect(
                   timeoutMs,
                   cancel: signal,
                   shell: Shell.acceptable(cfg.shell),
+                  tree,
                 }).catch((error: unknown) =>
                   Evidence.notRun(item, `could not run: ${error instanceof Error ? error.message : String(error)}`),
                 ),
@@ -1517,23 +1632,24 @@ const layer = Layer.effect(
           (file) => !before.has(file),
         )
 
-        if (cfg.verify_claims !== false) {
-          claims = { status: "pending" }
-          yield* publish(false)
-          claims = yield* checkClaims({
-            sessionID,
-            session,
-            agent,
-            user: all[userIndex],
-            summary: last.parts
-              .flatMap((part) => (part.type === "text" ? [part.text] : []))
-              .join("\n")
-              .trim(),
-            files: Verify.editedPaths(tools, ctx.directory),
-            planner,
-          })
+        if (pendingClaims) {
+          const model = yield* Fiber.join(pendingClaims)
+          const results = entries.flatMap((entry) => (entry.result ? [entry.result] : []))
+          const items = [
+            ...Verify.deterministicClaims(summaryText, results, edited),
+            ...(model.status === "mismatch" ? model.items : []),
+          ]
+          claims =
+            items.length > 0 ? { status: "mismatch", items } : model.status === "not_run" ? model : { status: "ok" }
         }
         yield* publish(true)
+        // Failures still standing reach the agent on its next step, so it can fix them.
+        if (tree)
+          CheckRunner.settle(
+            sessionID,
+            tree,
+            entries.flatMap((entry) => (entry.result ? [entry.result] : [])),
+          )
       }).pipe(
         // A cancelled session must not leave the report stuck on "queued".
         Effect.onInterrupt(() =>
@@ -1556,6 +1672,7 @@ const layer = Layer.effect(
         let vibeModels: { planner: Provider.Model; executor: Provider.Model } | undefined
         const vibeAttempts = new Map<number, number>()
         const vibeEscalated = new Set<number>()
+        const vibeTurns = new Map<number, number>()
         let vibeStepUserID: MessageID | undefined
         let vibeAdvancedAssistantID: MessageID | undefined
         let vibeRetryPending = false
@@ -1563,6 +1680,7 @@ const layer = Layer.effect(
         const verifyBaseline = yield* Effect.promise(() => Verify.changedFiles(ctx.directory)).pipe(
           Effect.catchCause(() => Effect.succeed([] as string[])),
         )
+        let liveFixRounds = 0
         const vibeReviewRounds = new Map<number, number>()
         const vibeFeedback = new Map<number, string>()
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
@@ -1737,6 +1855,45 @@ const layer = Layer.effect(
             const orphan = lastAssistantMsg?.parts.find(
               (part): part is SessionV1.ToolPart => part.type === "tool" && isOrphanedInterruptedTool(part),
             )
+            // About to finish: if the live checks found something broken, hand it back instead of
+            // ending the turn on a failing build. Bounded so a flaky check can't loop forever.
+            const loopCfg = yield* config.get()
+            if (
+              !session.parentID &&
+              loopCfg.verify !== false &&
+              loopCfg.verify_live !== false &&
+              liveFixRounds < (loopCfg.verify_live_fix_rounds ?? 2)
+            ) {
+              const broken = yield* Effect.promise(() =>
+                CheckRunner.settled(sessionID, ctx.directory, loopCfg.verify_live_wait_ms ?? 10_000),
+              )
+              if (broken.length > 0) {
+                liveFixRounds++
+                yield* Effect.logInfo("live check failures", {
+                  "session.id": sessionID,
+                  commands: broken.map((item) => item.command).join(", "),
+                  round: liveFixRounds,
+                })
+                const reminder: SessionV1.User = {
+                  id: MessageID.ascending(),
+                  sessionID,
+                  role: "user",
+                  time: { created: Date.now() },
+                  agent: lastUser.agent,
+                  model: lastUser.model,
+                }
+                yield* sessions.updateMessage(reminder)
+                yield* sessions.updatePart({
+                  id: PartID.ascending(),
+                  messageID: reminder.id,
+                  sessionID,
+                  type: "text",
+                  text: CheckRunner.failureReminder(broken),
+                  synthetic: true,
+                } satisfies SessionV1.TextPart)
+                continue
+              }
+            }
             if (orphan) {
               yield* Effect.logWarning("loop exit with orphaned interrupted tool", {
                 "session.id": sessionID,
@@ -1751,13 +1908,6 @@ const layer = Layer.effect(
 
           vibeRetryPending = false
           step++
-          if (step === 1)
-            yield* title({
-              session,
-              modelID: lastUser.model.modelID,
-              providerID: lastUser.model.providerID,
-              history: msgs,
-            }).pipe(Effect.ignore, Effect.forkIn(scope))
 
           const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
           const task = tasks.pop()
@@ -1786,6 +1936,13 @@ const layer = Layer.effect(
           ) {
             yield* compaction.create({ sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
             continue
+          }
+          if (lastFinished && lastFinished.summary !== true) {
+            const t = lastFinished.tokens
+            yield* compaction.lean({
+              messages: msgs,
+              tokens: t.total || t.input + t.output + t.cache.read + t.cache.write,
+            })
           }
 
           const agent = yield* agents.get(lastUser.agent)
@@ -1836,7 +1993,9 @@ const layer = Layer.effect(
           }
           const turnModel = vibeModels?.executor ?? model
           const maxSteps = agent.steps ?? Infinity
-          const isLastStep = vibePlan ? vibeStepIndex + 1 >= vibePlan.steps.length : step >= maxSteps
+          // The agent's step budget, not the plan's last step: the max-steps prompt switches tools
+          // off, so a one-step plan could never do anything.
+          const isLastStep = step >= maxSteps
           msgs = yield* SessionReminders.apply({ messages: msgs, agent, session }).pipe(
             Effect.provideService(RuntimeFlags.Service, flags),
             Effect.provideService(FSUtil.Service, fsys),
@@ -1951,6 +2110,25 @@ const layer = Layer.effect(
                 modelID: turnModel.id,
               })
             }
+            // Checks that finished in the background since the last step and failed: the agent
+            // hears about them now, while it can still fix them in this turn.
+            const liveFailures = session.parentID
+              ? []
+              : yield* Effect.promise(() => CheckRunner.failures(sessionID, ctx.directory))
+            if (liveFailures.length > 0)
+              yield* Effect.logInfo("live check failures", {
+                "session.id": sessionID,
+                commands: liveFailures.map((item) => item.command).join(", "),
+              })
+            const stuck = Stuck.check(msgs, Object.keys(tools))
+            // A model that keeps saying "now I'll use the browser tool" and emitting no-ops is asked
+            // to call that tool, where the provider honours a required tool. The tool list itself
+            // stays whole: OpenCode Zen's free tier rejects requests whose tools look unusual.
+            const force =
+              stuck?.force && format.type !== "json_schema" && Provider.supportsStaticToolChoice(turnModel)
+                ? { type: "tool" as const, toolName: stuck.force }
+                : undefined
+            if (stuck) yield* Effect.logInfo("stuck steps", { "session.id": sessionID, step, force: stuck.force })
             const result = yield* handle.process({
               user: executionUser,
               agent,
@@ -1960,12 +2138,30 @@ const layer = Layer.effect(
               system,
               messages: [
                 ...modelMsgs,
+                ...(liveFailures.length > 0
+                  ? [{ role: "user" as const, content: CheckRunner.failureReminder(liveFailures) }]
+                  : []),
+                ...(stuck ? [{ role: "user" as const, content: stuck.reminder }] : []),
                 ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS_PROMPT }] : []),
               ],
               tools,
               model: turnModel,
-              toolChoice: format.type === "json_schema" ? "required" : undefined,
+              toolChoice: format.type === "json_schema" ? "required" : force,
             })
+
+            // After the first reply, so the title call never competes with it for the provider.
+            if (step === 1)
+              yield* title({
+                session,
+                modelID: lastUser.model.modelID,
+                providerID: lastUser.model.providerID,
+                history: msgs,
+              }).pipe(Effect.ignore, Effect.forkIn(scope))
+            if (!session.parentID)
+              yield* startLiveChecks({ sessionID, messageID: handle.message.id, agent, session }).pipe(
+                Effect.ignore,
+                Effect.forkIn(scope),
+              )
 
             if (vibePlan) {
               const current = yield* MessageV2.get({ sessionID, messageID: handle.message.id }).pipe(
@@ -1992,7 +2188,12 @@ const layer = Layer.effect(
                 output?.includes("cannot proceed") ||
                 output?.includes("unable to complete") ||
                 output?.includes("failed to complete")
-              const failed = !!handle.message.error || !!toolFailed || !!reportedFailure
+              const turns = (vibeTurns.get(vibeStepIndex) ?? 0) + 1
+              vibeTurns.set(vibeStepIndex, turns)
+              // A step whose tool calls keep succeeding without ever finishing it counts as failed
+              // too; otherwise the executor can retry an impossible step for hours.
+              const exhausted = !stepFinished && turns >= VIBE_STEP_TURNS
+              const failed = !!handle.message.error || !!toolFailed || !!reportedFailure || exhausted
               if (failed) {
                 const attempt = (vibeAttempts.get(vibeStepIndex) ?? 0) + 1
                 vibeAttempts.set(vibeStepIndex, attempt)
@@ -2001,7 +2202,9 @@ const layer = Layer.effect(
                 if (vibeEscalated.has(vibeStepIndex)) return "break" as const
                 if (attempt >= maxAttempts) {
                   vibeEscalated.add(vibeStepIndex)
-                  const failure = handle.message.error?.name ?? (reportedFailure ? output : "tool error")
+                  const failure =
+                    handle.message.error?.name ??
+                    (reportedFailure ? output : exhausted ? `step not finished after ${turns} turns` : "tool error")
                   const revised = yield* reviseVibeStep({
                     agent,
                     user: executionUser,
@@ -2012,6 +2215,7 @@ const layer = Layer.effect(
                   })
                   vibePlan.steps[vibeStepIndex] = revised.steps[0]!
                   vibeAttempts.set(vibeStepIndex, 0)
+                  vibeTurns.delete(vibeStepIndex)
                   vibeStepUserID = undefined
                   yield* recordPlannerMessage({
                     agent,
@@ -2145,7 +2349,21 @@ const layer = Layer.effect(
           continue
         }
 
-        yield* runVerification(sessionID, verifyBaseline, vibeModels?.planner)
+        // By default verification reports into the finished turn as it goes, so the reply is not held for it.
+        const verification = runVerification(sessionID, verifyBaseline, vibeModels?.planner)
+        if ((yield* config.get()).verify_background === false || process.env["RIFT_VERIFY_FOREGROUND"] === "1")
+          yield* verification
+        else {
+          // A newer turn's report replaces an older one still running; shared results carry over.
+          const previous = backgroundVerification.get(sessionID)
+          if (previous) yield* Fiber.interrupt(previous)
+          const fiber = yield* verification.pipe(
+            Effect.ignore,
+            Effect.ensuring(Effect.sync(() => backgroundVerification.delete(sessionID))),
+            Effect.forkIn(scope),
+          )
+          backgroundVerification.set(sessionID, fiber)
+        }
         if (!session.parentID) yield* taskState.save({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
         return yield* lastAssistant(sessionID)

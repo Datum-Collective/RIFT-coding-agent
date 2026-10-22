@@ -29,6 +29,10 @@ export const RETRY_JITTER_FACTOR = 0.25
 export const RETRY_MAX_DELAY_NO_HEADERS = 30_000 // 30 seconds
 export const RETRY_MAX_DELAY = 2_147_483_647 // max 32-bit signed integer for setTimeout
 export const RETRY_MAX_RETRIES = 5
+export const RETRY_DEAD_CONNECTION_DELAY = 250
+
+const DEAD_CONNECTION =
+  /econnreset|socket hang up|socket connection was closed|connection (?:reset|lost)|reset before headers|\bterminated\b|fetch failed/i
 
 const RETRYABLE_MESSAGE_PATTERNS = [
   /429|500|502|503|504|524/i,
@@ -220,7 +224,12 @@ export function policy(opts: {
       if (!retry) return Cause.done(meta.attempt)
       if (meta.attempt > RETRY_MAX_RETRIES) return Cause.done(meta.attempt)
       return Effect.gen(function* () {
-        const wait = delay(meta.attempt, SessionV1.APIError.isInstance(error) ? error : undefined)
+        // A dropped connection is a dead socket, not an overloaded server: the first retry goes
+        // straight out on a fresh connection instead of waiting out the backoff.
+        const wait =
+          meta.attempt === 1 && DEAD_CONNECTION.test(retry.message)
+            ? RETRY_DEAD_CONNECTION_DELAY
+            : delay(meta.attempt, SessionV1.APIError.isInstance(error) ? error : undefined)
         const now = yield* Clock.currentTimeMillis
         yield* opts.set({
           attempt: meta.attempt,

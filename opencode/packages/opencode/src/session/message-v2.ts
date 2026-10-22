@@ -46,6 +46,20 @@ interface FetchDecompressionError extends Error {
 export const SYNTHETIC_ATTACHMENT_PROMPT = "Attached media from tool result:"
 export { isMedia }
 
+// Bulky tool inputs (written file contents, edit and patch text) are cleared along with the
+// output once a tool result is compacted; the file on disk is the source of truth by then.
+export const CLEARED_INPUTS = ["content", "oldString", "newString", "patchText"]
+
+function clearInput(input: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(input).map(([key, value]) =>
+      CLEARED_INPUTS.includes(key) && typeof value === "string" && value.length > 200
+        ? [key, `[${value.length} characters cleared; read the file for its current contents]`]
+        : [key, value],
+    ),
+  )
+}
+
 function truncateToolOutput(text: string, maxChars?: number) {
   if (!maxChars || text.length <= maxChars) return text
   const omitted = text.length - maxChars
@@ -122,10 +136,15 @@ function hydrate(db: Database.Interface["db"], rows: (typeof MessageTable.$infer
   })
 }
 
+// Part metadata also holds RIFT's own markers (rift_task_state: true, ...). Provider metadata maps a
+// provider to an object, and the AI SDK rejects the whole prompt over any other value, so only those
+// entries are forwarded.
 function providerMeta(metadata: Record<string, any> | undefined) {
   if (!metadata) return undefined
-  const { providerExecuted: _, ...rest } = metadata
-  return Object.keys(rest).length > 0 ? rest : undefined
+  const entries = Object.entries(metadata).filter(
+    ([key, value]) => key !== "providerExecuted" && typeof value === "object" && value !== null && !Array.isArray(value),
+  )
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined
 }
 
 export const toModelMessagesEffect = Effect.fnUntraced(function* (
@@ -280,7 +299,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
           assistantMessage.parts.push({
             type: "text",
             text,
-            ...(differentModel ? {} : { providerMetadata: part.metadata }),
+            ...(differentModel ? {} : { providerMetadata: providerMeta(part.metadata) }),
           })
         }
         if (part.type === "step-start")
@@ -316,7 +335,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
               type: ("tool-" + part.tool) as `tool-${string}`,
               state: "output-available",
               toolCallId: part.callID,
-              input: part.state.input,
+              input: part.state.time.compacted ? clearInput(part.state.input) : part.state.input,
               output,
               ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
               ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),
@@ -371,7 +390,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
           assistantMessage.parts.push({
             type: "reasoning",
             text: part.text,
-            providerMetadata: part.metadata,
+            providerMetadata: providerMeta(part.metadata),
           })
         }
       }

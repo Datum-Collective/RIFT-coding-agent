@@ -87,7 +87,8 @@ export const Info = Schema.Struct({
     description: "Enable Vibe Mode by default for new sessions",
   }),
   brain_rot: Schema.optional(Schema.Boolean).annotate({
-    description: "Enable Brain Rot Mode by default for new sessions: replies and narration turn into unhinged internet slang, while code, commits and commands stay serious",
+    description:
+      "Enable Brain Rot Mode by default for new sessions: replies and narration turn into unhinged internet slang, while code, commits and commands stay serious",
   }),
   vibe_max_attempts: Schema.optional(Schema.Int).annotate({
     description: "Executor attempts before Vibe Mode asks the planner to revise a step. Use 0 for unlimited",
@@ -119,9 +120,37 @@ export const Info = Schema.Struct({
     description:
       "Keep each session's goal, plan, decisions, touched files and verification in .rift/tasks, and append them to every compaction summary so they survive compaction. Defaults to true",
   }),
+  verify_background: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Run verification after the reply instead of before it, so a turn returns as soon as the agent finishes and the report fills in as checks complete. Defaults to true",
+  }),
   verify_claims: Schema.optional(Schema.Boolean).annotate({
     description:
       "After verification, have a model compare the agent's own summary against the real diff and flag mismatches. Costs one extra model call per turn that edits files. Defaults to true",
+  }),
+  verify_claims_min_diff_lines: Schema.optional(Schema.Number).annotate({
+    description:
+      "Smallest diff, in changed lines, that gets the model claims pass. Smaller diffs get only the instant deterministic claims check. Defaults to 40",
+  }),
+  verify_live: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Start the project's checks in the background as soon as a step edits files, and tell the agent about failures before it finishes. Only commands already allowed run this way. Defaults to true",
+  }),
+  verify_live_fix_rounds: Schema.optional(Schema.Number).annotate({
+    description:
+      "How many times per turn a failing live check sends the agent back to fix it before the turn ends. 0 turns it off. Defaults to 2",
+  }),
+  verify_live_wait_ms: Schema.optional(Schema.Number).annotate({
+    description:
+      "How long a finishing turn waits for live checks that are still running. Past it, the turn ends and the report fills in afterwards. Defaults to 10000",
+  }),
+  hedge_after_ms: Schema.optional(Schema.Number).annotate({
+    description:
+      "If the model has not started answering this long into a request, send the same request again and keep whichever answers first. 0 turns it off. Defaults to 25000",
+  }),
+  graph_nudge: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Ask the agent to keep an engineering graph with `graphwrite` on multi-step builds. Each graph update is an extra model round trip. Defaults to false",
   }),
   verify_claims_model: Schema.optional(Schema.String).annotate({
     description:
@@ -213,6 +242,14 @@ export const Info = Schema.Struct({
       }),
       reserved: Schema.optional(NonNegativeInt).annotate({
         description: "Token buffer for compaction. Leaves enough window to avoid overflow during compaction.",
+      }),
+      max_context: Schema.optional(NonNegativeInt).annotate({
+        description:
+          "Compact once a request reaches this many tokens even if the model's window is larger, since models answer far slower on long contexts. 0 uses the full window (default: 80000)",
+      }),
+      lean: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "During a turn, clear tool outputs, screenshots and written file contents the agent has already used once the context grows, keeping the newest ones (default: true)",
       }),
     }),
   ),

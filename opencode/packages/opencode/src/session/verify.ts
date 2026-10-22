@@ -207,7 +207,7 @@ const MAX_OUTPUT_CHARS = 200_000
 
 // Runs one command in the user's configured shell (same as the bash tool, so PATH and version managers
 // behave the same) and kills the whole process tree when aborted.
-function exec(shell: string, command: string, cwd: string, signal?: AbortSignal) {
+function exec(shell: string, command: string, cwd: string, signal?: AbortSignal, lowPriority = false) {
   return new Promise<{ code: number; output: string }>((resolve, reject) => {
     const proc = spawn(shell, Shell.args(shell, command, cwd), {
       cwd,
@@ -215,6 +215,12 @@ function exec(shell: string, command: string, cwd: string, signal?: AbortSignal)
       detached: process.platform !== "win32",
       windowsHide: process.platform === "win32",
     })
+    // Background checks must not starve the agent's own tools; children inherit the priority.
+    if (lowPriority && proc.pid !== undefined) {
+      try {
+        os.setPriority(proc.pid, 10)
+      } catch {}
+    }
     let output = ""
     let exited = false
     const collect = (chunk: Buffer) => {
@@ -243,6 +249,8 @@ export interface RunOptions {
   /** Cancels the check, e.g. when the session is aborted. */
   cancel?: AbortSignal
   shell?: string
+  /** Run at lowered CPU priority. */
+  lowPriority?: boolean
 }
 
 export async function runCheck(check: Check, dir: string, options: RunOptions): Promise<CheckResult> {
@@ -250,7 +258,7 @@ export async function runCheck(check: Check, dir: string, options: RunOptions): 
   const timeout = options.timeoutMs > 0 ? AbortSignal.timeout(options.timeoutMs) : undefined
   const signals = [timeout, options.cancel].filter((item): item is AbortSignal => !!item)
   const abort = signals.length ? AbortSignal.any(signals) : undefined
-  const result = await exec(options.shell ?? Shell.acceptable(), check.command, check.dir ?? dir, abort)
+  const result = await exec(options.shell ?? Shell.acceptable(), check.command, check.dir ?? dir, abort, options.lowPriority)
   const ms = Date.now() - started
   const output = tail(result.output)
   if (options.cancel?.aborted)
@@ -391,6 +399,55 @@ export function parseClaims(text: string): Mismatch[] | undefined {
   return items
 }
 
+const CHECK_CLAIMS: { pattern: RegExp; matches: (check: Check) => boolean }[] = [
+  {
+    pattern: /\b(all )?(the )?tests? (now )?(pass|passes|passed|passing|are green|succeed)/i,
+    matches: (check) => /test/i.test(check.name),
+  },
+  {
+    pattern: /\b(typecheck(s|ing)?|type[- ]check(s|ing)?|types?) (now )?(pass|passes|passed|is clean|are clean|cleanly)|\bno type errors\b/i,
+    matches: (check) => /type|tsc|vet|cargo check/i.test(check.name),
+  },
+  {
+    pattern: /\blint(s|ing|er)? (now )?(pass|passes|passed|is clean|cleanly)|\bno lint (errors|warnings)\b/i,
+    matches: (check) => /lint/i.test(check.name),
+  },
+]
+
+const CHANGE_VERB = /\b(creat|add|wrot|writ|updat|modif|edit|chang|renam|delet|remov)\w*/i
+
+/**
+ * The claims check without a model: catches a summary that says checks pass when RIFT just watched
+ * them fail, and one that claims to have changed a file the turn never touched. Instant, so it
+ * always runs; the model pass only adds what this cannot see.
+ */
+export function deterministicClaims(summary: string, results: CheckResult[], edited: string[]): Mismatch[] {
+  const items: Mismatch[] = []
+  const sentences = summary.split(/(?<=[.!?\n])\s+/)
+  for (const claim of CHECK_CLAIMS) {
+    const sentence = sentences.find((item) => claim.pattern.test(item))
+    if (!sentence) continue
+    const failed = results.find((result) => claim.matches(result) && result.status === "failed")
+    if (failed)
+      items.push({ claim: sentence.trim(), reality: `\`${failed.command}\` failed (exit ${failed.code ?? "?"})` })
+  }
+  const names = new Set(edited.map((file) => path.basename(file)))
+  for (const sentence of sentences) {
+    if (!CHANGE_VERB.test(sentence)) continue
+    for (const match of sentence.matchAll(/`([^`\s]+\.[a-z0-9]{1,8})`/gi)) {
+      const name = path.basename(match[1]!)
+      if (names.size > 0 && !names.has(name))
+        items.push({ claim: sentence.trim(), reality: `${match[1]} was not edited in this turn` })
+    }
+  }
+  return items
+}
+
+/** Changed lines in a unified diff, ignoring the file headers. */
+export function diffSize(diff: string) {
+  return diff.split("\n").filter((line) => /^[+-](?![+-]{2} )/.test(line)).length
+}
+
 /** A page loaded and read after the commands ran. */
 export type BrowserCheck = {
   url: string
@@ -465,7 +522,8 @@ export async function checkBrowser(url: string, timeoutMs = 30_000): Promise<Bro
       errors: [],
     }
   } finally {
-    await session?.close().catch(() => {})
+    // Closing kills the browser's process tree, ~0.4 s nobody needs to wait for.
+    void session?.close().catch(() => {})
   }
 }
 

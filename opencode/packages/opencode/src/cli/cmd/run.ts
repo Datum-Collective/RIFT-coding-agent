@@ -226,6 +226,8 @@ export const RunCommand = effectCmd({
         default: false,
       }),
   handler: Effect.fn("Cli.run")(function* (args) {
+    // `run` exits as soon as the session goes idle, so background verification would be cut off.
+    process.env["RIFT_VERIFY_FOREGROUND"] = "1"
     const { Agent } = yield* Effect.promise(() => import("@/agent/agent"))
     const { RuntimeFlags } = yield* Effect.promise(() => import("@/effect/runtime-flags"))
     const { InstanceRef } = yield* Effect.promise(() => import("@/effect/instance-ref"))

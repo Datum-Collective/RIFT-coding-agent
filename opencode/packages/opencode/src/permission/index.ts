@@ -13,6 +13,12 @@ export interface Interface {
   readonly ask: (input: PermissionV1.AskInput) => Effect.Effect<void, PermissionV1.Error>
   readonly reply: (input: PermissionV1.ReplyInput) => Effect.Effect<void, PermissionV1.NotFoundError>
   readonly list: () => Effect.Effect<ReadonlyArray<PermissionV1.Request>>
+  /** Whether every pattern is already allowed, without asking anyone. */
+  readonly allowed: (input: {
+    permission: string
+    patterns: string[]
+    ruleset: PermissionV1.Ruleset
+  }) => Effect.Effect<boolean>
 }
 
 interface PendingEntry {
@@ -171,7 +177,18 @@ const layer = Layer.effect(
       return Array.from(pending.values(), (item) => item.info)
     })
 
-    return Service.of({ ask, reply, list })
+    const allowed = Effect.fn("Permission.allowed")(function* (input: {
+      permission: string
+      patterns: string[]
+      ruleset: PermissionV1.Ruleset
+    }) {
+      const { approved } = yield* InstanceState.get(state)
+      return input.patterns.every(
+        (pattern) => evaluate(input.permission, pattern, input.ruleset, approved).action === "allow",
+      )
+    })
+
+    return Service.of({ ask, reply, list, allowed })
   }),
 )
 

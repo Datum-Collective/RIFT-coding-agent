@@ -30,6 +30,14 @@ export const PRUNE_MINIMUM = 20_000
 export const PRUNE_PROTECT = 40_000
 const TOOL_OUTPUT_MAX_CHARS = 2_000
 const PRUNE_PROTECTED_TOOLS = ["skill"]
+// Lean context: once a request passes LEAN_START tokens, tool results older than the newest
+// LEAN_PROTECT tokens of them are cleared, in batches of at least LEAN_MINIMUM so the provider's
+// prompt cache is only broken now and then.
+export const LEAN_START = 40_000
+export const LEAN_PROTECT = 20_000
+export const LEAN_MINIMUM = 10_000
+// Rough cost of one image in a request; screenshots are what made long UI sessions crawl.
+const MEDIA_TOKENS = 1_500
 const MIN_PRESERVE_RECENT_TOKENS = 2_000
 const MAX_PRESERVE_RECENT_TOKENS = 15_000
 type Turn = {
@@ -114,6 +122,19 @@ function completedCompactions(messages: SessionV1.WithParts[]) {
   })
 }
 
+function weight(part: SessionV1.ToolPart) {
+  if (part.state.status !== "completed") return 0
+  const media = (part.state.attachments ?? []).filter((item) => item.mime.startsWith("image/")).length
+  return (
+    Token.estimate(part.state.output) +
+    media * MEDIA_TOKENS +
+    MessageV2.CLEARED_INPUTS.reduce((sum, key) => {
+      const value = (part.state.input as Record<string, unknown>)[key]
+      return typeof value === "string" ? sum + Token.estimate(value) : sum
+    }, 0)
+  )
+}
+
 function preserveRecentBudget(input: { cfg: ConfigV1.Info; model: Provider.Model }) {
   return (
     input.cfg.compaction?.preserve_recent_tokens ??
@@ -170,6 +191,7 @@ export interface Interface {
     model: Provider.Model
   }) => Effect.Effect<boolean>
   readonly prune: (input: { sessionID: SessionID }) => Effect.Effect<void>
+  readonly lean: (input: { messages: SessionV1.WithParts[]; tokens: number }) => Effect.Effect<void>
   readonly process: (input: {
     parentID: MessageID
     messages: SessionV1.WithParts[]
@@ -317,6 +339,44 @@ const layer = Layer.effect(
         }
         yield* Effect.logInfo("pruned", { count: toPrune.length })
       }
+    })
+
+    // Mid-turn version of prune: works on the messages about to be sent, current turn included, so
+    // a long single turn (build, screenshot, fix, repeat) stops dragging every old result along.
+    const lean = Effect.fn("SessionCompaction.lean")(function* (input: {
+      messages: SessionV1.WithParts[]
+      tokens: number
+    }) {
+      const cfg = yield* config.get()
+      if (cfg.compaction?.lean === false || input.tokens < LEAN_START) return
+
+      let total = 0
+      let cleared = 0
+      const parts: SessionV1.ToolPart[] = []
+      loop: for (let msgIndex = input.messages.length - 1; msgIndex >= 0; msgIndex--) {
+        const msg = input.messages[msgIndex]
+        if (msg.info.role === "assistant" && msg.info.summary) break
+        for (let partIndex = msg.parts.length - 1; partIndex >= 0; partIndex--) {
+          const part = msg.parts[partIndex]
+          if (part.type !== "tool" || part.state.status !== "completed") continue
+          if (PRUNE_PROTECTED_TOOLS.includes(part.tool)) continue
+          if (part.state.time.compacted) break loop
+          const size = weight(part)
+          total += size
+          if (total <= LEAN_PROTECT) continue
+          cleared += size
+          parts.push(part)
+        }
+      }
+      if (cleared < LEAN_MINIMUM) return
+
+      const now = Date.now()
+      for (const part of parts) {
+        if (part.state.status !== "completed") continue
+        part.state.time.compacted = now
+        yield* session.updatePart(part)
+      }
+      yield* Effect.logInfo("lean context", { tokens: input.tokens, cleared, parts: parts.length })
     })
 
     const processCompaction = Effect.fn("SessionCompaction.process")(function* (input: {
@@ -603,6 +663,7 @@ const layer = Layer.effect(
     return Service.of({
       isOverflow,
       prune,
+      lean,
       process: processCompaction,
       create,
     })

@@ -20,14 +20,17 @@ export type CdpEvent = {
   sessionId?: string
 }
 
+const COMMAND_TIMEOUT_MS = 30_000
+
 /** Routes replies to their waiting caller and events to listeners. */
 export class CdpSession {
   private nextID = 1
   private readonly pending = new Map<
     number,
-    { resolve: (value: Record<string, unknown>) => void; reject: (error: Error) => void }
+    { sessionId?: string; resolve: (value: Record<string, unknown>) => void; reject: (error: Error) => void }
   >()
   private readonly listeners = new Set<(event: CdpEvent) => void>()
+  private readonly waiters = new Set<{ sessionId?: string; reject: (error: Error) => void }>()
   private closedReason?: string
 
   constructor(private readonly send: (payload: string) => void) {}
@@ -58,37 +61,83 @@ export class CdpSession {
     return () => this.listeners.delete(listener)
   }
 
-  /** Sends a command and resolves with its result. Rejects if the session closes first. */
-  command(method: string, params: Record<string, unknown> = {}, sessionId?: string) {
+  /**
+   * Sends a command and resolves with its result. Rejects if the session closes first, or when the
+   * browser does not answer in time: a stuck page used to hang the agent's turn with no end.
+   */
+  command(method: string, params: Record<string, unknown> = {}, sessionId?: string, timeoutMs = COMMAND_TIMEOUT_MS) {
     if (this.closedReason) return Promise.reject(new Error(this.closedReason))
     const id = this.nextID++
     const payload: CdpMessage = { id, method, params }
     if (sessionId) payload.sessionId = sessionId
     return new Promise<Record<string, unknown>>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
+      const timer = setTimeout(() => {
+        this.pending.delete(id)
+        reject(new Error(`browser did not answer ${method} within ${Math.round(timeoutMs / 1000)}s`))
+      }, timeoutMs)
+      this.pending.set(id, {
+        sessionId,
+        resolve: (value) => {
+          clearTimeout(timer)
+          resolve(value)
+        },
+        reject: (error) => {
+          clearTimeout(timer)
+          reject(error)
+        },
+      })
       try {
         this.send(JSON.stringify(payload))
       } catch (error) {
+        this.pending.get(id)?.reject(error instanceof Error ? error : new Error(String(error)))
         this.pending.delete(id)
-        reject(error instanceof Error ? error : new Error(String(error)))
       }
     })
   }
 
-  /** Resolves when an event arrives, or rejects on timeout so a hung page cannot hang the agent. */
-  waitFor(method: string, timeoutMs: number) {
+  /**
+   * Resolves when an event arrives (from one tab, given its session), or rejects on timeout so a
+   * hung page cannot hang the agent.
+   */
+  waitFor(method: string, timeoutMs: number, sessionId?: string) {
     return new Promise<CdpEvent>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        off()
-        reject(new Error(`timed out after ${Math.round(timeoutMs / 1000)}s waiting for ${method}`))
-      }, timeoutMs)
-      const off = this.on((event) => {
-        if (event.method !== method) return
+      const settle = () => {
         clearTimeout(timer)
         off()
+        this.waiters.delete(waiter)
+      }
+      const waiter = {
+        sessionId,
+        reject: (error: Error) => {
+          settle()
+          reject(error)
+        },
+      }
+      const timer = setTimeout(
+        () => waiter.reject(new Error(`timed out after ${Math.round(timeoutMs / 1000)}s waiting for ${method}`)),
+        timeoutMs,
+      )
+      const off = this.on((event) => {
+        if (event.method !== method || (sessionId && event.sessionId !== sessionId)) return
+        settle()
         resolve(event)
       })
+      this.waiters.add(waiter)
     })
+  }
+
+  get closed() {
+    return this.closedReason !== undefined
+  }
+
+  /** Fails the commands and waits on one tab, for when that tab crashed and will never answer. */
+  fail(sessionId: string, reason: string) {
+    for (const [id, waiter] of this.pending) {
+      if (waiter.sessionId !== sessionId) continue
+      this.pending.delete(id)
+      waiter.reject(new Error(reason))
+    }
+    for (const waiter of this.waiters) if (waiter.sessionId === sessionId) waiter.reject(new Error(reason))
   }
 
   /** Fails every in-flight command so no caller waits on a dead socket. */
@@ -96,6 +145,7 @@ export class CdpSession {
     this.closedReason = reason
     for (const waiter of this.pending.values()) waiter.reject(new Error(reason))
     this.pending.clear()
+    for (const waiter of this.waiters) waiter.reject(new Error(reason))
     this.listeners.clear()
   }
 }

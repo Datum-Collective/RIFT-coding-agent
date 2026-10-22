@@ -2,10 +2,12 @@
  * Drives a real page: launch a browser, open a tab, navigate, read it, and collect the console
  * errors a screenshot would never show.
  */
+import { rmSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { spawn, type ChildProcess } from "child_process"
+import type { Readable, Writable } from "stream"
 import { Shell } from "@opencode-ai/core/shell"
 import { CdpSession } from "./cdp"
 import { find, NOT_FOUND, type BrowserBinary } from "./discover"
@@ -25,52 +27,29 @@ export type PageState = {
 }
 
 const LAUNCH_TIMEOUT_MS = 20_000
+// How long after a click to look for a navigation it started. A link schedules its navigation
+// at once, so a short wait catches it without slowing down every click on a single page.
+const CLICK_SETTLE_MS = 50
+const CLICK_NAVIGATION_TIMEOUT_MS = 15_000
 
-function endpointFrom(line: string) {
-  const match = /ws:\/\/\S+/.exec(line)
-  return match?.[0]
-}
-
-/** Reads the DevTools endpoint the browser prints on startup. */
-function waitForEndpoint(proc: ChildProcess, timeoutMs: number) {
-  return new Promise<string>((resolve, reject) => {
-    let buffered = ""
-    const timer = setTimeout(() => {
-      cleanup()
-      reject(new Error(`browser did not report a DevTools endpoint within ${Math.round(timeoutMs / 1000)}s`))
-    }, timeoutMs)
-    const onData = (chunk: Buffer) => {
-      buffered += chunk.toString()
-      const endpoint = endpointFrom(buffered)
-      if (!endpoint) return
-      cleanup()
-      resolve(endpoint)
-    }
-    const onExit = (code: number | null) => {
-      cleanup()
-      reject(new Error(`browser exited with code ${code ?? "unknown"} before it was ready`))
-    }
-    function cleanup() {
-      clearTimeout(timer)
-      proc.stderr?.off("data", onData)
-      proc.off("exit", onExit)
-    }
-    proc.stderr?.on("data", onData)
-    proc.once("exit", onExit)
-  })
-}
+type Tab = { sessionId: string; targetId: string; off: () => void }
 
 export class BrowserSession {
   private constructor(
     private readonly proc: ChildProcess,
-    private readonly socket: WebSocket,
+    private readonly input: Writable,
     private readonly cdp: CdpSession,
     private readonly profile: string,
     readonly binary: BrowserBinary,
   ) {}
 
-  private target?: string
+  private tab?: Tab
   private entries: ConsoleEntry[] = []
+
+  /** True once the browser itself is gone; a new session has to be launched. */
+  get closed() {
+    return this.cdp.closed
+  }
 
   static async launch(options: { binary?: BrowserBinary; timeoutMs?: number } = {}) {
     const binary = options.binary ?? find()
@@ -78,10 +57,14 @@ export class BrowserSession {
 
     // A throwaway profile keeps the user's real browser data untouched.
     const profile = await fs.mkdtemp(path.join(os.tmpdir(), "rift-browser-"))
+    // DevTools over fds 3 and 4 rather than a WebSocket: the browser shuts down as soon as its end
+    // of the pipe closes, so it dies with RIFT however RIFT dies, including a crash, a SIGKILL or
+    // a TUI worker thread whose exit hooks never run. Its stdout and stderr are not read, so they
+    // must not be pipes that fill up and block it.
     const proc = spawn(
       binary.path,
       [
-        "--remote-debugging-port=0",
+        "--remote-debugging-pipe",
         `--user-data-dir=${profile}`,
         "--no-first-run",
         "--no-default-browser-check",
@@ -89,41 +72,55 @@ export class BrowserSession {
         "--disable-extensions",
         ...(binary.kind === "headless-shell" ? [] : ["--headless=new"]),
       ],
-      { stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" },
+      { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"], detached: process.platform !== "win32" },
     )
+    const input = proc.stdio[3] as Writable
+    const output = proc.stdio[4] as Readable
+    const cdp = new CdpSession((payload) => input.write(`${payload}\0`))
+    // Messages are NUL-terminated JSON.
+    let buffered = ""
+    output.setEncoding("utf8")
+    output.on("data", (chunk: string) => {
+      const messages = (buffered + chunk).split("\0")
+      buffered = messages.pop() ?? ""
+      messages.forEach((message) => cdp.receive(message))
+    })
+    input.on("error", () => cdp.close("browser exited"))
+    proc.once("exit", (code) => cdp.close(`browser exited with code ${code ?? "unknown"}`))
 
-    let endpoint: string
-    try {
-      endpoint = await waitForEndpoint(proc, options.timeoutMs ?? LAUNCH_TIMEOUT_MS)
-    } catch (error) {
+    const ready = await cdp
+      .command("Browser.getVersion", {}, undefined, options.timeoutMs ?? LAUNCH_TIMEOUT_MS)
+      .then(() => undefined)
+      .catch((error: Error) => error)
+    if (ready) {
       await Shell.killTree(proc).catch(() => {})
       await fs.rm(profile, { recursive: true, force: true }).catch(() => {})
-      throw error
+      throw new Error(`browser did not start: ${ready.message}`)
     }
 
-    const socket = new WebSocket(endpoint)
-    const cdp = new CdpSession((payload) => socket.send(payload))
-    socket.addEventListener("message", (event) => cdp.receive(String(event.data)))
-    socket.addEventListener("close", () => cdp.close())
-    await new Promise<void>((resolve, reject) => {
-      socket.addEventListener("open", () => resolve(), { once: true })
-      socket.addEventListener("error", () => reject(new Error("could not connect to the browser")), { once: true })
-    })
-
-    return new BrowserSession(proc, socket, cdp, profile, binary)
+    const session = new BrowserSession(proc, input, cdp, profile, binary)
+    // The browser runs detached in its own process group, so it would outlive RIFT; every run
+    // that used it used to leave a headless Chrome behind. Exit handlers must be synchronous.
+    process.once("exit", session.closeNow)
+    return session
   }
 
   /** Opens a tab and starts collecting console errors. */
   private async attach() {
-    if (this.target) return this.target
+    if (this.tab) return this.tab
     const created = await this.cdp.command("Target.createTarget", { url: "about:blank" })
     const targetId = String(created["targetId"])
     const attached = await this.cdp.command("Target.attachToTarget", { targetId, flatten: true })
     const sessionId = String(attached["sessionId"])
-    this.target = sessionId
 
-    this.cdp.on((event) => {
+    const off = this.cdp.on((event) => {
+      // A crashed tab never answers again, so every later call would wait out its timeout; drop
+      // it instead, and the next call opens a fresh one.
+      if (event.method === "Target.detachedFromTarget" && event.params["sessionId"] === sessionId)
+        return this.drop(tab, "the page's tab closed; the next browser call opens a new one")
       if (event.sessionId !== sessionId) return
+      if (event.method === "Inspector.targetCrashed")
+        return this.drop(tab, "the page crashed; the next browser call opens a new tab")
       if (event.method === "Runtime.exceptionThrown") {
         const details = event.params["exceptionDetails"] as Record<string, unknown> | undefined
         const exception = details?.["exception"] as Record<string, unknown> | undefined
@@ -142,7 +139,10 @@ export class BrowserSession {
         })
       }
     })
+    const tab: Tab = { sessionId, targetId, off }
+    this.tab = tab
 
+    await this.cdp.command("Inspector.enable", {}, sessionId)
     await this.cdp.command("Page.enable", {}, sessionId)
     await this.cdp.command("Runtime.enable", {}, sessionId)
     await this.cdp.command("Log.enable", {}, sessionId)
@@ -151,11 +151,19 @@ export class BrowserSession {
     // Last-Modified header lets the browser keep serving the old CSS and JS, and the agent loops
     // on fixes that already landed.
     await this.cdp.command("Network.setCacheDisabled", { cacheDisabled: true }, sessionId)
-    return sessionId
+    return tab
+  }
+
+  private drop(tab: Tab, reason: string) {
+    if (this.tab !== tab) return
+    this.tab = undefined
+    tab.off()
+    this.cdp.fail(tab.sessionId, reason)
+    this.cdp.command("Target.closeTarget", { targetId: tab.targetId }).catch(() => {})
   }
 
   async navigate(url: string, timeoutMs = 30_000): Promise<PageState> {
-    const sessionId = await this.attach()
+    const { sessionId } = await this.attach()
     this.entries = []
 
     let status: number | undefined
@@ -166,13 +174,12 @@ export class BrowserSession {
       if (typeof response?.["status"] === "number") status = response["status"]
     })
 
-    const loaded = this.cdp.waitFor("Page.loadEventFired", timeoutMs)
-    await this.cdp.command("Page.navigate", { url }, sessionId)
-    try {
-      await loaded
-    } finally {
-      offResponse()
-    }
+    // Awaited together: when navigate fails first, a lone load wait would reject later with
+    // nothing handling it, which kills a process that does not swallow unhandled rejections.
+    await Promise.all([
+      this.cdp.command("Page.navigate", { url }, sessionId, timeoutMs),
+      this.cdp.waitFor("Page.loadEventFired", timeoutMs, sessionId),
+    ]).finally(() => offResponse())
 
     const state = await this.read()
     return { ...state, status }
@@ -180,7 +187,7 @@ export class BrowserSession {
 
   /** Current url, title and everything the console has reported since navigation. */
   async read(): Promise<PageState> {
-    const sessionId = await this.attach()
+    const { sessionId } = await this.attach()
     const result = await this.cdp.command(
       "Runtime.evaluate",
       { expression: "({ url: location.href, title: document.title })", returnByValue: true },
@@ -196,25 +203,56 @@ export class BrowserSession {
     }
   }
 
-  /** Visible text of the page, or of one selector, truncated for a model to read. */
+  /**
+   * Visible text of the page, or of one selector, truncated for a model to read. A form field
+   * gives its value. A hidden element is marked as such: its text is still in the page, and an
+   * error message the page never showed used to read as if it were on screen.
+   */
   async text(selector?: string, limit = 20_000) {
-    const sessionId = await this.attach()
-    const expression = selector
-      ? `(document.querySelector(${JSON.stringify(selector)})?.innerText ?? "")`
-      : "(document.body?.innerText ?? '')"
+    const { sessionId } = await this.attach()
+    const expression = `(() => {
+      const el = ${selector ? `document.querySelector(${JSON.stringify(selector)})` : "document.body"}
+      if (!el) return ${selector ? "null" : `""`}
+      const text = ("value" in el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) ? el.value : el.innerText).trim()
+      const shown = el.checkVisibility({ visibilityProperty: true, opacityProperty: true })
+      return shown || !text ? text : "(hidden, not shown on the page) " + text
+    })()`
     const result = await this.cdp.command("Runtime.evaluate", { expression, returnByValue: true }, sessionId)
-    const value = String((result["result"] as Record<string, unknown> | undefined)?.["value"] ?? "")
-    return value.length > limit ? `${value.slice(0, limit)}\n… (truncated)` : value
+    const value = (result["result"] as Record<string, unknown> | undefined)?.["value"]
+    if (value === null) throw new Error(`no element matched ${JSON.stringify(selector)}`)
+    const text = String(value ?? "")
+    return text.length > limit ? `${text.slice(0, limit)}\n… (truncated)` : text
   }
 
+  /** Clicks, and when the click starts loading a new page, waits for it so a read sees that page. */
   async click(selector: string) {
-    return this.interact(selector, `el.click(); return "ok"`, `no element matched ${JSON.stringify(selector)}`)
+    const { sessionId, targetId } = await this.attach()
+    let loading: Promise<unknown> | undefined
+    const off = this.cdp.on((event) => {
+      if (loading || event.sessionId !== sessionId || event.params["frameId"] !== targetId) return
+      if (event.method !== "Page.frameRequestedNavigation" && event.method !== "Page.frameStartedLoading") return
+      loading = this.cdp.waitFor("Page.loadEventFired", CLICK_NAVIGATION_TIMEOUT_MS, sessionId).catch(() => {})
+    })
+    await this.interact(selector, `el.click(); return "ok"`, `no element matched ${JSON.stringify(selector)}`)
+      .then(() => Bun.sleep(CLICK_SETTLE_MS))
+      .finally(off)
+    await loading
   }
 
+  /**
+   * Sets the value through the element's native setter: React and similar frameworks track a
+   * field's value by intercepting \`el.value = ...\` and then ignore the input event, so a form
+   * looked filled in but submitted empty.
+   */
   async type(selector: string, value: string) {
     return this.interact(
       selector,
-      `el.focus(); el.value = ${JSON.stringify(value)};
+      `el.focus();
+       let proto = Object.getPrototypeOf(el);
+       while (proto && !Object.getOwnPropertyDescriptor(proto, "value")) proto = Object.getPrototypeOf(proto);
+       const setter = proto && Object.getOwnPropertyDescriptor(proto, "value").set;
+       if (setter) setter.call(el, ${JSON.stringify(value)});
+       if (!setter) el.textContent = ${JSON.stringify(value)};
        el.dispatchEvent(new Event("input", { bubbles: true }));
        el.dispatchEvent(new Event("change", { bubbles: true })); return "ok"`,
       `no element matched ${JSON.stringify(selector)}`,
@@ -222,7 +260,7 @@ export class BrowserSession {
   }
 
   private async interact(selector: string, body: string, missing: string) {
-    const sessionId = await this.attach()
+    const { sessionId } = await this.attach()
     const expression = `(() => { const el = document.querySelector(${JSON.stringify(selector)});
       if (!el) return "missing"; ${body} })()`
     const result = await this.cdp.command("Runtime.evaluate", { expression, returnByValue: true }, sessionId)
@@ -232,18 +270,26 @@ export class BrowserSession {
 
   /** PNG screenshot as base64, for attaching to a reply. */
   async screenshot() {
-    const sessionId = await this.attach()
+    const { sessionId } = await this.attach()
     const result = await this.cdp.command("Page.captureScreenshot", { format: "png" }, sessionId)
     return String(result["data"] ?? "")
   }
 
+  /** Kills the browser right away, for when RIFT itself is exiting and cannot wait. */
+  readonly closeNow = () => {
+    if (this.proc.pid !== undefined && this.proc.exitCode === null)
+      try {
+        process.kill(process.platform === "win32" ? this.proc.pid : -this.proc.pid, "SIGKILL")
+      } catch {
+        this.proc.kill("SIGKILL")
+      }
+    rmSync(this.profile, { recursive: true, force: true })
+  }
+
   async close() {
+    process.removeListener("exit", this.closeNow)
     this.cdp.close()
-    try {
-      this.socket.close()
-    } catch {
-      // The socket may already be gone; the process kill below is what matters.
-    }
+    this.input.end()
     await Shell.killTree(this.proc).catch(() => {})
     await fs.rm(this.profile, { recursive: true, force: true }).catch(() => {})
   }

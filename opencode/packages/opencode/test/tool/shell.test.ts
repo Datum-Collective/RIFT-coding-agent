@@ -194,6 +194,29 @@ describe("tool.shell", () => {
     ),
   )
 
+  it.live("answers a command that does nothing without running it", () =>
+    runIn(
+      projectRoot,
+      Effect.gen(function* () {
+        const result = yield* run({ command: "true" })
+        expect(result.output).toContain("Not run")
+        expect(result.output).toContain("call that tool directly")
+      }),
+    ),
+  )
+
+  it.live("points opening a page in the user's browser at the browser tool", () =>
+    runIn(
+      projectRoot,
+      Effect.gen(function* () {
+        for (const command of ["open index.html", 'open "http://localhost:3000/"', "xdg-open file:///tmp/a.html"]) {
+          expect((yield* run({ command })).output).toContain("use the browser tool")
+        }
+        expect((yield* run({ command: "open --help || true" })).output).not.toContain("use the browser tool")
+      }),
+    ),
+  )
+
   it.live("falls back from terminal-only configured shell", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped({ config: { shell: "fish" } })

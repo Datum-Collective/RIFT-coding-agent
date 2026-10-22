@@ -396,12 +396,28 @@ describe("session.compaction.isOverflow", () => {
 
   it.live(
     "returns false when token count within usable context",
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const compact = yield* SessionCompaction.Service
+          const model = createModel({ context: 200_000, output: 32_000 })
+          const tokens = { input: 100_000, output: 10_000, reasoning: 0, cache: { read: 0, write: 0 } }
+          expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
+        }),
+      { config: { compaction: { max_context: 0 } } },
+    ),
+  )
+
+  it.live(
+    "compacts at max_context before a large window is full",
     provideTmpdirInstance(() =>
       Effect.gen(function* () {
         const compact = yield* SessionCompaction.Service
         const model = createModel({ context: 200_000, output: 32_000 })
-        const tokens = { input: 100_000, output: 10_000, reasoning: 0, cache: { read: 0, write: 0 } }
-        expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
+        const under = { input: 70_000, output: 5_000, reasoning: 0, cache: { read: 0, write: 0 } }
+        const over = { input: 60_000, output: 1_000, reasoning: 0, cache: { read: 20_000, write: 0 } }
+        expect(yield* compact.isOverflow({ tokens: under, model })).toBe(false)
+        expect(yield* compact.isOverflow({ tokens: over, model })).toBe(true)
       }),
     ),
   )
@@ -432,13 +448,15 @@ describe("session.compaction.isOverflow", () => {
 
   it.live(
     "returns false when input/output are within input caps",
-    provideTmpdirInstance(() =>
-      Effect.gen(function* () {
-        const compact = yield* SessionCompaction.Service
-        const model = createModel({ context: 400_000, input: 272_000, output: 128_000 })
-        const tokens = { input: 200_000, output: 20_000, reasoning: 0, cache: { read: 10_000, write: 0 } }
-        expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
-      }),
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const compact = yield* SessionCompaction.Service
+          const model = createModel({ context: 400_000, input: 272_000, output: 128_000 })
+          const tokens = { input: 200_000, output: 20_000, reasoning: 0, cache: { read: 10_000, write: 0 } }
+          expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
+        }),
+      { config: { compaction: { max_context: 0 } } },
     ),
   )
 
@@ -813,6 +831,127 @@ describe("session.compaction.prune", () => {
   )
 })
 
+describe("session.compaction.lean", () => {
+  const seed = (dir: string, input: { tokens: number }) =>
+    Effect.gen(function* () {
+      const compact = yield* SessionCompaction.Service
+      const ssn = yield* SessionNs.Service
+      const info = yield* ssn.create({})
+      const user = yield* ssn.updateMessage({
+        id: MessageID.ascending(),
+        role: "user",
+        sessionID: info.id,
+        agent: "build",
+        model: ref,
+        time: { created: Date.now() },
+      })
+      yield* ssn.updatePart({
+        id: PartID.ascending(),
+        messageID: user.id,
+        sessionID: info.id,
+        type: "text",
+        text: "build it",
+      })
+      const assistant = yield* ssn.updateMessage({
+        id: MessageID.ascending(),
+        role: "assistant",
+        sessionID: info.id,
+        mode: "build",
+        agent: "build",
+        path: { cwd: dir, root: dir },
+        cost: 0,
+        tokens: { output: 0, input: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        modelID: ref.modelID,
+        providerID: ref.providerID,
+        parentID: user.id,
+        time: { created: Date.now() },
+        finish: "tool-calls",
+      })
+      // One turn, oldest first: a written file, a screenshot, then a recent big build log.
+      const tools = [
+        {
+          tool: "write",
+          input: { filePath: "/x/a.ts", content: "a".repeat(80_000) },
+          output: "Wrote file",
+          attachments: [],
+        },
+        {
+          tool: "browser",
+          input: { action: "screenshot" },
+          output: "Browser screenshot",
+          attachments: [
+            {
+              id: PartID.ascending(),
+              sessionID: info.id,
+              messageID: assistant.id,
+              type: "file" as const,
+              mime: "image/png",
+              filename: "s.png",
+              url: "data:image/png;base64,AA",
+            },
+          ],
+        },
+        { tool: "bash", input: { command: "build" }, output: "b".repeat(60_000), attachments: [] },
+      ]
+      for (const item of tools)
+        yield* ssn.updatePart({
+          id: PartID.ascending(),
+          messageID: assistant.id,
+          sessionID: info.id,
+          type: "tool",
+          callID: crypto.randomUUID(),
+          tool: item.tool,
+          state: {
+            status: "completed",
+            input: item.input,
+            output: item.output,
+            title: "done",
+            metadata: {},
+            time: { start: Date.now(), end: Date.now() },
+            attachments: item.attachments,
+          },
+        })
+      yield* compact.lean({ messages: yield* ssn.messages({ sessionID: info.id }), tokens: input.tokens })
+      return (yield* ssn.messages({ sessionID: info.id }))
+        .flatMap((msg) => msg.parts)
+        .flatMap((part) =>
+          part.type === "tool" && part.state.status === "completed" ? [part.state.time.compacted] : [],
+        )
+    })
+
+  it.live(
+    "clears the oldest results of a long turn and keeps the newest",
+    provideTmpdirInstance((dir) =>
+      Effect.gen(function* () {
+        const [write, screenshot, build] = yield* seed(dir, { tokens: 60_000 })
+        expect(write).toBeNumber()
+        expect(screenshot).toBeUndefined()
+        expect(build).toBeUndefined()
+      }),
+    ),
+  )
+
+  it.live(
+    "leaves a small context alone",
+    provideTmpdirInstance((dir) =>
+      Effect.gen(function* () {
+        expect(yield* seed(dir, { tokens: 30_000 })).toEqual([undefined, undefined, undefined])
+      }),
+    ),
+  )
+
+  it.live(
+    "can be turned off",
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          expect(yield* seed(dir, { tokens: 60_000 })).toEqual([undefined, undefined, undefined])
+        }),
+      { config: { compaction: { lean: false } } },
+    ),
+  )
+})
+
 describe("session.compaction.process", () => {
   it.instance(
     "throws when parent is not a user message",
@@ -1160,9 +1299,9 @@ describe("session.compaction.process", () => {
         expect((yield* Effect.promise(() => Bun.file(path.join(base, "state.json")).json())).goal).toBe(
           "Add a login page",
         )
-        expect(yield* Effect.promise(() => Bun.file(path.join(base, "checkpoints", `${summary!.info.id}.md`)).text())).toBe(
-          handoff!.text,
-        )
+        expect(
+          yield* Effect.promise(() => Bun.file(path.join(base, "checkpoints", `${summary!.info.id}.md`)).text()),
+        ).toBe(handoff!.text)
       }).pipe(withCompaction()),
     { git: true },
   )
@@ -1204,15 +1343,19 @@ describe("session.compaction.process", () => {
 
         const parts = (yield* ssn.messages({ sessionID: session.id })).flatMap((item) => item.parts)
         expect(parts.some((part) => part.type === "text" && !!part.metadata?.[TaskState.METADATA_KEY])).toBe(false)
-        expect(yield* Effect.promise(() => Bun.file(path.join(test.directory, ".rift", "tasks", ".gitignore")).exists())).toBe(
-          false,
-        )
+        expect(
+          yield* Effect.promise(() => Bun.file(path.join(test.directory, ".rift", "tasks", ".gitignore")).exists()),
+        ).toBe(false)
       }).pipe(
         withCompaction({
           config: Layer.succeed(
             Config.Service,
             TestConfig.make({
-              get: () => Effect.succeed({ ...(Schema.decodeUnknownSync(ConfigV1.Info)({}) as ConfigV1.Info), task_state: false }),
+              get: () =>
+                Effect.succeed({
+                  ...(Schema.decodeUnknownSync(ConfigV1.Info)({}) as ConfigV1.Info),
+                  task_state: false,
+                }),
             }),
           ),
         }),
