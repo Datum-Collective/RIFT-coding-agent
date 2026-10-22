@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect } from "bun:test"
+import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -8,7 +8,7 @@ import { Effect } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Agent } from "../../src/agent/agent"
 import { Truncate } from "@/tool/truncate"
-import { BrowserTool, closeBrowser } from "../../src/tool/browser"
+import { BrowserTool, closeBrowser, parseSteps } from "../../src/tool/browser"
 import { find } from "../../src/browser/discover"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { Tool } from "@/tool/tool"
@@ -44,8 +44,10 @@ let base = ""
 beforeAll(() => {
   server = Bun.serve({
     port: 0,
-    fetch(request) {
-      const broken = new URL(request.url).pathname === "/broken"
+    async fetch(request) {
+      const pathname = new URL(request.url).pathname
+      const broken = pathname === "/broken"
+      if (pathname === "/slow") await Bun.sleep(300)
       return new Response(
         `<!doctype html><title>${broken ? "Broken page" : "Tool page"}</title>
          <p id="body">hello from the page</p><input id="field">
@@ -59,6 +61,29 @@ beforeAll(() => {
 afterAll(async () => {
   await closeBrowser()
   server?.stop(true)
+})
+
+describe("tool.browser steps", () => {
+  test("parses a one-line script", () => {
+    expect(parseSteps("click #inc; text #count\n type #name = Ada Lovelace ; screenshot;")).toEqual([
+      { action: "click", selector: "#inc" },
+      { action: "text", selector: "#count" },
+      { action: "type", selector: "#name", value: "Ada Lovelace" },
+      { action: "screenshot", selector: undefined },
+    ])
+  })
+
+  test("an = inside the selector is not where the typed text starts", () => {
+    expect(parseSteps('type input[name=email] = bad; type [data-x="a=b"]=c=d')).toEqual([
+      { action: "type", selector: "input[name=email]", value: "bad" },
+      { action: "type", selector: '[data-x="a=b"]', value: "c=d" },
+    ])
+  })
+
+  test("names a bad step instead of guessing", () => {
+    expect(() => parseSteps("click #a; hover #b")).toThrow('Unknown step "hover #b"')
+    expect(() => parseSteps("type #a")).toThrow("type <selector> = <text>")
+  })
 })
 
 describe("tool.browser", () => {
@@ -130,6 +155,17 @@ describe("tool.browser", () => {
       ),
     )
 
+    it.effect("opens a project file given as a plain path", () =>
+      provideTmpdirInstance((dir) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() => Bun.write(path.join(dir, "page.html"), "<title>Plain path</title><p>hi</p>"))
+          const result = yield* exec({ action: "open", url: "page.html", steps: "text" })
+          expect(result.output).toContain("Title: Plain path")
+          expect(result.output).toContain("hi")
+        }),
+      ),
+    )
+
     it.effect("surfaces console errors on a page that still looks fine", () =>
       provideTmpdirInstance(() =>
         Effect.gen(function* () {
@@ -153,6 +189,81 @@ describe("tool.browser", () => {
 
           const missing = yield* Effect.exit(exec({ action: "click", selector: "#absent" }))
           expect(missing._tag).toBe("Failure")
+        }),
+      ),
+    )
+
+    it.effect("runs a whole check in one call with steps", () =>
+      provideTmpdirInstance(() =>
+        Effect.gen(function* () {
+          const result = yield* exec({
+            action: "open",
+            url: `${base}/`,
+            steps: "type #field = abc; text #body; screenshot",
+          })
+          expect(result.output).toContain("[1] Browser open")
+          expect(result.output).toContain("Set #field")
+          expect(result.output).toContain("hello from the page")
+          expect(result.attachments?.[0]?.mime).toBe("image/png")
+        }),
+      ),
+    )
+
+    it.effect("stops the steps at the first one that fails and says why", () =>
+      provideTmpdirInstance(() =>
+        Effect.gen(function* () {
+          const result = yield* exec({
+            action: "open",
+            url: `${base}/`,
+            steps: "click #absent; screenshot",
+          })
+          expect(result.output).toContain("[2] Browser click")
+          expect(result.output).toContain("Failed: ")
+          expect(result.attachments ?? []).toEqual([])
+        }),
+      ),
+    )
+
+    it.effect("accepts steps as the action, opening the url first", () =>
+      provideTmpdirInstance(() =>
+        Effect.gen(function* () {
+          const result = yield* exec({ action: "steps", url: `${base}/`, steps: "text #body" })
+          expect(result.output).toContain("[1] Browser open")
+          expect(result.output).toContain("hello from the page")
+          // What the model actually sent: no steps at all, meaning just the page.
+          const bare = yield* exec({ action: "steps", url: `${base}/` })
+          expect(bare.output).toContain("Title: Tool page")
+        }),
+      ),
+    )
+
+    it.effect("calls made at the same time each report their own page", () =>
+      provideTmpdirInstance(() =>
+        Effect.gen(function* () {
+          const [slow, fast] = yield* Effect.all(
+            [exec({ action: "open", url: `${base}/slow` }), exec({ action: "open", url: `${base}/fast` })],
+            { concurrency: "unbounded" },
+          )
+          expect(slow.output).toContain(`URL: ${base}/slow`)
+          expect(fast.output).toContain(`URL: ${base}/fast`)
+        }),
+      ),
+    )
+
+    it.effect("starts a new browser when the old one died", () =>
+      provideTmpdirInstance(() =>
+        Effect.gen(function* () {
+          yield* exec({ action: "open", url: `${base}/` })
+          const browsers = Bun.spawnSync(["ps", "-Ao", "pid,ppid,command"])
+            .stdout.toString()
+            .split("\n")
+            .map((line) => line.trim().split(/\s+/))
+            .filter((row) => row[1] === String(process.pid) && row.some((part) => part.includes("rift-browser-")))
+          expect(browsers.length).toBeGreaterThan(0)
+          browsers.forEach((row) => process.kill(Number(row[0]), "SIGKILL"))
+          yield* Effect.promise(() => Bun.sleep(300))
+          const result = yield* exec({ action: "open", url: `${base}/` })
+          expect(result.output).toContain("Title: Tool page")
         }),
       ),
     )

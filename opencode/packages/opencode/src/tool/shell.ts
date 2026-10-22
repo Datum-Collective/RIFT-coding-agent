@@ -2,6 +2,7 @@ import { Effect, Stream } from "effect"
 import os from "os"
 import { createWriteStream } from "node:fs"
 import * as Tool from "./tool"
+import { Stuck } from "@/session/stuck"
 import path from "path"
 import { containsPath, type InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
@@ -23,6 +24,8 @@ import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
 
 export { Parameters } from "./shell/prompt"
+
+const OPENS_PAGE = /^\s*(open|xdg-open)\s+(["']?)(\S+\.html?|https?:\/\/\S+|file:\/\/\S+)\2\s*$/
 
 const MAX_METADATA_LENGTH = 30_000
 const CWD = new Set(["cd", "chdir", "popd", "pushd", "push-location", "set-location"])
@@ -608,6 +611,23 @@ export const ShellTool = Tool.define(
           parameters: prompt.parameters,
           execute: (params: Parameters, ctx: Tool.Context) =>
             Effect.gen(function* () {
+              // Weaker models emit `true` or `echo next I will...` when they mean another tool.
+              // Answering at once, with a pointer, saves the step that would otherwise repeat it.
+              if (Stuck.nothing(params.command))
+                return {
+                  title: params.command,
+                  metadata: { output: "", exit: 0, truncated: false },
+                  output: Stuck.nothingReply(params.command),
+                }
+              // `open page.html` hands the page to the user's own browser, where the agent sees
+              // nothing and windows pile up on the user's screen; the browser tool is the check.
+              if (OPENS_PAGE.test(params.command))
+                return {
+                  title: params.command,
+                  metadata: { output: "", exit: 0, truncated: false },
+                  output:
+                    'Not run: to check a page use the browser tool, e.g. browser with action open, url index.html and steps "click #id; text #id; screenshot". To show it to the user, use the browser tool\'s external action.',
+                }
               const instanceCtx = yield* InstanceState.context
               const cwd = params.workdir
                 ? yield* resolvePath(params.workdir, instanceCtx.directory, shell)

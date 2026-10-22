@@ -16,6 +16,28 @@ const PAGES: Record<string, string> = {
   "/broken": `<!doctype html><title>Broken</title><h1>Broken</h1>
         <script>null.explode()</script>`,
   "/missing": "",
+  "/form": `<!doctype html><title>Form</title>
+        <p id="error" style="display:none">Please enter a valid email address.</p>
+        <p id="shown">Thanks</p>
+        <input id="controlled"><p id="out"></p>
+        <a id="next" href="/second">next</a>
+        <script>
+          // What React does to a controlled input: it records every value set through the element,
+          // and ignores an input event when the value matches what it recorded.
+          const el = document.getElementById("controlled")
+          const native = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")
+          let tracked = ""
+          Object.defineProperty(el, "value", {
+            get() { return native.get.call(this) },
+            set(value) { tracked = value; native.set.call(this, value) },
+          })
+          el.addEventListener("input", () => {
+            if (el.value === tracked) return
+            tracked = el.value
+            document.getElementById("out").textContent = el.value
+          })
+        </script>`,
+  "/second": `<!doctype html><title>Second</title><p>landed</p>`,
   "/styled": `<!doctype html><link rel="stylesheet" href="/style.css"><p id="x">hi</p>
         <script>document.title = getComputedStyle(document.getElementById("x")).color</script>`,
 }
@@ -56,6 +78,53 @@ async function withSession(run: (session: BrowserSession) => Promise<void>) {
 }
 
 suite("browser session", () => {
+  test("does not outlive the process that launched it", async () => {
+    const script = `
+      const { BrowserSession } = await import(${JSON.stringify(require.resolve("../../src/browser/session"))})
+      await BrowserSession.launch()
+      console.log("launched")
+      process.exit(0)
+    `
+    const child = Bun.spawn(["bun", "-e", script], { stdout: "pipe", stderr: "inherit" })
+    expect(await new Response(child.stdout).text()).toContain("launched")
+    await child.exited
+    await Bun.sleep(300)
+    // Every launch uses a fresh rift-browser-* profile, so a browser left running shows up as a
+    // process still holding one of those directories for this child's run.
+    const ps = Bun.spawnSync(["ps", "-Ao", "ppid,command"]).stdout.toString()
+    const orphans = ps
+      .split("\n")
+      .filter((line) => line.trim().startsWith("1 ") && line.includes("rift-browser-") && !line.includes("--type="))
+    expect(orphans).toEqual([])
+  })
+
+  test("does not outlive a process killed outright", async () => {
+    // SIGKILL runs no exit hooks, and neither does a TUI quit: the engine runs in a worker thread,
+    // whose exit hooks never fire. Only the browser noticing its parent is gone covers both.
+    const script = `
+      const { BrowserSession } = await import(${JSON.stringify(require.resolve("../../src/browser/session"))})
+      await BrowserSession.launch()
+      console.log("launched")
+      setInterval(() => {}, 1000)
+    `
+    const child = Bun.spawn(["bun", "-e", script], { stdout: "pipe", stderr: "inherit" })
+    const reader = child.stdout.getReader()
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain("launched")
+    const browsers = () =>
+      Bun.spawnSync(["ps", "-Ao", "pid,ppid,command"])
+        .stdout.toString()
+        .split("\n")
+        .filter((line) => line.includes("rift-browser-") && !line.includes("--type="))
+        .map((line) => line.trim().split(/\s+/))
+    const pid = browsers().find((row) => row[1] === String(child.pid))?.[0]
+    expect(pid).toBeDefined()
+    child.kill("SIGKILL")
+    await child.exited
+    const deadline = Date.now() + 5_000
+    while (Date.now() < deadline && browsers().some((row) => row[0] === pid)) await Bun.sleep(100)
+    expect(browsers().some((row) => row[0] === pid)).toBe(false)
+  })
+
   test("navigates and reports the page it actually landed on", async () =>
     withSession(async (session) => {
       const state = await session.navigate(`${base}/`)
@@ -122,6 +191,35 @@ suite("browser session", () => {
         (error: Error) => error,
       )
       expect(typeError?.message).toMatch(/no element matched/)
+    }))
+
+  test("says when the text it read is on an element the page hides", async () =>
+    withSession(async (session) => {
+      await session.navigate(`${base}/form`)
+      expect(await session.text("#shown")).toBe("Thanks")
+      expect(await session.text("#error")).toBe("(hidden, not shown on the page) Please enter a valid email address.")
+      await expect(session.text("#nothing-here")).rejects.toThrow("no element matched")
+    }))
+
+  test("types into an input the way a framework that tracks its value sees it", async () =>
+    withSession(async (session) => {
+      await session.navigate(`${base}/form`)
+      await session.type("#controlled", "ada@example.com")
+      expect(await session.text("#out")).toBe("ada@example.com")
+    }))
+
+  test("a click that follows a link reports the page it landed on", async () =>
+    withSession(async (session) => {
+      await session.navigate(`${base}/form`)
+      await session.click("#next")
+      expect((await session.read()).title).toBe("Second")
+    }))
+
+  test("recovers when the tab's renderer crashes", async () =>
+    withSession(async (session) => {
+      await session.navigate(`${base}/`)
+      await session.navigate("chrome://crash").catch(() => {})
+      expect((await session.navigate(`${base}/second`)).title).toBe("Second")
     }))
 
   test("takes a screenshot of the real page", async () =>

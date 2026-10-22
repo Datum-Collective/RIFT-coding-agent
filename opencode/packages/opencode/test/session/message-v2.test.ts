@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
-import { APICallError } from "ai"
+import { APICallError, modelMessageSchema } from "ai"
 import { MessageV2 } from "../../src/session/message-v2"
 import { ProviderTransform } from "@/provider/transform"
 import type { Provider } from "@/provider/provider"
@@ -1360,6 +1360,40 @@ describe("session.message-v2.toModelMessage", () => {
     expect(result).toHaveLength(1)
     const texts = (result[0].content as any[]).filter((p) => p.type === "text")
     expect(texts.map((t) => t.text)).toStrictEqual(["", "hello"])
+  })
+
+  test("keeps RIFT's own part metadata out of provider options", async () => {
+    const assistantID = "m-assistant-handoff"
+    const input: SessionV1.WithParts[] = [
+      { info: userInfo("m-user"), parts: [{ ...basePart("m-user", "p0"), type: "text", text: "go" }] as SessionV1.Part[] },
+      {
+        info: assistantInfo(assistantID, "m-user"),
+        parts: [
+          {
+            ...basePart(assistantID, "p1"),
+            type: "text",
+            text: "summary",
+            metadata: { rift_task_state: true, anthropic: { cacheControl: "x" } },
+          },
+          {
+            ...basePart(assistantID, "p2"),
+            type: "reasoning",
+            text: "thinking",
+            metadata: { rift_note: "x", openai: { itemId: "rs_1" } },
+            time: { start: 0 },
+          },
+        ] as SessionV1.Part[],
+      },
+    ]
+
+    const result = await MessageV2.toModelMessages(input, model)
+
+    expect(modelMessageSchema.array().safeParse(result).success).toBe(true)
+    const content = result[1].content as any[]
+    expect(content.map((part) => part.providerOptions)).toStrictEqual([
+      { anthropic: { cacheControl: "x" } },
+      { openai: { itemId: "rs_1" } },
+    ])
   })
 })
 

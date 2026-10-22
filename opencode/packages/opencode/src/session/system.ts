@@ -21,6 +21,10 @@ export function provider(_model: Provider.Model) {
   return [PROMPT_RIFT]
 }
 
+/** Opt-in (`graph_nudge`): each graph update is an extra model round trip. */
+export const GRAPH_NUDGE =
+  "On multi-step builds call `graphwrite` early and keep it current; give every node `checks`, which RIFT runs after your turn as evidence."
+
 export interface Interface {
   readonly environment: (model: Provider.Model) => Effect.Effect<string[]>
   readonly skills: (agent: Agent.Info) => Effect.Effect<string | undefined>
@@ -54,7 +58,6 @@ const layer = Layer.effect(
             `  Today's date: ${new Date().toDateString()}`,
             `</env>`,
           ].join("\n"),
-          "On multi-step builds call `graphwrite` early and keep it current; give every node `checks`, which RIFT runs after your turn as evidence.",
           references.length === 0
             ? undefined
             : [

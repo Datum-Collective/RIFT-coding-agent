@@ -6,7 +6,7 @@ import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Context, Effect, Layer } from "effect"
 import * as Stream from "effect/Stream"
-import { streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
+import { streamText, wrapLanguageModel, type ModelMessage, type TextStreamPart, type Tool, type ToolSet } from "ai"
 import type { LLMEvent } from "@opencode-ai/llm"
 import { LLMClient } from "@opencode-ai/llm/route"
 import type { LLMClientService } from "@opencode-ai/llm/route"
@@ -27,8 +27,12 @@ import * as Option from "effect/Option"
 import { LLMAISDK } from "./llm/ai-sdk"
 import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
+import { Hedge } from "./llm/hedge"
 
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
+export const HEDGE_AFTER_MS = 25_000
+// Stream parts that show the model has started answering.
+const ANSWERING = new Set(["text-delta", "reasoning-delta", "tool-input-start", "tool-call", "finish-step", "finish"])
 
 export type StreamInput = {
   user: SessionV1.User
@@ -42,7 +46,7 @@ export type StreamInput = {
   small?: boolean
   tools: Record<string, Tool>
   retries?: number
-  toolChoice?: "auto" | "required" | "none"
+  toolChoice?: "auto" | "required" | "none" | { type: "tool"; toolName: string }
 }
 
 export type StreamRequest = StreamInput & {
@@ -121,7 +125,8 @@ const live: Layer.Layer<
           llmClient,
           messages: prepared.messages,
           tools: prepared.tools,
-          toolChoice: input.toolChoice,
+          // The native runtime only takes the plain modes; requiring one named tool becomes "required".
+          toolChoice: typeof input.toolChoice === "object" ? "required" : input.toolChoice,
           temperature: prepared.params.temperature,
           topP: prepared.params.topP,
           topK: prepared.params.topK,
@@ -244,22 +249,47 @@ const live: Layer.Layer<
               (ctrl) => Effect.sync(() => ctrl.abort()),
             )
 
-            const result = yield* run({ ...input, abort: ctrl.signal })
-
+            const after = input.small ? 0 : ((yield* config.get()).hedge_after_ms ?? HEDGE_AFTER_MS)
+            const first = new AbortController()
+            ctrl.signal.addEventListener("abort", () => first.abort(), { once: true })
+            const result = yield* run({ ...input, abort: first.signal })
             if (result.type === "native") return result.stream
+            if (after <= 0) return normalize(result.result.fullStream)
 
-            // Adapter seam: both runtimes expose the same LLMEvent stream. Native
-            // already returns one; AI SDK streams are converted here.
-            const state = LLMAISDK.adapterState()
-            return Stream.fromAsyncIterable(result.result.fullStream, (e) =>
-              e instanceof Error ? e : new Error(String(e)),
-            ).pipe(
-              Stream.mapEffect((event) => LLMAISDK.toLLMEvents(state, event)),
-              Stream.flatMap((events) => Stream.fromIterable(events)),
+            const bridge = yield* EffectBridge.make()
+            const log = { providerID: input.model.providerID, modelID: input.model.id, "session.id": input.sessionID }
+            return normalize(
+              Hedge.race({
+                after,
+                signal: ctrl.signal,
+                start: (signal, index) => {
+                  if (index > 0)
+                    return bridge.promise(run({ ...input, abort: signal })).then((hedged) => {
+                      if (hedged.type === "native") throw new Error("hedging needs the ai-sdk runtime")
+                      return hedged.result.fullStream
+                    })
+                  signal.addEventListener("abort", () => first.abort(), { once: true })
+                  return Promise.resolve(result.result.fullStream)
+                },
+                ready: (part) => ANSWERING.has(part.type),
+                failed: (part) => part.type === "error",
+                onHedge: () => bridge.fork(Effect.logInfo("hedging slow first token", { ...log, after })),
+                onWinner: (index) => bridge.fork(Effect.logInfo("hedge winner", { ...log, winner: index })),
+              }),
             )
           }),
         ),
       )
+
+    // Adapter seam: both runtimes expose the same LLMEvent stream. Native
+    // already returns one; AI SDK streams are converted here.
+    const normalize = (parts: AsyncIterable<TextStreamPart<ToolSet>>) => {
+      const state = LLMAISDK.adapterState()
+      return Stream.fromAsyncIterable(parts, (e) => (e instanceof Error ? e : new Error(String(e)))).pipe(
+        Stream.mapEffect((event) => LLMAISDK.toLLMEvents(state, event)),
+        Stream.flatMap((events) => Stream.fromIterable(events)),
+      )
+    }
 
     return Service.of({ stream })
   }),

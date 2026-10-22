@@ -12,6 +12,7 @@ import { ProviderTransform } from "@/provider/transform"
 import PROMPT_GENERATE from "./generate.txt"
 import PROMPT_COMPACTION from "./prompt/compaction.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
+import PROMPT_TESTER from "./prompt/tester.txt"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
 import { Permission } from "@/permission"
@@ -223,6 +224,24 @@ const layer = Layer.effect(
             ),
             description: `Fast read-only codebase explorer: find files, search code, answer questions. State the thoroughness: quick, medium or very thorough.`,
             prompt: PROMPT_EXPLORE,
+            options: {},
+            mode: "subagent",
+            native: true,
+          },
+          tester: {
+            name: "tester",
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                edit: "deny",
+                todowrite: "deny",
+                task: "deny",
+                external_directory: readonlyExternalDirectory,
+              }),
+              user,
+            ),
+            description: `Checks that one change really works (runs it, drives the browser) in a fresh context and replies PASS or FAIL. Run several in parallel.`,
+            prompt: PROMPT_TESTER,
             options: {},
             mode: "subagent",
             native: true,

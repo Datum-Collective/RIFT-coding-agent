@@ -294,6 +294,10 @@ const cfg = {
 function providerCfg(url: string) {
   return {
     ...cfg,
+    // These tests read the finished verification report off the returned turn.
+    verify_background: false,
+    // Claims tests use tiny diffs; run the model pass on them anyway.
+    verify_claims_min_diff_lines: 0,
     provider: {
       ...cfg.provider,
       test: {
@@ -689,6 +693,11 @@ it.instance("vibe mode uses planner and executor models for separate turns", () 
     expect(hits[0]?.body.model).toBe("planner-model")
     expect(hits[1]?.body.model).toBe("executor-model")
     expect(hits[2]?.body.model).toBe("executor-model")
+    // The last plan step is not the last allowed step: telling the executor its tools are off
+    // made it refuse the step, and the reviewer then retried it the same way.
+    expect(hits.map((hit) => JSON.stringify(hit.body)).some((body) => body.includes("MAXIMUM STEPS REACHED"))).toBe(
+      false,
+    )
     const messages = yield* sessions.messages({ sessionID: chat.id })
     expect(messages.some((message) => message.info.role === "assistant" && message.info.mode === "vibe-planner")).toBe(
       true,
@@ -707,6 +716,43 @@ it.instance("vibe mode uses planner and executor models for separate turns", () 
         message.parts.some((part) => part.type === "text" && part.text.includes("Update run")),
       ),
     ).toBe(true)
+  }),
+)
+
+it.instance("vibe mode gives up on a step the executor never finishes", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(vibeProviderCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({
+      title: "Pinned",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "Download the model" }],
+    })
+    const plan = (description: string) =>
+      JSON.stringify({ steps: [{ files: ["model.glb"], functions: [], description }] })
+    // Every turn is a successful tool call that never finishes the step, like curl after curl.
+    const busy = (count: number, from: number) =>
+      Effect.forEach(Array.from({ length: count }, (_, i) => from + i), (i) =>
+        llm.tool("glob", { pattern: `attempt-${i}-*` }),
+      )
+    yield* llm.text(plan("Fetch the model file"))
+    yield* busy(41, 0)
+    yield* llm.text(plan("Fetch the model file another way"))
+    yield* busy(40, 41)
+
+    yield* prompt.loop({ sessionID: chat.id })
+    const hits = yield* llm.hits
+
+    expect(hits.length).toBe(83)
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    const texts = messages.flatMap((m) => m.parts.filter((p) => p.type === "text").map((p) => p.text))
+    expect(texts.some((t) => t.startsWith("Revised Vibe Mode step"))).toBe(true)
   }),
 )
 
@@ -1276,9 +1322,9 @@ it.instance(
         .flatMap((part) =>
           part.type === "text" && part.text.startsWith("Automated verification") ? [part.text] : [],
         )[0]
-      expect(report).toContain("not run (cancelled)")
+      // Checks run in parallel, so the quick one may finish before the cancel; the held one must not.
+      expect(report).toContain("`bun hold.js` – not run (cancelled)")
       expect(report).not.toContain("queued")
-      expect(report).not.toContain("✓")
     }),
   15_000,
 )

@@ -13,9 +13,17 @@ import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecy
 
 Heap.start()
 
-const onUnhandledRejection = (_error: unknown) => {}
+// Kept from taking the engine (and the TUI with it) down, but logged: swallowed silently, a fault
+// left the agent hung with nothing in the log to say why.
+const logFault = (message: string) => (error: unknown) => {
+  AppRuntime.runPromise(
+    Effect.logError(message, { error: error instanceof Error ? (error.stack ?? error.message) : String(error) }),
+  ).catch(() => {})
+}
 
-const onUncaughtException = (_error: Error) => {}
+const onUnhandledRejection = logFault("unhandled rejection")
+
+const onUncaughtException = logFault("uncaught exception")
 
 process.on("unhandledRejection", onUnhandledRejection)
 process.on("uncaughtException", onUncaughtException)

@@ -14,6 +14,7 @@ import { BrowserSession } from "@/browser/session"
 import { find } from "@/browser/discover"
 import { ShellID } from "@/tool/shell/id"
 import { Verify } from "./verify"
+import { CheckRunner } from "./check-runner"
 
 export type Kind = EngineeringGraph.Info["checks"][number]["kind"] | "implementation"
 export type Status = "passed" | "failed" | "not_run" | "queued"
@@ -51,6 +52,8 @@ export interface RunOptions {
   timeoutMs: number
   cancel?: AbortSignal
   shell?: string
+  /** Working tree fingerprint; commands the verification checks just ran are reused, not run again. */
+  tree?: string
 }
 
 const LABEL: { [K in Kind]: string } = {
@@ -132,7 +135,7 @@ async function implementation(item: Planned, directory: string): Promise<Record>
 }
 
 async function command(item: Planned, command: string, options: RunOptions): Promise<Record> {
-  const result = await Verify.runCheck({ name: item.label, command, dir: item.cwd }, options.directory, {
+  const result = await CheckRunner.run({ name: item.label, command, dir: item.cwd }, options.directory, options.tree, {
     timeoutMs: options.timeoutMs,
     cancel: options.cancel,
     shell: options.shell,
