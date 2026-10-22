@@ -1,6 +1,9 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test"
 import { find } from "../../src/browser/discover"
 import { BrowserSession } from "../../src/browser/session"
+
+// The first browser launch on a cold machine can take longer than the 30s default.
+setDefaultTimeout(90_000)
 
 const binary = find()
 const suite = binary ? describe : describe.skip
