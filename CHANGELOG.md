@@ -11,6 +11,7 @@ Merged to `main` after v0.2.0 and not in a release yet.
 - **Vibe Mode can use tools on the last plan step.** The max-steps prompt ("tools are disabled") was injected there, so a one-step plan or a resumed session could never act. A step that is still unfinished after 40 turns now counts as failed and goes back to the planner, instead of looping.
 - **The browser tool recovers.** DevTools runs over a pipe, so Chrome exits whenever RIFT does (including after a crash or `kill -9`), and every command times out after 30 seconds instead of hanging. A browser that died or a tab that crashed is replaced on the next call. Calls no longer overlap and report each other's page. `type` fills React-style inputs, `text` marks elements the page hides, `click` waits for a navigation it starts, `action: "steps"` is accepted, and a missing favicon is not reported as a console error.
 - The engine worker logs unhandled errors instead of swallowing them.
+- **`/share` links no longer get stuck on "still uploading".** The upload looked up every model the session had used and gave up if one had since been renamed or removed, leaving the gist as an empty placeholder. Missing models are skipped, and a share that fails to create is now logged with its cause.
 
 ### Added
 - Fresh-context tester subagent, a lean compaction mode with a context cap, hedged requests for slow providers, stuck-loop detection, and verification that runs in the background while the agent works.

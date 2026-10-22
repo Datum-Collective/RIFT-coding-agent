@@ -8,6 +8,7 @@ import { SessionProjector } from "@opencode-ai/core/session/projector"
 
 import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { Session } from "@/session/session"
+import { MessageID } from "@/session/schema"
 import type { SessionID } from "../../src/session/schema"
 import { ShareNext } from "@/share/share-next"
 import { GitHubToken } from "@/share/github-token"
@@ -131,6 +132,41 @@ describe("ShareNext", () => {
         const full = JSON.parse(body(seen.find((req) => req.method === "PATCH")!).files[RiftShare.FILE].content)
         expect(full.pending).toBeUndefined()
         expect(full.session.id).toBe(session.id)
+      }).pipe(Effect.provide(layer(client)))
+    }),
+  )
+
+  it.live("a model that has since been removed doesn't stop the full session uploading", () =>
+    provideTmpdirInstance(() => {
+      const seen: HttpClientRequest.HttpClientRequest[] = []
+      const client = HttpClient.make((req) => {
+        seen.push(req)
+        return Effect.succeed(json(req, { id: GIST }, req.method === "POST" ? 201 : 200))
+      })
+      return Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const session = yield* newSession("Used a model that is gone")
+        yield* sessions.updateMessage({
+          id: MessageID.ascending(),
+          sessionID: session.id,
+          role: "user",
+          time: { created: Date.now() },
+          agent: "build",
+          model: { providerID: "retired-provider", modelID: "retired-model" },
+        } as never)
+        const share = yield* ShareNext.Service
+
+        yield* share.create(session.id)
+
+        yield* pollWithTimeout(
+          Effect.sync(() => (seen.some((req) => req.method === "PATCH") ? true : undefined)),
+          "the full session was never uploaded",
+          "3 seconds",
+        )
+        const full = JSON.parse(body(seen.find((req) => req.method === "PATCH")!).files[RiftShare.FILE].content)
+        expect(full.pending).toBeUndefined()
+        expect(full.messages).toHaveLength(1)
+        expect(full.models).toEqual([])
       }).pipe(Effect.provide(layer(client)))
     }),
   )
