@@ -53,23 +53,19 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      # Never run from the repo root (see AGENTS.md). One bun process per test directory: the whole
-      # suite in one process let slow browser tests starve unrelated ones on a runner with 4 cores.
-      # attention.test.ts fails on main already and is left out until it is fixed.
+      # Never run from the repo root (see AGENTS.md). One bun process per test file: several suites
+      # leave browsers, servers and environment changes behind, and in a shared process those made
+      # unrelated tests fail at random. attention.test.ts fails on main already and is left out.
       - name: Test
         working-directory: opencode/packages/opencode
         run: |
           failed=0
-          groups=$(git ls-files test | grep -E '\.test\.tsx?$' | grep -v 'cli/cmd/tui/attention.test.ts' \
-            | awk -F/ '{ if (NF > 2) print $1"/"$2; else print "root" }' | sort -u)
-          for group in $groups; do
-            if [ "$group" = root ]; then
-              files=$(git ls-files test | grep -E '^test/[^/]+\.test\.tsx?$')
-            else
-              files=$(git ls-files "$group" | grep -E '\.test\.tsx?$' | grep -v 'cli/cmd/tui/attention.test.ts')
-            fi
-            echo "::group::$group"
-            bun test --timeout 30000 --max-concurrency=4 $files || { failed=1; echo "::error::$group failed"; }
+          for file in $(git ls-files test | grep -E '\.test\.tsx?$' | grep -v 'cli/cmd/tui/attention.test.ts'); do
+            bun test --timeout 30000 --max-concurrency=4 "$file" > /tmp/test.log 2>&1 && continue
+            failed=1
+            echo "::group::FAILED $file"
+            cat /tmp/test.log
             echo "::endgroup::"
+            echo "::error file=opencode/packages/opencode/$file::tests failed"
           done
           exit $failed
