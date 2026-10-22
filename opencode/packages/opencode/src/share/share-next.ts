@@ -107,6 +107,8 @@ const layer = Layer.effect(
       const info = yield* session.get(sessionID)
       const diffs = yield* session.diff(sessionID)
       const messages = yield* session.messages({ sessionID })
+      // Models only supply display names, and the viewer falls back to the id, so one that has since
+      // been renamed or removed is left out. Failing here left the gist as its placeholder for good.
       const models = yield* Effect.forEach(
         Array.from(
           new Map(
@@ -116,9 +118,10 @@ const layer = Layer.effect(
               .map((item) => [`${item.providerID}/${item.modelID}`, item] as const),
           ).values(),
         ),
-        (item) => provider.getModel(ProviderV2.ID.make(item.providerID), ModelV2.ID.make(item.modelID)),
+        (item) =>
+          provider.getModel(ProviderV2.ID.make(item.providerID), ModelV2.ID.make(item.modelID)).pipe(Effect.option),
         { concurrency: 8 },
-      )
+      ).pipe(Effect.map((found) => found.flatMap((model) => (Option.isSome(model) ? [model.value] : []))))
       return RiftShare.snapshot(
         {
           session: info as SDKSession,
@@ -284,7 +287,11 @@ const layer = Layer.effect(
           if (running) return yield* restore(Deferred.await(running))
           const deferred = Deferred.makeUnsafe<Share, unknown>()
           s.creating.set(sessionID, deferred)
-          yield* Effect.exit(createGist(sessionID)).pipe(
+          yield* Effect.exit(
+            createGist(sessionID).pipe(
+              Effect.tapCause((cause) => Effect.logError("share create failed", { sessionID, cause })),
+            ),
+          ).pipe(
             Effect.tap(() => Effect.sync(() => s.creating.delete(sessionID))),
             Effect.flatMap((exit) => Deferred.done(deferred, exit)),
             Effect.forkIn(s.scope, { startImmediately: true }),
