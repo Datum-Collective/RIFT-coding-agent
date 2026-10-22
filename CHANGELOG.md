@@ -2,9 +2,9 @@
 
 Release notes for RIFT versions, newest first. Entries for v0.1.10 to v0.1.13 are only on the Releases page. Full notes and downloads: https://github.com/Datum-Collective/RIFT-coding-agent/releases
 
-## Unreleased
+## v0.2.1 (2026-10-22)
 
-Merged to `main` after v0.2.0 and not in a release yet.
+The road goes ever on. Fixes for the prompt error, the browser tool, Vibe Mode and `/share`. Full notes: https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v0.2.1
 
 ### Fixed
 - **Sessions no longer fail after their first compaction.** RIFT's own marker on the compaction summary was passed to the model as provider options, and the AI SDK rejected the whole request with "Invalid prompt: The messages do not match the ModelMessage[] schema". Only real provider metadata is forwarded now.
