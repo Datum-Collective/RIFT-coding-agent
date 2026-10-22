@@ -3,6 +3,7 @@ import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
 import { Installation } from "../../installation"
 import { RiftVersion } from "@opencode-ai/core/installation/version"
+import { Journey } from "@opencode-ai/core/installation/journey"
 
 export const UpgradeCommand = {
   command: "upgrade [target]",
@@ -54,11 +55,20 @@ export const UpgradeCommand = {
     }
 
     prompts.log.info(`From ${RiftVersion} → ${target}`)
-    const spinner = prompts.spinner()
-    spinner.start("Upgrading...")
-    const err = await Installation.upgrade(method, target).catch((err) => err)
+    // On a real terminal the update walks from the Shire to Mount Doom; anywhere else (pipes, CI) it
+    // is the plain spinner it always was.
+    const animated = Journey.interactive(process.stdout, process.env)
+    const spinner = animated ? undefined : prompts.spinner()
+    spinner?.start("Upgrading...")
+    const upgrade = Installation.upgrade(method, target)
+    const restoreCursor = () => process.stdout.write(Journey.SHOW_CURSOR)
+    if (animated) process.once("exit", restoreCursor)
+    const arrived = await Journey.play(upgrade, { write: (text) => process.stdout.write(text), interactive: animated })
+    if (animated) process.off("exit", restoreCursor)
+    const err = arrived ? undefined : await upgrade.then(() => undefined, (err) => err)
     if (err) {
-      spinner.stop("Upgrade failed", 1)
+      if (spinner) spinner.stop("Upgrade failed", 1)
+      if (!spinner) prompts.log.error("Upgrade failed")
       if (err instanceof Installation.UpgradeFailedError) {
         // necessary because choco only allows install/upgrade in elevated terminals
         if (method === "choco" && err.stderr.includes("not running from an elevated command shell")) {
@@ -70,7 +80,9 @@ export const UpgradeCommand = {
       prompts.outro("Done")
       return
     }
-    spinner.stop("Upgrade complete")
+    if (spinner) spinner.stop("Upgrade complete")
+    if (!spinner) prompts.log.success("Upgrade complete")
+    if (!spinner) prompts.log.message(`"${Journey.quote(target)}"`)
     prompts.outro("Done")
   },
 }

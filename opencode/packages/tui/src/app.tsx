@@ -5,6 +5,7 @@ import { Deferred, Effect } from "effect"
 import { Global } from "@opencode-ai/core/global"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { InstallationVersion, RiftVersion } from "@opencode-ai/core/installation/version"
+import { Journey } from "@opencode-ai/core/installation/journey"
 import { ClipboardProvider, useClipboard } from "./context/clipboard"
 import { ExitProvider, useExit } from "./context/exit"
 import { EpilogueProvider } from "./context/epilogue"
@@ -1136,7 +1137,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
 
     toast.show({
       variant: "info",
-      message: `Updating to v${version}…`,
+      message: `Setting out for v${version}…`,
       duration: 30000,
     })
 
@@ -1155,7 +1156,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
     await DialogAlert.show(
       dialog,
       "Update Complete",
-      `Successfully updated to RIFT v${result.data.version}. Please restart the application.`,
+      `Successfully updated to RIFT v${result.data.version}.\n\n"${Journey.quote(result.data.version)}"\n\nPlease restart the application.`,
     )
 
     void exit()
