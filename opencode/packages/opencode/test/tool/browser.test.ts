@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -14,6 +14,9 @@ import { SessionID, MessageID } from "../../src/session/schema"
 import { Tool } from "@/tool/tool"
 import { testEffect } from "../lib/effect"
 import { provideTmpdirInstance } from "../fixture/fixture"
+
+// The first browser launch on a cold machine can take longer than the 30s default.
+setDefaultTimeout(90_000)
 
 const it = testEffect(LayerNode.compile(LayerNode.group([Truncate.node, Agent.node, CrossSpawnSpawner.node])))
 

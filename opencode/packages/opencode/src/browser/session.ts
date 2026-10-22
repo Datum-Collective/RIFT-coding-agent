@@ -26,7 +26,8 @@ export type PageState = {
   console: ConsoleEntry[]
 }
 
-const LAUNCH_TIMEOUT_MS = 20_000
+// A cold start (first launch on a fresh machine or CI runner) can take 10s or more.
+const LAUNCH_TIMEOUT_MS = 45_000
 const SPAWN_ATTEMPTS = 3
 
 /**
