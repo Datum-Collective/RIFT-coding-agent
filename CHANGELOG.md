@@ -1,6 +1,49 @@
 # Changelog
 
-Release notes for every RIFT version, newest first. Full notes and downloads: https://github.com/Datum-Collective/RIFT-coding-agent/releases
+Release notes for RIFT versions, newest first. Entries for v0.1.10 to v0.1.13 are only on the Releases page. Full notes and downloads: https://github.com/Datum-Collective/RIFT-coding-agent/releases
+
+## Unreleased
+
+Merged to `main` after v0.2.0 and not in a release yet.
+
+### Fixed
+- **Sessions no longer fail after their first compaction.** RIFT's own marker on the compaction summary was passed to the model as provider options, and the AI SDK rejected the whole request with "Invalid prompt: The messages do not match the ModelMessage[] schema". Only real provider metadata is forwarded now.
+- **Vibe Mode can use tools on the last plan step.** The max-steps prompt ("tools are disabled") was injected there, so a one-step plan or a resumed session could never act. A step that is still unfinished after 40 turns now counts as failed and goes back to the planner, instead of looping.
+- **The browser tool recovers.** DevTools runs over a pipe, so Chrome exits whenever RIFT does (including after a crash or `kill -9`), and every command times out after 30 seconds instead of hanging. A browser that died or a tab that crashed is replaced on the next call. Calls no longer overlap and report each other's page. `type` fills React-style inputs, `text` marks elements the page hides, `click` waits for a navigation it starts, `action: "steps"` is accepted, and a missing favicon is not reported as a console error.
+- The engine worker logs unhandled errors instead of swallowing them.
+
+### Added
+- Fresh-context tester subagent, a lean compaction mode with a context cap, hedged requests for slow providers, stuck-loop detection, and verification that runs in the background while the agent works.
+- `steps` on the browser tool, which runs a whole check (open, click, type, read, screenshot) in one call.
+
+### Repository
+- `main` requires a pull request and a passing `typecheck`. `docs/branching.md` describes `main`, `prototypes`, `datum-internal` and `external-fixes`.
+
+## v0.2.0 (2026-10-13)
+
+RIFT, lighter and faster. Full notes: https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v0.2.0
+
+### Faster and smaller
+- The macOS arm64 binary went from 146 MB to 97 MB, `rift --version` from 0.46 s and 197 MB of memory to 0.03 s and 34 MB, and the prompt overhead on every request from 8,724 to 2,901 tokens.
+- Commands load only when you run them, and provider data is prepared only for the providers you use.
+- One compact system prompt replaces ten model-specific ones, tool descriptions are shorter, and skills are listed by name.
+- The web UI, desktop app, console, Slack bot, ACP, stats, code mode, OpenTelemetry, 22 unused provider SDKs and a second interactive mode were removed from the binary.
+
+### MCP
+- Project `.mcp.json`, user `~/.rift/mcp.json` and the `mcp` key in `rift.json` are read in the usual `mcpServers` shape, with `${VAR}` and `${VAR:-default}`.
+- A server from a project's `.mcp.json` waits for approval (once, always or deny), remembered per project.
+- `rift mcp add`, `add-json`, `get`, `list` and `remove`, plus a `/mcp` panel. Servers start on first use, and with many tools RIFT sends only their names plus one search tool.
+
+### Terminal UI
+- A new default theme on a true black canvas, one line per tool call, a side panel with status, context use, plan, changes, checks, the engineering graph, MCP and LSP, and approvals you can answer with one key.
+
+### Video
+- `/remotion` (and `/video`) now runs on Remotion's official Agent Skills. `rift remotion setup`, `new` and `studio` manage the project. Skills from Claude Code plugins load in RIFT too.
+
+### Changed
+- Sessions open on the conversation, and `ctrl+l` switches to the task view.
+- `rift --mini`, `rift run --interactive` and `rift video init` are gone.
+- Providers that used to be bundled (xAI, Azure, Bedrock, Vertex and others) still work; RIFT installs their SDK on first use.
 
 ## v0.1.9 — One Key (2026-09-21)
 
