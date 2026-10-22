@@ -27,6 +27,27 @@ export type PageState = {
 }
 
 const LAUNCH_TIMEOUT_MS = 20_000
+const SPAWN_ATTEMPTS = 3
+
+/**
+ * Bun on Linux now and then throws "Failed to connect (ENOENT)" while wiring up the extra pipes of a
+ * spawn, with nothing wrong on the next try; the browser it started exits at once when its end of
+ * the pipes closes. So the spawn is tried again rather than failing the browser tool.
+ */
+function spawnWithPipes(command: string, args: string[]) {
+  const attempt = (left: number): ChildProcess => {
+    try {
+      return spawn(command, args, {
+        stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"],
+        detached: process.platform !== "win32",
+      })
+    } catch (error) {
+      if (left <= 1) throw error
+      return attempt(left - 1)
+    }
+  }
+  return attempt(SPAWN_ATTEMPTS)
+}
 // How long after a click to look for a navigation it started. A link schedules its navigation
 // at once, so a short wait catches it without slowing down every click on a single page.
 const CLICK_SETTLE_MS = 50
@@ -61,19 +82,16 @@ export class BrowserSession {
     // of the pipe closes, so it dies with RIFT however RIFT dies, including a crash, a SIGKILL or
     // a TUI worker thread whose exit hooks never run. Its stdout and stderr are not read, so they
     // must not be pipes that fill up and block it.
-    const proc = spawn(
-      binary.path,
-      [
-        "--remote-debugging-pipe",
-        `--user-data-dir=${profile}`,
-        "--no-first-run",
-        "--no-default-browser-check",
-        "--disable-background-networking",
-        "--disable-extensions",
-        ...(binary.kind === "headless-shell" ? [] : ["--headless=new"]),
-      ],
-      { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"], detached: process.platform !== "win32" },
-    )
+    const args = [
+      "--remote-debugging-pipe",
+      `--user-data-dir=${profile}`,
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-background-networking",
+      "--disable-extensions",
+      ...(binary.kind === "headless-shell" ? [] : ["--headless=new"]),
+    ]
+    const proc = spawnWithPipes(binary.path, args)
     const input = proc.stdio[3] as Writable
     const output = proc.stdio[4] as Readable
     const cdp = new CdpSession((payload) => input.write(`${payload}\0`))
@@ -132,11 +150,11 @@ export class BrowserSession {
         const entry = event.params["entry"] as Record<string, unknown> | undefined
         const level = String(entry?.["level"] ?? "")
         if (level !== "error" && level !== "warning") return
-        this.entries.push({
-          level,
-          text: String(entry?.["text"] ?? ""),
-          url: entry?.["url"] ? String(entry["url"]) : undefined,
-        })
+        const url = entry?.["url"] ? String(entry["url"]) : undefined
+        // Chrome asks for /favicon.ico on its own on some platforms and logs the 404 as an error.
+        // The page never asked for it, and the agent would go and fix a problem that is not there.
+        if (url && /\/favicon\.ico(\?.*)?$/.test(url)) return
+        this.entries.push({ level, text: String(entry?.["text"] ?? ""), url })
       }
     })
     const tab: Tab = { sessionId, targetId, off }

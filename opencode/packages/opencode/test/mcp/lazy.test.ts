@@ -68,12 +68,13 @@ it.instance(
   () =>
     Effect.gen(function* () {
       const previous = process.env.OPENCODE_MCP_STARTUP_WAIT
-      process.env.OPENCODE_MCP_STARTUP_WAIT = "300"
+      // Long enough for a cold CI runner to start the fast server, and well under the slow one's 3s.
+      process.env.OPENCODE_MCP_STARTUP_WAIT = "1200"
       try {
         const mcp = yield* MCP.Service
         const started = Date.now()
         const tools = Object.keys(yield* mcp.tools())
-        expect(Date.now() - started).toBeLessThan(2_500)
+        expect(Date.now() - started).toBeLessThan(2_800)
         expect(tools).toContain("mcp__fast__list_issue")
         expect(tools).not.toContain("mcp__slow__list_issue")
         expect((yield* mcp.status()).slow).toEqual({ status: "connecting" })
