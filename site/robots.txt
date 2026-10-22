@@ -1,12 +1,17 @@
-# /s/ pages are private share links: unlisted, and only meant to be reached by the exact link
-# a person was given. The per-page <meta name="robots"> already blocks indexing; this is the
-# same rule for crawlers that fetch robots.txt before rendering the page.
+# Everything is open to crawlers, search engines and AI answer engines alike, except /s/: those
+# pages are private share links, unlisted, and only meant to be reached by the exact link a person
+# was given. Each page also carries <meta name="robots" content="noindex">; this is the same rule
+# for crawlers that read robots.txt before fetching.
 User-agent: *
 Disallow: /s/
 
-# AI training crawlers that honour a plain opt-out, checked here too since some of them skip
-# per-page meta tags.
 User-agent: GPTBot
+Disallow: /s/
+
+User-agent: OAI-SearchBot
+Disallow: /s/
+
+User-agent: ChatGPT-User
 Disallow: /s/
 
 User-agent: CCBot
@@ -18,8 +23,16 @@ Disallow: /s/
 User-agent: ClaudeBot
 Disallow: /s/
 
+User-agent: Claude-SearchBot
+Disallow: /s/
+
 User-agent: anthropic-ai
+Disallow: /s/
+
+User-agent: PerplexityBot
 Disallow: /s/
 
 User-agent: Bytespider
 Disallow: /s/
+
+Sitemap: https://datum-collective.github.io/RIFT-coding-agent/sitemap.xml

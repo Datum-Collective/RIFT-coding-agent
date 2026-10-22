@@ -1,0 +1,228 @@
+@font-face {
+  font-family: "Inter"; /* unslop-ignore: RIFT brand face, bundled with the site */
+  src: url("fonts/Inter-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Inter"; /* unslop-ignore: RIFT brand face, bundled with the site */
+  src: url("fonts/Inter-500.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Inter"; /* unslop-ignore: RIFT brand face, bundled with the site */
+  src: url("fonts/Inter-600.woff2") format("woff2");
+  font-weight: 600 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  --bg: #0e0e10;
+  --surface: #151518;
+  --border: #26262b;
+  --text: #ededf0;
+  --text-2: #a3a3ad;
+  --accent: #7070ff; /* unslop-ignore: the logo's CGA bright blue, lifted for contrast on dark */
+  --sans: "Inter", ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif; /* unslop-ignore: RIFT brand face */
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 17px/1.65 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+  text-underline-offset: 3px;
+}
+
+a:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.wrap {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+
+header.top {
+  padding: 1.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+header.top .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+header.top img {
+  display: block;
+  height: 28px;
+  width: auto;
+}
+
+nav a {
+  margin-left: 1.25rem;
+  color: var(--text-2);
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+
+nav a:hover {
+  color: var(--text);
+}
+
+.hero {
+  padding: 4.5rem 0 3rem;
+}
+
+h1 {
+  margin: 0 0 1.25rem;
+  font-size: clamp(2rem, 5.5vw, 3rem);
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  margin: 0 0 1rem;
+  font-size: 1.5rem;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+p {
+  margin: 0 0 1rem;
+}
+
+.lede {
+  color: var(--text-2);
+  font-size: 1.15rem;
+}
+
+section {
+  padding: 2.5rem 0;
+  border-top: 1px solid var(--border);
+}
+
+pre,
+code {
+  font-family: var(--mono);
+  font-size: 0.88rem;
+}
+
+pre {
+  margin: 0 0 1rem;
+  padding: 1rem 1.1rem;
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+:not(pre) > code {
+  padding: 0.1em 0.35em;
+  background: var(--surface);
+  border-radius: 4px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.button {
+  display: inline-block;
+  padding: 0.6rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.button:hover {
+  border-color: var(--text-2);
+}
+
+.features {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.features p {
+  margin: 0;
+  color: var(--text-2);
+}
+
+details {
+  border-bottom: 1px solid var(--border);
+  padding: 0.9rem 0;
+}
+
+summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+
+details p {
+  margin: 0.6rem 0 0;
+  color: var(--text-2);
+}
+
+footer {
+  padding: 2rem 0 3rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 0.92rem;
+}
+
+@media (max-width: 36rem) {
+  .hero {
+    padding-top: 3rem;
+  }
+  nav a:not(:last-child) {
+    display: none;
+  }
+}

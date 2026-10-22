@@ -1,0 +1,30 @@
+# RIFT
+
+> RIFT is a free, MIT-licensed, open-source AI coding agent that runs in the terminal. You describe a change in plain English; it edits your code, then runs the project's own tests, typechecker and linter and reports the real results, and it checks its own summary against the git diff. It is a fork of OpenCode, works with many model providers (Claude, GPT, Gemini, Llama, Mistral, DeepSeek, local models through Ollama) and runs on macOS, Linux and Windows.
+
+RIFT is not affiliated with or endorsed by the OpenCode team. Most of the codebase is OpenCode's work.
+
+## Start here
+
+- [README](https://github.com/Datum-Collective/RIFT-coding-agent/blob/main/README.md): what RIFT does, install commands, usage, configuration, FAQ
+- [Releases](https://github.com/Datum-Collective/RIFT-coding-agent/releases): prebuilt binaries (31 to 47 MB) for macOS, Linux and Windows
+- [Changelog](https://github.com/Datum-Collective/RIFT-coding-agent/blob/main/CHANGELOG.md): what changed in each version
+
+## Key facts
+
+- Install on macOS, Linux, WSL or Git Bash: `curl -fsSL https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install | bash`
+- Install on Windows: `irm https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install.ps1 | iex`
+- Start it with `rift` inside a project; `rift run "task"` runs non-interactively for scripts and CI.
+- Verification: after edits RIFT runs the project's test, typecheck, lint, go test, cargo check or pytest scripts. A check that could not run is reported as not run, never as passed.
+- Browser checks: for UI work it drives a real browser and reports console errors.
+- MCP: reads `.mcp.json`, `~/.rift/mcp.json` and the `mcp` key in `rift.json`; asks before running a project's servers.
+- Sharing: `/share` saves a session as a secret Gist on the user's own GitHub account and returns a viewer link.
+- The releases are terminal-only (no web UI or desktop app).
+- License: MIT.
+
+## Optional
+
+- [Source code](https://github.com/Datum-Collective/RIFT-coding-agent)
+- [Design notes and research](https://github.com/Datum-Collective/RIFT-coding-agent/tree/main/docs)
+- [Branching and contributing](https://github.com/Datum-Collective/RIFT-coding-agent/blob/main/docs/branching.md)
+- [OpenCode, the project RIFT is built on](https://github.com/anomalyco/opencode)

@@ -2,11 +2,138 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>RIFT</title>
-    <meta http-equiv="refresh" content="0; url=https://github.com/Datum-Collective/RIFT-coding-agent" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RIFT: open-source AI coding agent for the terminal that runs your tests</title>
+    <meta name="description" content="RIFT is a free, MIT-licensed AI coding agent for your terminal. It edits your code, then runs your tests, typechecker and linter and checks its summary against the git diff. A fork of OpenCode." />
+    <link rel="canonical" href="https://datum-collective.github.io/RIFT-coding-agent/" />
+    <meta name="theme-color" content="#0e0e10" />
     <link rel="icon" href="logo-r.png" type="image/png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="RIFT" />
+    <meta property="og:title" content="RIFT: open-source AI coding agent for the terminal that runs your tests" />
+    <meta property="og:description" content="RIFT is a free, MIT-licensed AI coding agent for your terminal. It edits your code, then runs your tests, typechecker and linter and checks its summary against the git diff. A fork of OpenCode." />
+    <meta property="og:url" content="https://datum-collective.github.io/RIFT-coding-agent/" />
+    <meta property="og:image" content="https://datum-collective.github.io/RIFT-coding-agent/logo.png" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="RIFT: open-source AI coding agent for the terminal that runs your tests" />
+    <meta name="twitter:description" content="RIFT is a free, MIT-licensed AI coding agent for your terminal. It edits your code, then runs your tests, typechecker and linter and checks its summary against the git diff. A fork of OpenCode." />
+    <meta name="twitter:image" content="https://datum-collective.github.io/RIFT-coding-agent/logo.png" />
+    <link rel="preload" href="fonts/Inter-400.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="site.css" />
+    <script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "RIFT", "alternateName": "RIFT coding agent", "description": "An open-source AI coding agent for the terminal that runs your tests, typechecker and linter after every change and checks its own summary against the git diff.", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Linux, Windows", "license": "https://opensource.org/licenses/MIT", "isAccessibleForFree": true, "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "url": "https://datum-collective.github.io/RIFT-coding-agent/", "downloadUrl": "https://github.com/Datum-Collective/RIFT-coding-agent/releases/latest", "codeRepository": "https://github.com/Datum-Collective/RIFT-coding-agent", "isBasedOn": {"@type": "SoftwareApplication", "name": "OpenCode", "url": "https://github.com/anomalyco/opencode"}, "author": {"@type": "Organization", "name": "Datum Collective", "url": "https://github.com/Datum-Collective"}}</script>
+    <script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "What is RIFT?", "acceptedAnswer": {"@type": "Answer", "text": "RIFT is an open-source AI coding agent that runs in your terminal. You describe a change, it edits your code, and then it runs your project's tests, typechecker and linter to check the result. It is a fork of OpenCode, released under the MIT license."}}, {"@type": "Question", "name": "Is RIFT free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. RIFT is MIT licensed and the binaries are free on GitHub Releases. You bring your own model API key, or use one of the free models that come with it. Model usage is billed by whichever provider you pick, never by RIFT."}}, {"@type": "Question", "name": "How is RIFT different from OpenCode?", "acceptedAnswer": {"@type": "Answer", "text": "RIFT is built on OpenCode and adds a verification layer that runs tests, typecheck and lint after every change and checks the agent's summary against the diff, a task-focused interface, browser checks for UI work, session memory that survives compaction, shareable sessions and Remotion video."}}, {"@type": "Question", "name": "How is RIFT different from Claude Code, Cursor or Copilot?", "acceptedAnswer": {"@type": "Answer", "text": "Those are closed-source products tied to their own accounts. RIFT is open source and works with the model provider you choose. It concentrates on proving that a change works by running your own checks and showing the output."}}, {"@type": "Question", "name": "Which AI models does RIFT support?", "acceptedAnswer": {"@type": "Answer", "text": "Anthropic Claude, OpenAI GPT, Google Gemini, Meta Llama, Mistral, DeepSeek, local models through Ollama, and many more. Set one globally, per project, or per agent."}}, {"@type": "Question", "name": "Does my code get sent anywhere?", "acceptedAnswer": {"@type": "Answer", "text": "Only to the model provider you configure, as with any AI coding tool. RIFT has no server of its own, and shell commands, edits and network access go through a permission system you control."}}]}</script>
   </head>
   <body>
-    <a href="https://github.com/Datum-Collective/RIFT-coding-agent">RIFT on GitHub</a>
+    <header class="top">
+      <div class="wrap">
+        <a href="./"><img src="logo.png" alt="RIFT" width="536" height="184" /></a>
+        <nav aria-label="Main">
+          <a href="#what-it-does">What it does</a>
+          <a href="#install">Install</a>
+          <a href="#faq">FAQ</a>
+          <a href="https://github.com/Datum-Collective/RIFT-coding-agent">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <div class="wrap hero">
+        <h1>The open-source AI coding agent that runs your tests</h1>
+        <p class="lede">
+          RIFT runs in your terminal. Describe a change in plain English and it reads your code, edits
+          the files, then runs your project's own tests, typechecker and linter and shows you the real
+          output. If a check could not run, it says so instead of calling the work done.
+        </p>
+        <div class="actions">
+          <a class="button primary" href="#install">Install RIFT</a>
+          <a class="button" href="https://github.com/Datum-Collective/RIFT-coding-agent">View on GitHub</a>
+        </div>
+      </div>
+
+      <div class="wrap">
+        <section id="what-it-does">
+          <h2>What RIFT does</h2>
+          <div class="features">
+            <div>
+              <h3>Verifies its own work</h3>
+              <p>After every change RIFT runs <code>test</code>, <code>typecheck</code>, <code>lint</code>, <code>go test</code>, <code>cargo check</code> or <code>pytest</code>, whichever your project has, and reports the results. A check that could not run is never counted as a pass.</p>
+            </div>
+            <div>
+              <h3>Checks its summary against the diff</h3>
+              <p>A second model compares what the agent said it did with the actual <code>git diff</code> and flags any claim the diff does not support.</p>
+            </div>
+            <div>
+              <h3>Opens the page and looks</h3>
+              <p>For UI work it drives a real browser: navigate, click, type, screenshot. It reports the console errors a screenshot never shows.</p>
+            </div>
+            <div>
+              <h3>Remembers the task after compaction</h3>
+              <p>The goal, plan, decisions and touched files are kept outside the model's context, so a long session does not lose the thread when it is compacted.</p>
+            </div>
+            <div>
+              <h3>Works with the model you choose</h3>
+              <p>Claude, GPT, Gemini, Llama, Mistral, DeepSeek and local models through one command. MCP servers work the way other clients expect.</p>
+            </div>
+            <div>
+              <h3>Shares a session as a link</h3>
+              <p><code>/share</code> saves the session as a secret Gist on your own GitHub account and gives you a link to the diffs and check results. Recognisable secrets are removed first.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="install">
+          <h2>Install RIFT</h2>
+          <p>macOS, Linux, WSL and Git Bash:</p>
+          <pre><code>curl -fsSL https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install | bash</code></pre>
+          <p>Windows (PowerShell):</p>
+          <pre><code>irm https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install.ps1 | iex</code></pre>
+          <p>Then run <code>rift</code> inside a project. There is nothing else to install: the download is one self-contained binary of 31 to 47 MB.</p>
+        </section>
+
+        <section id="faq">
+          <h2>Questions</h2>
+        <details>
+          <summary>What is RIFT?</summary>
+          <p>RIFT is an open-source AI coding agent that runs in your terminal. You describe a change, it edits your code, and then it runs your project's tests, typechecker and linter to check the result. It is a fork of OpenCode, released under the MIT license.</p>
+        </details>
+        <details>
+          <summary>Is RIFT free?</summary>
+          <p>Yes. RIFT is MIT licensed and the binaries are free on GitHub Releases. You bring your own model API key, or use one of the free models that come with it. Model usage is billed by whichever provider you pick, never by RIFT.</p>
+        </details>
+        <details>
+          <summary>How is RIFT different from OpenCode?</summary>
+          <p>RIFT is built on OpenCode and adds a verification layer that runs tests, typecheck and lint after every change and checks the agent's summary against the diff, a task-focused interface, browser checks for UI work, session memory that survives compaction, shareable sessions and Remotion video.</p>
+        </details>
+        <details>
+          <summary>How is RIFT different from Claude Code, Cursor or Copilot?</summary>
+          <p>Those are closed-source products tied to their own accounts. RIFT is open source and works with the model provider you choose. It concentrates on proving that a change works by running your own checks and showing the output.</p>
+        </details>
+        <details>
+          <summary>Which AI models does RIFT support?</summary>
+          <p>Anthropic Claude, OpenAI GPT, Google Gemini, Meta Llama, Mistral, DeepSeek, local models through Ollama, and many more. Set one globally, per project, or per agent.</p>
+        </details>
+        <details>
+          <summary>Does my code get sent anywhere?</summary>
+          <p>Only to the model provider you configure, as with any AI coding tool. RIFT has no server of its own, and shell commands, edits and network access go through a permission system you control.</p>
+        </details>
+        </section>
+      </div>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <p>
+          RIFT is MIT licensed and is a fork of <a href="https://github.com/anomalyco/opencode">OpenCode</a>
+          by Anomaly, whose work makes up most of this codebase. It is not affiliated with or endorsed by
+          the OpenCode team.
+        </p>
+        <p>
+          <a href="https://github.com/Datum-Collective/RIFT-coding-agent">Source</a> ·
+          <a href="https://github.com/Datum-Collective/RIFT-coding-agent/releases">Releases</a> ·
+          <a href="https://github.com/Datum-Collective/RIFT-coding-agent/issues">Issues</a> ·
+          <a href="llms.txt">llms.txt</a>
+        </p>
+      </div>
+    </footer>
   </body>
 </html>
