@@ -132,11 +132,11 @@ export class BrowserSession {
         const entry = event.params["entry"] as Record<string, unknown> | undefined
         const level = String(entry?.["level"] ?? "")
         if (level !== "error" && level !== "warning") return
-        this.entries.push({
-          level,
-          text: String(entry?.["text"] ?? ""),
-          url: entry?.["url"] ? String(entry["url"]) : undefined,
-        })
+        const url = entry?.["url"] ? String(entry["url"]) : undefined
+        // Chrome asks for /favicon.ico on its own on some platforms and logs the 404 as an error.
+        // The page never asked for it, and the agent would go and fix a problem that is not there.
+        if (url && /\/favicon\.ico(\?.*)?$/.test(url)) return
+        this.entries.push({ level, text: String(entry?.["text"] ?? ""), url })
       }
     })
     const tab: Tab = { sessionId, targetId, off }

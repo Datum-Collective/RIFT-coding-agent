@@ -37,6 +37,7 @@ const PAGES: Record<string, string> = {
             document.getElementById("out").textContent = el.value
           })
         </script>`,
+  "/icon": `<!doctype html><title>Icon</title><link rel="icon" href="/favicon.ico"><p>hi</p>`,
   "/second": `<!doctype html><title>Second</title><p>landed</p>`,
   "/slow": `<!doctype html><title>Slow</title>`,
   "/styled": `<!doctype html><link rel="stylesheet" href="/style.css"><p id="x">hi</p>
@@ -157,6 +158,11 @@ suite("browser session", () => {
       // The page renders fine; only the console reveals that it is broken.
       expect(state.console.length).toBeGreaterThan(0)
       expect(state.console.some((entry) => entry.level === "error" && /explode|null/i.test(entry.text))).toBe(true)
+    }))
+
+  test("a missing favicon is not reported as a console error", async () =>
+    withSession(async (session) => {
+      expect((await session.navigate(`${base}/icon`)).console).toEqual([])
     }))
 
   test("console errors do not leak between navigations", async () =>

@@ -36,10 +36,23 @@ jobs:
         working-directory: opencode/packages/opencode
         run: bun typecheck
 
-      # Never run from the repo root (see AGENTS.md). attention.test.ts fails on main already and is
-      # left out until it is fixed.
+      # Never run from the repo root (see AGENTS.md). One bun process per test directory: the whole
+      # suite in one process let slow browser tests starve unrelated ones on a runner with 4 cores.
+      # attention.test.ts fails on main already and is left out until it is fixed.
       - name: Test
         working-directory: opencode/packages/opencode
         run: |
-          git ls-files 'test/**/*.test.ts' 'test/**/*.test.tsx' | grep -v 'cli/cmd/tui/attention.test.ts' \
-            | xargs bun test --timeout 30000 --max-concurrency=4
+          failed=0
+          groups=$(git ls-files test | grep -E '\.test\.tsx?$' | grep -v 'cli/cmd/tui/attention.test.ts' \
+            | awk -F/ '{ if (NF > 2) print $1"/"$2; else print "root" }' | sort -u)
+          for group in $groups; do
+            if [ "$group" = root ]; then
+              files=$(git ls-files test | grep -E '^test/[^/]+\.test\.tsx?$')
+            else
+              files=$(git ls-files "$group" | grep -E '\.test\.tsx?$' | grep -v 'cli/cmd/tui/attention.test.ts')
+            fi
+            echo "::group::$group"
+            bun test --timeout 30000 --max-concurrency=4 $files || { failed=1; echo "::error::$group failed"; }
+            echo "::endgroup::"
+          done
+          exit $failed
