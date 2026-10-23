@@ -53,6 +53,10 @@ describe("Journey.interactive", () => {
     expect(Journey.interactive(tty, { CI: "true" })).toBe(false)
     expect(Journey.interactive(tty, { TERM: "dumb" })).toBe(false)
     expect(Journey.interactive(tty, { RIFT_NO_ANIMATION: "1" })).toBe(false)
+    expect(Journey.interactive(tty, { RIFT_NO_ANIMATION: "true" })).toBe(false)
+  })
+  test("RIFT_NO_ANIMATION set to 0, false or nothing does not turn it off", () => {
+    for (const value of ["0", "false", "", "no"]) expect(Journey.interactive(tty, { RIFT_NO_ANIMATION: value })).toBe(true)
   })
 })
 

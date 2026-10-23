@@ -136,3 +136,10 @@ reasoning. No all-caps headings; section labels are lowercase muted words (`plan
 
 One spinner (braille, 80 ms, accent) for anything in progress. No pulses, gradients or
 background animation. Respect the `animations_enabled` setting: a static `…` when off.
+
+One exception: after ten seconds with no key, paste or mouse movement, the home screen (and only
+the home screen) fades in a koi pond behind the interface (`component/idle-koi`, `koi/`). It is
+painted only into cells the interface left empty, so nothing is ever covered, and the first input
+removes it on the next frame. It uses the palette above and nothing else: the canvas, neutral
+greys and the azure accent. It follows `animations_enabled` and `RIFT_NO_ANIMATION=1` like
+everything else here.

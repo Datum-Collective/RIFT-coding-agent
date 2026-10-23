@@ -57,9 +57,15 @@ export function quote(version: string) {
   return QUOTES[hash % QUOTES.length]
 }
 
+/** RIFT_NO_ANIMATION=1 (or true) turns RIFT's animations off; 0, false or empty leave them on. */
+export function animationOff(env: Record<string, string | undefined>) {
+  const value = (env["RIFT_NO_ANIMATION"] ?? "").toLowerCase()
+  return value === "1" || value === "true"
+}
+
 /** Whether to animate: a real terminal, not CI, not a dumb terminal, and the user hasn't opted out. */
 export function interactive(stream: { isTTY?: boolean }, env: Record<string, string | undefined>) {
-  return Boolean(stream.isTTY) && !env["CI"] && env["TERM"] !== "dumb" && !env["RIFT_NO_ANIMATION"]
+  return Boolean(stream.isTTY) && !env["CI"] && env["TERM"] !== "dumb" && !animationOff(env)
 }
 
 export type IO = {

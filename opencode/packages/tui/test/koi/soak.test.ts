@@ -1,0 +1,48 @@
+import { describe, expect, test } from "bun:test"
+import { OptimizedBuffer, RGBA } from "@opentui/core"
+import { createPond, type Scene } from "../../src/koi/pond"
+import { paintCells } from "../../src/koi/paint"
+import { riftPalette } from "../../src/koi/palette"
+
+const palette = riftPalette({
+  background: { r: 0, g: 0, b: 0 },
+  text: { r: 238, g: 238, b: 238 },
+  muted: { r: 128, g: 128, b: 138 },
+  primary: { r: 47, g: 129, b: 247 },
+})
+
+describe("a long idle", () => {
+  for (const scene of ["pond", "chase"] as Scene[]) {
+    test(`the ${scene} at 60 fps: a frame is cheap and the heap does not grow`, () => {
+      const pond = createPond({ cols: 140, rows: 40, aspect: 2, palette, seed: 3, scene })
+      const buffer = OptimizedBuffer.create(140, 40, "wcwidth", { respectAlpha: true } as never)
+      const frame = () => {
+        buffer.clear(RGBA.fromInts(0, 0, 0, 255))
+        pond.step(1 / 60)
+        pond.draw()
+        return paintCells(buffer, pond.cells())
+      }
+      for (let index = 0; index < 300; index++) frame()
+
+      Bun.gc(true)
+      const before = process.memoryUsage().heapUsed
+      const frames = 1800
+      const started = performance.now()
+      let drawn = 0
+      for (let index = 0; index < frames; index++) drawn += frame()
+      const perFrame = (performance.now() - started) / frames
+      Bun.gc(true)
+      const grown = process.memoryUsage().heapUsed - before
+
+      expect(drawn / frames).toBeGreaterThan(100)
+      // Under half of a 60 fps frame's 16 ms, which leaves room for a slow CI machine.
+      expect(perFrame).toBeLessThan(8)
+      // Allocation per frame is garbage-collected: after half a minute the heap is where it started.
+      expect(grown).toBeLessThan(8 * 1024 * 1024)
+      // Whatever is added to the pond stays few: nothing piles up.
+      expect(pond.rings.length).toBeLessThanOrEqual(8)
+      expect(pond.chase?.swirls.length ?? 0).toBeLessThanOrEqual(4)
+      expect(pond.chase?.ripples.length ?? 0).toBeLessThanOrEqual(8)
+    }, 60000)
+  }
+})
