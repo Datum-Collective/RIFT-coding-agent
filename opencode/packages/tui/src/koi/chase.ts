@@ -6,6 +6,7 @@
  * Adapted from koi-screensaver by Erik Johansson (MIT licence). See THIRD_PARTY_NOTICES.md.
  */
 import { clamp } from "./colour"
+import { INTRO_HOLD } from "./intro"
 import { JOINTS, PATTERNS, SEG, follow, newKoi, type Koi } from "./koi"
 import { angleTo, remainder, smooth } from "./math"
 import type { Pond } from "./pond"
@@ -43,6 +44,9 @@ const FLICK_RISE = 0.35
 
 /** How far a ripple drifts out, in pad radii. */
 const RIPPLE_GROW = 0.28
+
+/** How many sizes the pad opens in while the logo breaks up. */
+const PAD_STEPS = 40
 
 /** How many times a second a ripple moves on. */
 const RIPPLE_STEPS = 6
@@ -87,7 +91,15 @@ export function setupChase(p: Pond) {
 /** Moves the chase on: the circle turns, now and then a tail flicks, now and then ripples open. */
 export function stepChase(p: Pond, dt: number) {
   const c = p.chase!
+  const intro = p.intro
+  if (!c.started && intro && intro.release.length > 0 && intro.t >= intro.release[0]!) c.started = true
   if (c.started) c.theta += (c.speed / c.rp) * dt
+
+  // While the logo is up the pad waits; it opens out as the letters lift off the water.
+  // In steps: the pad's pixels are worked out afresh whenever its size changes, so it opens in a
+  // few dozen sizes and not a new one every frame.
+  const grow = intro ? Math.round(smooth((intro.t - INTRO_HOLD) / 2.5) * PAD_STEPS) / PAD_STEPS : 1
+  p.pads[0]!.r = c.padR * grow
 
   // Now and then one of them flicks its tail.
   c.flickT -= dt
@@ -100,7 +112,7 @@ export function stepChase(p: Pond, dt: number) {
 
   // Now and then two or three faint arcs open round the pad and drift out, staggered.
   c.rippleT -= dt
-  if (c.rippleT <= 0) {
+  if (c.rippleT <= 0 && !intro) {
     c.rippleT = 18 + p.rng.float() * 12
     const n = 2 + p.rng.int(2)
     const start = p.rng.float() * 2 * Math.PI

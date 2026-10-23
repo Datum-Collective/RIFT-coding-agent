@@ -21,7 +21,11 @@ const cell = (col: number, row: number, mask = 5, fg: [number, number, number] =
   bg,
 })
 
-const charAt = (buffer: OptimizedBuffer, x: number, y: number) => String.fromCodePoint(buffer.buffers.char[y * buffer.width + x]!)
+/** What the screen shows in a cell: the buffer's real text, since block characters are kept in a pool and not as plain codes. */
+const charAt = (buffer: OptimizedBuffer, x: number, y: number) => {
+  const lines = new TextDecoder().decode(buffer.getRealCharBytes(true)).split("\n")
+  return [...(lines[y] ?? "")][x] ?? " "
+}
 const word = (array: Uint16Array, buffer: OptimizedBuffer, x: number, y: number) => Array.from(array.slice((y * buffer.width + x) * 4, (y * buffer.width + x) * 4 + 3))
 
 describe("paintCells", () => {

@@ -14,6 +14,11 @@ import { createTuiResolvedConfig } from "../fixture/tui-runtime"
 import { TestTuiContexts } from "../fixture/tui-environment"
 import { fakeClock } from "../fixture/fake-clock"
 import { IdleKoi } from "../../src/component/idle-koi"
+import { Banner } from "../../src/component/banner"
+import { riftLogo } from "../../src/koi/logo"
+
+/** How far in from the left the banner is laid out, so a test can move it. */
+const [bannerPad, setBannerPad] = createSignal(10)
 
 const DELAY = 10_000
 /** Long enough for the fade-in to finish. */
@@ -23,6 +28,7 @@ let open: Array<{ destroy: () => void }> = []
 afterEach(() => {
   for (const renderer of open) renderer.destroy()
   open = []
+  setBannerPad(10)
   delete process.env["RIFT_NO_ANIMATION"]
 })
 
@@ -32,6 +38,7 @@ function Screen(props: {
   animations?: boolean
   scene?: "pond" | "chase"
   expose?: (theme: ReturnType<typeof useTheme>) => void
+  banner?: boolean
 }) {
   const kv = useKV()
   const theme = useTheme()
@@ -40,8 +47,13 @@ function Screen(props: {
     if (props.animations === false) kv.set("animations_enabled", false)
   })
   return (
-    <box width={100} height={30}>
+    <box width={props.banner ? undefined : 100} height={30}>
       <text>hello</text>
+      <Show when={props.banner}>
+        <box paddingLeft={bannerPad()}>
+          <Banner />
+        </box>
+      </Show>
       <Show when={props.show()}>
         <IdleKoi delay={DELAY} seed={9} clock={props.clock} scene={props.scene} />
       </Show>
@@ -55,6 +67,7 @@ function Harness(props: {
   animations?: boolean
   scene?: "pond" | "chase"
   expose?: (theme: ReturnType<typeof useTheme>) => void
+  banner?: boolean
 }) {
   const keymap = createDefaultOpenTuiKeymap(useRenderer())
   return (
@@ -62,7 +75,7 @@ function Harness(props: {
       <TuiConfigProvider config={createTuiResolvedConfig()}>
         <KVProvider>
           <ThemeProvider mode="dark">
-            <Screen show={props.show} clock={props.clock} animations={props.animations} scene={props.scene} expose={props.expose} />
+            <Screen show={props.show} clock={props.clock} animations={props.animations} scene={props.scene} expose={props.expose} banner={props.banner} />
           </ThemeProvider>
         </KVProvider>
       </TuiConfigProvider>
@@ -70,7 +83,7 @@ function Harness(props: {
   )
 }
 
-async function mount(options: { animations?: boolean; width?: number; height?: number; scene?: "pond" | "chase" } = {}) {
+async function mount(options: { animations?: boolean; width?: number; height?: number; scene?: "pond" | "chase"; banner?: boolean } = {}) {
   const [show, setShow] = createSignal(true)
   const fake = fakeClock()
   let theme!: ReturnType<typeof useTheme>
@@ -78,7 +91,7 @@ async function mount(options: { animations?: boolean; width?: number; height?: n
   const app = await testRender(
     () => (
       <TestTuiContexts paths={{ state }}>
-        <Harness show={show} clock={fake.clock} animations={options.animations} scene={options.scene} expose={(value) => (theme = value)} />
+        <Harness show={show} clock={fake.clock} animations={options.animations} scene={options.scene} expose={(value) => (theme = value)} banner={options.banner} />
       </TestTuiContexts>
     ),
     { width: options.width ?? 100, height: options.height ?? 30 },
@@ -454,5 +467,139 @@ describe("the idle koi pond on the home screen", () => {
     other.setShow(false)
     await other.app.renderOnce()
     expect(root.processMouseEvent).toBe(theirs)
+  })
+
+  describe("with the real banner on the screen", () => {
+    const BANNER_ROW = riftLogo.glyphs[0]!.slice(0, 4)
+    const rowsOf = (app: Mounted["app"]) => app.captureCharFrame().split("\n")
+    const hasBanner = (app: Mounted["app"]) => rowsOf(app).some((line) => line.includes(BANNER_ROW))
+
+    test("the banner is on the screen until the pond comes, then it is taken over and the logo's pixels stand in for it", async () => {
+      const screen = await mount({ banner: true, width: 100, height: 30 })
+      await screen.app.renderOnce()
+      expect(hasBanner(screen.app)).toBe(true)
+      screen.advance(DELAY)
+      await screen.app.renderOnce()
+      expect(hasBanner(screen.app)).toBe(false)
+      // Something is still drawn where it was: the logo, as blocks.
+      const where = rowsOf(screen.app).slice(2, 16).join("")
+      expect(where.replace(/\s/g, "").length).toBeGreaterThan(100)
+    })
+
+    test("the first input brings the banner back exactly as it was, by the very next frame", async () => {
+      const screen = await mount({ banner: true, width: 100, height: 30 })
+      await screen.app.renderOnce()
+      const before = screen.app.captureCharFrame()
+      await goQuiet(screen)
+      expect(screen.app.captureCharFrame()).not.toBe(before)
+      screen.app.mockInput.pressKey("a")
+      await screen.app.renderOnce()
+      expect(screen.app.captureCharFrame()).toBe(before)
+    })
+
+    test("once the logo has become koi, the banner does not come back while they swim", async () => {
+      const screen = await mount({ banner: true, width: 100, height: 30, scene: "pond" })
+      await screen.app.renderOnce()
+      const before = screen.app.captureCharFrame()
+      screen.advance(DELAY)
+      for (let frame = 0; frame < 30 * 16; frame++) {
+        screen.advance(33)
+        await screen.app.renderOnce()
+        if (frame % 60 === 0) expect(hasBanner(screen.app)).toBe(false)
+      }
+      expect(hasBanner(screen.app)).toBe(false)
+      screen.app.mockInput.pressKey("a")
+      await screen.app.renderOnce()
+      expect(screen.app.captureCharFrame()).toBe(before)
+    })
+
+    test("the intro plays in either scene", async () => {
+      for (const scene of ["pond", "chase"] as const) {
+        const screen = await mount({ banner: true, width: 100, height: 30, scene })
+        screen.advance(DELAY)
+        // Midway through the letters breaking up: there are specks of the logo in the air, and no banner.
+        for (let frame = 0; frame < 30 * 4.5; frame++) {
+          screen.advance(33)
+          await screen.app.renderOnce()
+        }
+        expect(hasBanner(screen.app)).toBe(false)
+        expect(await drawn(screen.app)).toBeGreaterThan(40)
+        screen.app.mockInput.pressKey("a")
+        await screen.app.renderOnce()
+        expect(hasBanner(screen.app)).toBe(true)
+      }
+    })
+
+    test("a window dragged to a new size does not play the intro again, and the logo stays gone", async () => {
+      const screen = await mount({ banner: true, width: 100, height: 30, scene: "pond" })
+      screen.advance(DELAY)
+      for (let frame = 0; frame < 30 * 14; frame++) {
+        screen.advance(33)
+        await screen.app.renderOnce()
+      }
+      screen.app.resize(110, 34)
+      screen.advance(300)
+      for (let frame = 0; frame < 20; frame++) {
+        screen.advance(33)
+        await screen.app.renderOnce()
+      }
+      expect(hasBanner(screen.app)).toBe(false)
+    })
+
+    test("a window dragged to a new size in the middle of the intro does not cut it short: the logo is still there to break up", async () => {
+      const screen = await mount({ banner: true, width: 100, height: 30, scene: "pond" })
+      screen.advance(DELAY)
+      for (let frame = 0; frame < 30 * 1.5; frame++) {
+        screen.advance(33)
+        await screen.app.renderOnce()
+      }
+      // The logo is up, as blocks, about a third of the way into its rest.
+      const logoRows = () => rowsOf(screen.app).slice(1, 14).join("").replace(/\s/g, "").length
+      expect(logoRows()).toBeGreaterThan(250)
+
+      screen.app.resize(110, 34)
+      screen.advance(300)
+      for (let frame = 0; frame < 20; frame++) {
+        screen.advance(33)
+        await screen.app.renderOnce()
+      }
+      // A pond with the intro cut off would have only koi here, well under this; this is still the logo.
+      expect(hasBanner(screen.app)).toBe(false)
+      expect(logoRows()).toBeGreaterThan(250)
+    })
+
+    test("if the banner is moved while the pond is out, the logo is redrawn where the banner now is", async () => {
+      const screen = await mount({ banner: true, width: 120, height: 30, scene: "pond" })
+      screen.advance(DELAY)
+      for (let frame = 0; frame < 30 * 1.5; frame++) {
+        screen.advance(33)
+        await screen.app.renderOnce()
+      }
+      // The leftmost block of the logo, in the rows it is in.
+      const leftmost = () =>
+        Math.min(
+          ...rowsOf(screen.app)
+            .slice(1, 14)
+            .map((line) => line.search(/\S/))
+            .filter((column) => column >= 0),
+        )
+      const before = leftmost()
+      expect(before).toBeGreaterThanOrEqual(10)
+      expect(before).toBeLessThan(14)
+
+      setBannerPad(22)
+      for (let frame = 0; frame < 30; frame++) {
+        screen.advance(33)
+        await screen.app.renderOnce()
+      }
+      expect(hasBanner(screen.app)).toBe(false)
+      expect(leftmost()).toBeGreaterThanOrEqual(22)
+    })
+
+    test("on a terminal too narrow for the banner there is no intro and no cover, just the pond", async () => {
+      const screen = await mount({ banner: true, width: 70, height: 30 })
+      await goQuiet(screen)
+      expect(await drawn(screen.app)).toBeGreaterThan(20)
+    })
   })
 })

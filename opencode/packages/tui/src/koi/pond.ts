@@ -8,6 +8,8 @@
  */
 import { clamp, lum, mix, to8, type Rgb } from "./colour"
 import { fit, type Fitted } from "./fit"
+import { drawIntro, logoFits, revealMask, startIntro, stepIntro, type Intro } from "./intro"
+import type { Logo } from "./logo"
 import { PATTERNS, newKoi, swim, type Habitat, type Koi } from "./koi"
 import { remainder, smooth } from "./math"
 import { FIRST_SURFACE, Tag, type Palette } from "./palette"
@@ -60,6 +62,13 @@ export type Options = {
   palette: Palette
   seed: number
   scene: Scene
+  /**
+   * The logo that is on the screen, and the cell its top left corner is in. The koi are made from
+   * its letters, and the pond records `logoAt` so the logo can be kept off the screen for as long
+   * as the pond is out. `intro: false`
+   * makes the pond without playing that again, as when it is remade at a new size.
+   */
+  logo?: { logo: Logo; col: number; row: number; intro?: boolean }
 }
 
 /**
@@ -94,6 +103,10 @@ export class Pond implements Habitat {
   rings: Ring[] = []
   /** Set for the chase scene only. */
   chase?: ChaseState
+  /** Set while the logo is breaking up into koi. */
+  intro?: Intro
+  /** The cell the logo that has been turned into koi was in with its top left corner: while this is set, the logo is kept off the screen. */
+  logoAt?: { col: number; row: number }
 
   /** What is at each pixel: a tag, or `Tag.water`. */
   readonly tag: Int8Array
@@ -103,6 +116,8 @@ export class Pond implements Habitat {
   readonly depth: Float32Array
   /** Ripple height: above zero lifts the water, below zero hollows it. */
   readonly height: Float32Array
+  /** What the intro draws over the pond, as colour already multiplied by its opacity. Made when the intro starts. */
+  private overlay?: { r: Float32Array; g: Float32Array; b: Float32Array; a: Float32Array }
   private readonly padPixels = new Map<Pad, { key: number[]; index: number[]; tags: number[] }>()
 
   constructor(options: Options) {
@@ -221,6 +236,7 @@ export class Pond implements Habitat {
   /** Moves the pond on by `dt` seconds. */
   step(dt: number) {
     this.t += dt
+    if (this.intro) stepIntro(this, dt)
     if (this.chase) stepChase(this, dt)
     for (const k of this.koi) {
       if (k.ease <= 0) continue
@@ -281,6 +297,7 @@ export class Pond implements Habitat {
     this.tag.fill(Tag.water)
     this.shade.fill(Infinity)
     this.height.fill(0)
+    if (this.intro) this.clearOverlay()
 
     this.drawRings()
     if (this.chase) {
@@ -304,13 +321,17 @@ export class Pond implements Habitat {
     for (const k of order) {
       if (k.grow < MIN_GROW) continue
       const off = 0.5 + 1.0 * (1 - k.depth)
-      this.castKoiShadow(shapeKoi(this, k), sx * off, sy * off, k.depth)
+      const shape = shapeKoi(this, k)
+      // In the intro a koi shows only where the letters' motes have landed on it.
+      shape.masked = this.intro !== undefined && revealMask(this, this.koi.indexOf(k), shape) !== undefined
+      this.castKoiShadow(shape, sx * off, sy * off, k.depth)
     }
     for (const k of order) {
       if (k.grow >= MIN_GROW) this.fillKoi(k.shape!, k.pat.body, k.depth)
     }
     for (const petal of this.petals) this.petalPixels(petal, 0, 0, (i) => (this.tag[i] = Tag.petal))
     for (const pad of this.pads) this.drawPadAndLily(pad)
+    if (this.intro) drawIntro(this)
   }
 
   /**
@@ -330,7 +351,7 @@ export class Pond implements Habitat {
       const ty = s.y0 + y + sy
       if (ty < 0 || ty >= this.ph) continue
       for (let x = 0; x < s.w; x++) {
-        if (s.sil[y * s.w + x]! >= 0) continue
+        if (s.sil[y * s.w + x]! >= 0 || (s.masked && !s.mask[y * s.w + x])) continue
         const tx = s.x0 + x + sx
         if (tx < 0 || tx >= this.pw) continue
         const i = ty * this.pw + tx
@@ -345,7 +366,7 @@ export class Pond implements Habitat {
       const row = (s.y0 + y) * this.pw + s.x0
       for (let x = 0; x < s.w; x++) {
         const l = y * s.w + x
-        if (s.sil[l]! >= 0) continue
+        if (s.sil[l]! >= 0 || (s.masked && !s.mask[l])) continue
         let t = body
         if (s.patch[l]! < 0) t = s.patchTag
         if (s.hasSheen && s.sheen[l]! < 0) t = Tag.sheen
@@ -356,6 +377,10 @@ export class Pond implements Habitat {
     if (s.eyeR <= 0) return
     for (const eye of s.eyes) {
       this.fill(eye.x, eye.y, s.eyeR, (i) => {
+        if (s.masked) {
+          const local = (Math.floor(i / this.pw) - s.y0) * s.w + (i % this.pw) - s.x0
+          if (local < 0 || local >= s.w * s.h || !s.mask[local]) return
+        }
         this.tag[i] = lum(this.pal.tags[this.tag[i]!]!) < 0.35 ? Tag.eyePale : Tag.eye
       })
     }
@@ -437,6 +462,33 @@ export class Pond implements Habitat {
     })
   }
 
+  /** Calls `set` for every pixel whose centre lies in the box `hw` either side of `cx` and `hh` above and below `cy`. */
+  rect(cx: number, cy: number, hw: number, hh: number, set: (i: number) => void) {
+    const x0 = Math.max(0, Math.ceil(cx - hw - 0.5))
+    const x1 = Math.min(this.pw - 1, Math.ceil(cx + hw - 0.5) - 1)
+    const y0 = Math.max(0, Math.ceil((cy - hh) / this.aspect - 0.5))
+    const y1 = Math.min(this.ph - 1, Math.ceil((cy + hh) / this.aspect - 0.5) - 1)
+    for (let py = y0; py <= y1; py++) for (let px = x0; px <= x1; px++) set(py * this.pw + px)
+  }
+
+  /** Lays `c` over pixel `i` at `alpha`, over whatever the intro has already laid there. */
+  composite(i: number, c: Rgb, alpha: number) {
+    const o = this.overlay!
+    o.r[i] = c.r * alpha + o.r[i]! * (1 - alpha)
+    o.g[i] = c.g * alpha + o.g[i]! * (1 - alpha)
+    o.b[i] = c.b * alpha + o.b[i]! * (1 - alpha)
+    o.a[i] = alpha + o.a[i]! * (1 - alpha)
+  }
+
+  private clearOverlay() {
+    const n = this.pw * this.ph
+    const o = (this.overlay ??= { r: new Float32Array(n), g: new Float32Array(n), b: new Float32Array(n), a: new Float32Array(n) })
+    o.r.fill(0)
+    o.g.fill(0)
+    o.b.fill(0)
+    o.a.fill(0)
+  }
+
   private ringTable = new Float32Array(0)
 
   /**
@@ -480,6 +532,16 @@ export class Pond implements Habitat {
    * the canvas itself and needs nothing drawn.
    */
   colourAt(i: number): Rgb | undefined {
+    const base = this.baseColourAt(i)
+    const overlay = this.intro ? this.overlay : undefined
+    if (!overlay) return base
+    const a = overlay.a[i]!
+    if (a <= 0) return base
+    const under = base ?? this.pal.bg
+    return { r: under.r * (1 - a) + overlay.r[i]!, g: under.g * (1 - a) + overlay.g[i]!, b: under.b * (1 - a) + overlay.b[i]! }
+  }
+
+  private baseColourAt(i: number): Rgb | undefined {
     const pal = this.pal
     const t = this.tag[i]!
     const h = this.height[i]!
@@ -572,5 +634,11 @@ export function sceneFor(seed: number): Scene {
 }
 
 export function createPond(options: Options): Pond {
-  return new Pond(options)
+  const pond = new Pond(options)
+  const { logo, col, row, intro = true } = options.logo ?? {}
+  if (logo && col !== undefined && row !== undefined && logoFits(pond, logo, { col, row })) {
+    pond.logoAt = { col, row }
+    if (intro) startIntro(pond, logo, { col, row })
+  }
+  return pond
 }

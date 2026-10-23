@@ -3,6 +3,7 @@ import { OptimizedBuffer, RGBA } from "@opentui/core"
 import { createPond, type Scene } from "../../src/koi/pond"
 import { paintCells } from "../../src/koi/paint"
 import { riftPalette } from "../../src/koi/palette"
+import { riftLogo } from "../../src/koi/logo"
 
 const palette = riftPalette({
   background: { r: 0, g: 0, b: 0 },
@@ -10,6 +11,16 @@ const palette = riftPalette({
   muted: { r: 128, g: 128, b: 138 },
   primary: { r: 47, g: 129, b: 247 },
 })
+
+/**
+ * CPU time used so far, in milliseconds. A frame's cost is measured in this and not in wall-clock
+ * time: on a busy machine the process is paused for other work in the middle of a frame, and that
+ * waiting is not what the frame costs.
+ */
+const cpu = () => {
+  const used = process.cpuUsage()
+  return (used.user + used.system) / 1000
+}
 
 describe("a long idle", () => {
   for (const scene of ["pond", "chase"] as Scene[]) {
@@ -27,10 +38,10 @@ describe("a long idle", () => {
       Bun.gc(true)
       const before = process.memoryUsage().heapUsed
       const frames = 1800
-      const started = performance.now()
+      const started = cpu()
       let drawn = 0
       for (let index = 0; index < frames; index++) drawn += frame()
-      const perFrame = (performance.now() - started) / frames
+      const perFrame = (cpu() - started) / frames
       Bun.gc(true)
       const grown = process.memoryUsage().heapUsed - before
 
@@ -45,4 +56,29 @@ describe("a long idle", () => {
       expect(pond.chase?.ripples.length ?? 0).toBeLessThanOrEqual(8)
     }, 60000)
   }
+
+  test("the intro, the logo breaking into koi, costs about the same as swimming, all the way through", () => {
+    const col = 34
+    const row = 8
+    const pond = createPond({ cols: 140, rows: 40, aspect: 2, palette, seed: 4, scene: "pond", logo: { logo: riftLogo, col, row } })
+    const buffer = OptimizedBuffer.create(140, 40, "wcwidth", { respectAlpha: true } as never)
+    const white = RGBA.fromValues(1, 1, 1, 1)
+    let frames = 0
+    const started = cpu()
+    while (pond.intro && frames < 60 * 40) {
+      buffer.clear(RGBA.fromInts(0, 0, 0, 255))
+      riftLogo.glyphs.forEach((line, y) => buffer.drawText(line, col, row + y, white))
+      pond.fade = Math.min(1, frames / 180)
+      pond.step(1 / 60)
+      pond.draw()
+      paintCells(buffer, pond.cells(), { r: 0, g: 0, b: 0 })
+      frames++
+    }
+    const perFrame = (cpu() - started) / frames
+    // It ends by itself, in well under the forty seconds it was allowed.
+    expect(pond.intro).toBeUndefined()
+    expect(frames).toBeGreaterThan(60 * 4)
+    expect(frames).toBeLessThan(60 * 16)
+    expect(perFrame).toBeLessThan(8)
+  }, 60000)
 })

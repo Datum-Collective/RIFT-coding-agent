@@ -31,6 +31,9 @@ export type KoiShape = {
   eyeR: number
   /** The spine as swayed this frame. */
   joints: Pt[]
+  /** In the intro, the part of the shape uncovered so far; only read when `masked`. */
+  mask: Uint8Array
+  masked: boolean
 }
 
 const FAR = 1e9
@@ -62,6 +65,8 @@ function blank(): KoiShape {
     ],
     eyeR: 0,
     joints: Array.from({ length: JOINTS }, () => ({ x: 0, y: 0 })),
+    mask: new Uint8Array(0),
+    masked: false,
   }
 }
 

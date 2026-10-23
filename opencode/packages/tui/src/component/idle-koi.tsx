@@ -19,6 +19,9 @@ import { useKV } from "../context/kv"
 import { useTheme } from "../context/theme"
 import { createIdle, isUserInput, type Clock } from "../util/idle"
 import { onMouseActivity } from "../util/mouse-activity"
+import { logoAnchor } from "./banner-anchor"
+import { logoFromBanner } from "../koi/logo"
+import { banner } from "../banner"
 import { riftPalette } from "../koi/palette"
 import { createPond, sceneFor, type Pond, type Scene } from "../koi/pond"
 import { paintCells } from "../koi/paint"
@@ -97,14 +100,21 @@ export function IdleKoi(props: {
 
     const roomFor = (width: number, height: number) => width >= MIN_COLS && height >= MIN_ROWS
 
-    const build = (width: number, height: number) => {
+    /** The banner is the logo the koi are made from, wherever it is on the screen now. */
+    const logoAt = (intro: boolean) => {
+      const at = logoAnchor.read()
+      // Drawn over the page it is on, so the shades blend as the terminal blends them.
+      return at ? { logo: logoFromBanner(banner, channels(theme.background)), col: at.col, row: at.row, intro } : undefined
+    }
+
+    const build = (width: number, height: number, intro: boolean) => {
       const palette = riftPalette({
         background: channels(theme.background),
         text: channels(theme.text),
         muted: channels(theme.textMuted),
         primary: channels(theme.primary),
       })
-      return createPond({ cols: width, rows: height, aspect: ASPECT, palette, seed, scene: props.scene ?? sceneFor(seed) })
+      return createPond({ cols: width, rows: height, aspect: ASPECT, palette, seed, scene: props.scene ?? sceneFor(seed), logo: logoAt(intro) })
     }
 
     /** A theme with a see-through background has no colour to name, so the painter reads the page off the screen instead. */
@@ -128,6 +138,10 @@ export function IdleKoi(props: {
         pond.fade = Math.min(1, (at - shownAt) / FADE_IN_MS)
         pond.draw()
         paintCells(buffer, pond.cells(), page())
+        // The banner has been moved by the layout, an update notice say: the pond is remade where it is now.
+        const banner = logoAnchor.read()
+        const moved = pond.logoAt && banner && (banner.col !== pond.logoAt.col || banner.row !== pond.logoAt.row)
+        if (moved && settling === undefined) settling = later(remake, RESIZE_SETTLE_MS)
       } catch (error) {
         fail(error)
       }
@@ -141,13 +155,15 @@ export function IdleKoi(props: {
       if (!roomFor(width, height)) return
       try {
         seed = props.seed ?? Date.now() % 1_000_000
-        pond = build(width, height)
+        pond = build(width, height, true)
       } catch (error) {
         return fail(error)
       }
       shownAt = last = now()
       renderer.addPostProcessFn(draw)
       if (!blurred) hold()
+      // The logo has become the koi: the banner draws nothing while the pond is out.
+      logoAnchor.hide(pond.logoAt !== undefined)
     }
 
     // Takes effect on the frame after the input, and the frame after has no pond in it.
@@ -158,6 +174,7 @@ export function IdleKoi(props: {
       pond = undefined
       renderer.removePostProcessFn(draw)
       release()
+      logoAnchor.hide(false)
       renderer.requestRender()
     }
 
@@ -171,11 +188,14 @@ export function IdleKoi(props: {
       if (!roomFor(width, height)) return end()
       const fade = pond.fade
       try {
-        pond = build(width, height)
+        // Remade at the new size. An intro that was playing plays again from the start, so it is
+        // never cut off; one that was over is not played again, the logo having become koi already.
+        pond = build(width, height, pond.intro !== undefined)
       } catch (error) {
         return fail(error)
       }
       pond.fade = fade
+      logoAnchor.hide(pond.logoAt !== undefined)
     }
 
     fit = (width, height) => {
