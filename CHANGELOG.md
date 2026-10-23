@@ -2,6 +2,13 @@
 
 Release notes for RIFT versions, newest first. Entries for v0.1.10 to v0.1.13 are only on the Releases page. Full notes and downloads: https://github.com/Datum-Collective/RIFT-coding-agent/releases
 
+## v0.3.0 (2026-10-24)
+
+All that is gold does not glitter. `/deep-research` gets its announcement: it shipped in v0.2.3 without release notes. Full notes: https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v0.3.0
+
+### Added
+- **`/deep-research`, a cited research report.** Give it a topic and RIFT drafts a brief, splits the question into angles, and sends a subagent into each across papers, code and practitioner discussion, with a verbatim quote for every claim. It then hunts for what is not common knowledge and puts each candidate through a kill test before it becomes a finding. The result is `report.md`, `report.tex` and `report.pdf` in `research/<topic>/`, after a checker has matched every citation, resolved every DOI, arXiv id and URL, spot-checked quotes and built the PDF. Needs Python 3, and tectonic for the PDF. A tip for it joined the home screen's rotation.
+
 ## v0.2.3 (2026-10-23)
 
 All we have to decide is what to do with the time that is given us. A koi pond for when you stop typing, the RIFT logo turning into the koi, and small koi that swim above the composer while you type. Full notes: https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v0.2.3
