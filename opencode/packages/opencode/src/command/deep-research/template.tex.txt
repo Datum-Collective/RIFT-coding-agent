@@ -1,0 +1,52 @@
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+\usepackage[round,authoryear]{natbib}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
+\usepackage{url}
+\usepackage{tcolorbox}
+
+\newtcolorbox{findingbox}[1]{colback=blue!3,colframe=blue!40!black,boxrule=0.5pt,arc=2pt,
+  fonttitle=\bfseries,title={Finding: #1}}
+\newenvironment{finding}[1]{\begin{findingbox}{#1}}{\end{findingbox}}
+
+\title{TITLE}
+\author{AUTHOR}
+\date{DATE}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+ABSTRACT
+\end{abstract}
+
+\section{Introduction}
+
+\section{Background}
+
+% One section per theme.
+
+\section{Unique findings}
+
+% \subsection{...}
+% \begin{finding}{Short title}
+% ...
+% \end{finding}
+
+\section{Open questions}
+
+\section{Method}
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\end{document}

@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+"""Bibliography and citation checks for the deep-research skill.
+
+  check.py merge  <workspace>   merge notes/*.bib into refs.bib
+  check.py verify <workspace>   citation keys agree across notes, report.md, report.tex, refs.bib
+  check.py online <workspace>   every cited source resolves; spot-check quotes against sources
+
+Exits 1 when a check fails. Standard library only.
+"""
+
+import argparse
+import concurrent.futures
+import html
+import random
+import re
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+UA = "Mozilla/5.0 (compatible; rift-deep-research/1.0; +https://github.com/Datum-Collective/RIFT-coding-agent)"
+TIMEOUT = 20
+
+MD_CITE = re.compile(r"\[([^\[\]]*@[^\[\]]*)\]")
+MD_KEY = re.compile(r"@([A-Za-z0-9_:\-.]+)")
+TEX_CITE = re.compile(r"\\cite[a-zA-Z]*\*?(?:\[[^\]]*\])*\{([^}]*)\}")
+QUOTE = re.compile(r">\s*[\"\u201c](.+?)[\"\u201d]\s*$")
+
+
+def parse_bib(text):
+    """Split BibTeX into {key: {"type", "raw", "fields"}}, in file order."""
+    entries = {}
+    starts = [m for m in re.finditer(r"@(\w+)\s*\{\s*([^,\s]+)\s*,", text)]
+    for i, m in enumerate(starts):
+        end = starts[i + 1].start() if i + 1 < len(starts) else len(text)
+        raw = text[m.start():end].strip()
+        fields = {}
+        for f in re.finditer(r"(\w+)\s*=\s*(\{(?:[^{}]|\{[^{}]*\})*\}|\"[^\"]*\"|\d+)", raw):
+            fields[f.group(1).lower()] = f.group(2).strip("{}\"").strip()
+        entries[m.group(2)] = {"type": m.group(1).lower(), "raw": raw, "fields": fields}
+    return entries
+
+
+def md_keys(text):
+    keys = []
+    for group in MD_CITE.findall(text):
+        keys += MD_KEY.findall(group)
+    return keys
+
+
+def tex_keys(text):
+    text = re.sub(r"(?<!\\)%.*", "", text)
+    keys = []
+    for group in TEX_CITE.findall(text):
+        keys += [k.strip() for k in group.split(",") if k.strip()]
+    return keys
+
+
+def read(path):
+    return path.read_text(encoding="utf-8") if path.exists() else None
+
+
+def ident(fields):
+    doi = fields.get("doi", "").lower().removeprefix("https://doi.org/")
+    if doi:
+        return "doi:" + doi
+    if fields.get("eprint"):
+        return "arxiv:" + re.sub(r"v\d+$", "", fields["eprint"].lower())
+    return None
+
+
+# merge
+
+
+def merge(ws):
+    merged, seen, problems = {}, {}, []
+    for bib in sorted((ws / "notes").glob("*.bib")):
+        for key, e in parse_bib(bib.read_text(encoding="utf-8")).items():
+            if key in merged:
+                if ident(merged[key]["fields"]) != ident(e["fields"]) or merged[key]["fields"].get("title") != e["fields"].get("title"):
+                    problems.append(f"key {key} names different works in {merged[key]['from']} and {bib.name}")
+                continue
+            i = ident(e["fields"])
+            if i and i in seen:
+                problems.append(f"{key} ({bib.name}) and {seen[i]} are the same work ({i}); use one key")
+            if i:
+                seen.setdefault(i, key)
+            merged[key] = {**e, "from": bib.name}
+    (ws / "refs.bib").write_text("\n\n".join(e["raw"] for e in merged.values()) + "\n", encoding="utf-8")
+    print(f"refs.bib: {len(merged)} entries")
+    for p in problems:
+        print("  conflict:", p)
+    return 1 if problems else 0
+
+
+# verify
+
+
+def verify(ws):
+    errors, warnings = [], []
+    bib_text = read(ws / "refs.bib")
+    if bib_text is None:
+        print("refs.bib missing: run merge first")
+        return 1
+    bib = parse_bib(bib_text)
+    for key, e in bib.items():
+        if not e["fields"].get("url") and not e["fields"].get("doi"):
+            errors.append(f"refs.bib: {key} has no url or doi")
+        if not e["fields"].get("title"):
+            errors.append(f"refs.bib: {key} has no title")
+
+    for notes in sorted((ws / "notes").glob("*.md")):
+        for n, line in enumerate(notes.read_text(encoding="utf-8").splitlines(), 1):
+            keys = md_keys(line)
+            for k in keys:
+                if k not in bib:
+                    errors.append(f"notes/{notes.name}:{n}: [@{k}] not in refs.bib")
+            if keys and line.lstrip().startswith("-") and not QUOTE.search(line):
+                warnings.append(f"notes/{notes.name}:{n}: claim has no verbatim quote")
+
+    md, tex = read(ws / "report.md"), read(ws / "report.tex")
+    mk, tk = set(), set()
+    if md is None:
+        errors.append("report.md missing")
+    else:
+        body, _, refs = md.partition("## References")
+        mk = set(md_keys(body))
+        for k in sorted(mk - bib.keys()):
+            errors.append(f"report.md: [@{k}] not in refs.bib")
+        for k in sorted(mk - set(md_keys(refs))):
+            errors.append(f"report.md: [@{k}] missing from ## References")
+    if tex is None:
+        errors.append("report.tex missing")
+    else:
+        tk = set(tex_keys(tex))
+        for k in sorted(tk - bib.keys()):
+            errors.append(f"report.tex: \\cite{{{k}}} not in refs.bib")
+        if "\\bibliography{refs}" not in tex:
+            errors.append("report.tex: missing \\bibliography{refs}")
+        for placeholder in ("{TITLE}", "{AUTHOR}", "ABSTRACT\n"):
+            if placeholder in tex:
+                errors.append(f"report.tex: template placeholder {placeholder.strip()} left in")
+    if md is not None and tex is not None:
+        for k in sorted(mk - tk):
+            errors.append(f"cited in report.md but not report.tex: {k}")
+        for k in sorted(tk - mk):
+            errors.append(f"cited in report.tex but not report.md: {k}")
+
+    uncited = sorted(bib.keys() - mk - tk)
+    print(f"sources: {len(bib)} in refs.bib, {len(mk | tk)} cited in the report, {len(uncited)} unused")
+    for w in warnings:
+        print("  warn: ", w)
+    for e in errors:
+        print("  error:", e)
+    print("verify: " + ("FAIL" if errors else "PASS"))
+    return 1 if errors else 0
+
+
+# online
+
+
+def fetch(url, accept=None):
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": accept or "*/*"})
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as res:
+        return res.status, res.read(3_000_000).decode("utf-8", "replace")
+
+
+def resolve(key, fields):
+    """Return (status, detail): status is ok, dead or blocked. Tries DOI, then arXiv id, then url."""
+    result = ("blocked", "no doi, eprint or url")
+    if fields.get("doi"):
+        doi = fields["doi"].removeprefix("https://doi.org/")
+        # The handle API answers for every DOI registrar (Crossref, DataCite, ...), 404 when unregistered.
+        result = attempt(lambda: fetch("https://doi.org/api/handles/" + urllib.parse.quote(doi), "application/json"), "doi " + doi)
+    if result[0] != "ok" and fields.get("eprint") and fields.get("archiveprefix", "arxiv").lower() == "arxiv":
+        result = attempt(lambda: arxiv(fields["eprint"]), "arXiv " + fields["eprint"])
+    if result[0] == "blocked" and fields.get("url"):
+        result = attempt(lambda: fetch(fields["url"]), fields["url"])
+    return result
+
+
+def arxiv(eprint):
+    _, body = fetch("http://export.arxiv.org/api/query?id_list=" + eprint)
+    if "<entry>" not in body or "<title>Error</title>" in body:
+        raise urllib.error.HTTPError("", 404, "arXiv id not found", None, None)
+
+
+def attempt(call, label):
+    try:
+        call()
+        return "ok", label
+    except urllib.error.HTTPError as e:
+        if e.code in (404, 410):
+            return "dead", f"{label}: HTTP {e.code}"
+        return "blocked", f"{label}: HTTP {e.code}"
+    except Exception as e:
+        reason = getattr(e, "reason", e)
+        if "Name or service not known" in str(reason) or "nodename nor servname" in str(reason):
+            return "dead", f"{label}: no such host"
+        return "blocked", f"{label}: {str(reason)[:80]}"
+
+
+def normalise(text):
+    text = html.unescape(re.sub(r"<[^>]+>", " ", text))
+    text = text.translate(str.maketrans({"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"', "\u2013": "-", "\u2014": "-"}))
+    return re.sub(r"\s+", " ", text).lower()
+
+
+def quote_found(url, quote):
+    try:
+        _, body = fetch(url)
+    except Exception:
+        return None
+    page = normalise(body)
+    q = normalise(quote).strip(" .\"'")
+    # Match a long-enough window so trimmed or ellipsised quotes still count.
+    probes = [p.strip() for p in re.split(r"\.\.\.|\u2026", q) if len(p.strip()) >= 25] or [q]
+    return all(p[:120] in page for p in probes)
+
+
+def online(ws, samples):
+    bib = parse_bib(read(ws / "refs.bib") or "")
+    md, tex = read(ws / "report.md") or "", read(ws / "report.tex") or ""
+    cited = sorted((set(md_keys(md)) | set(tex_keys(tex))) & bib.keys()) or sorted(bib)
+
+    with concurrent.futures.ThreadPoolExecutor(8) as pool:
+        results = dict(zip(cited, pool.map(lambda k: resolve(k, bib[k]["fields"]), cited)))
+    dead = [k for k, (s, _) in results.items() if s == "dead"]
+    blocked = [k for k, (s, _) in results.items() if s == "blocked"]
+    print(f"sources: {len(cited) - len(dead) - len(blocked)} ok, {len(blocked)} unreachable, {len(dead)} dead")
+    for k in dead:
+        print(f"  dead:        {k}: {results[k][1]}")
+    for k in blocked:
+        print(f"  unreachable: {k}: {results[k][1]} (check by hand)")
+
+    claims = []
+    for notes in sorted((ws / "notes").glob("*.md")):
+        for line in notes.read_text(encoding="utf-8").splitlines():
+            q = QUOTE.search(line)
+            keys = md_keys(line)
+            if q and len(keys) == 1 and keys[0] in cited and bib[keys[0]]["fields"].get("url"):
+                claims.append((notes.name, keys[0], q.group(1)))
+    random.seed(0)
+    picked = random.sample(claims, min(samples, len(claims)))
+    with concurrent.futures.ThreadPoolExecutor(8) as pool:
+        found = list(pool.map(lambda c: quote_found(bib[c[1]]["fields"]["url"], c[2]), picked))
+    missing = [c for c, f in zip(picked, found) if f is False]
+    print(f"quotes: {sum(f is True for f in found)} found, {len(missing)} not found, "
+          f"{sum(f is None for f in found)} unreachable, of {len(picked)} sampled from {len(claims)}")
+    for name, key, q in missing:
+        print(f"  not found: notes/{name} [@{key}] \"{q[:70]}...\" (re-read the source; PDFs and JS pages can miss)")
+
+    print("online: " + ("FAIL" if dead else "PASS"))
+    return 1 if dead else 0
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("command", choices=["merge", "verify", "online"])
+    ap.add_argument("workspace", type=Path)
+    ap.add_argument("--samples", type=int, default=20, help="quotes to spot-check in online (default 20)")
+    args = ap.parse_args()
+    ws = args.workspace
+    if not ws.is_dir():
+        sys.exit(f"no such workspace: {ws}")
+    if args.command == "merge":
+        sys.exit(merge(ws))
+    if args.command == "verify":
+        sys.exit(verify(ws))
+    sys.exit(online(ws, args.samples))
+
+
+if __name__ == "__main__":
+    main()
