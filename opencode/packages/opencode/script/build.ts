@@ -220,6 +220,11 @@ if (Script.release) {
   // becomes rift-<target> and the binary inside it becomes rift, which is what the install
   // scripts look for. The binary is renamed in place and put back rather than copied, because
   // copying twelve 103MB binaries would add over a gigabyte to the runner.
+  // The archives carry the licence and the notices for the third-party code compiled into the
+  // binary (MIT requires its notice to travel with copies of the code). The installers pick the
+  // binary out by name, so the extra files are left behind in the temporary folder.
+  const licence = await Bun.file("../../LICENSE").text()
+  const notices = await Bun.file("../../../THIRD_PARTY_NOTICES.md").text()
   const assets: string[] = []
   for (const key of Object.keys(binaries)) {
     const bin = `dist/${key}/bin`
@@ -229,19 +234,22 @@ if (Script.release) {
     const branded = compiled.replace(pkg.name, BRAND)
     const asset = key.replace(pkg.name, BRAND)
     await $`mv ${compiled} ${branded}`.cwd(bin)
+    await Bun.write(`${bin}/LICENSE`, licence)
+    await Bun.write(`${bin}/THIRD_PARTY_NOTICES.md`, notices)
     try {
       if (key.includes("linux")) {
         // macOS tar stores a file's extended attributes as a separate `._rift` entry, which
         // GNU tar on Linux then extracts as a stray file. The flag is inert on Linux, so a
         // release cut from either machine is identical.
-        await $`tar -czf ../../${asset}.tar.gz ${branded}`.env({ ...process.env, COPYFILE_DISABLE: "1" }).cwd(bin)
+        await $`tar -czf ../../${asset}.tar.gz ${branded} LICENSE THIRD_PARTY_NOTICES.md`.env({ ...process.env, COPYFILE_DISABLE: "1" }).cwd(bin)
         assets.push(`./dist/${asset}.tar.gz`)
       } else {
-        await $`zip -r ../../${asset}.zip ${branded}`.cwd(bin)
+        await $`zip -r ../../${asset}.zip ${branded} LICENSE THIRD_PARTY_NOTICES.md`.cwd(bin)
         assets.push(`./dist/${asset}.zip`)
       }
     } finally {
       await $`mv ${branded} ${compiled}`.cwd(bin)
+      await $`rm -f LICENSE THIRD_PARTY_NOTICES.md`.cwd(bin)
     }
   }
   // Upload the archives we actually produced. A shell glob throws when it matches nothing, so

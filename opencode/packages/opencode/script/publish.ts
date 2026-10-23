@@ -35,6 +35,7 @@ await $`mkdir -p ./dist/${pkg.name}`
 await $`mkdir -p ./dist/${pkg.name}/bin`
 await $`cp ./script/postinstall.mjs ./dist/${pkg.name}/postinstall.mjs`
 await Bun.file(`./dist/${pkg.name}/LICENSE`).write(await Bun.file("../../LICENSE").text())
+await Bun.file(`./dist/${pkg.name}/THIRD_PARTY_NOTICES.md`).write(await Bun.file("../../../THIRD_PARTY_NOTICES.md").text())
 await Bun.file(`./dist/${pkg.name}/bin/${pkg.name}.exe`).write(
   [
     `echo "Error: ${pkg.name}-ai's postinstall script was not run." >&2`,

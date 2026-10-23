@@ -136,3 +136,14 @@ reasoning. No all-caps headings; section labels are lowercase muted words (`plan
 
 One spinner (braille, 80 ms, accent) for anything in progress. No pulses, gradients or
 background animation. Respect the `animations_enabled` setting: a static `…` when off.
+
+One exception: after ten seconds without typing, the home screen (and only the home screen) fades in a koi pond behind the interface (`component/idle-koi`, `koi/`). It is
+painted only into cells the interface left empty, so nothing is ever covered, and the first key or
+paste removes it on the next frame; the mouse does not, so it can be moved, clicked and scrolled
+while the pond plays. The one thing it takes over is the banner: each time the pond
+appears, the logo breaks into pieces that become the koi, and while the pond is out the banner
+draws nothing (it keeps its size, so nothing moves); the next frame after the first key or paste it is back
+exactly as it was. The pond uses the palette above and nothing else: the canvas, neutral greys and
+the azure accent. It stops while the terminal is in the background. It follows the
+`animations_enabled` setting and also `RIFT_NO_ANIMATION` (the spinner and the prompt follow the
+setting only).

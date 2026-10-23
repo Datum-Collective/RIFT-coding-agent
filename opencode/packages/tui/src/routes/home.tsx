@@ -14,6 +14,7 @@ import { HomeSessionDestinationProvider } from "./home/session-destination"
 import { Banner, bannerFits } from "../component/banner"
 import { BANNER_WIDTH } from "../banner"
 import { useTerminalDimensions } from "@opentui/solid"
+import { IdleKoi } from "../component/idle-koi"
 
 let once = false
 const placeholder = {
@@ -67,8 +68,10 @@ export function Home() {
 
   // The opening screen: the logo, one line saying what RIFT is, the composer at the logo's width,
   // and a single tip. Everything else is one keypress away (? for shortcuts, ctrl+x l for sessions).
+  // After ten seconds without typing the logo turns into koi in a pond behind it; a key sends it away.
   return (
     <HomeSessionDestinationProvider>
+      <IdleKoi />
       <box flexGrow={1} minHeight={0} alignItems="center" paddingLeft={2} paddingRight={2}>
         <box flexGrow={1} minHeight={0} />
         <box width="100%" maxWidth={contentWidth()} flexShrink={0} alignItems="center">
