@@ -88,4 +88,20 @@ describe("paintCells", () => {
       expect(word(buffer.buffers.fg, buffer, 0, 0)).toEqual([(round * 4) % 256, 0, round])
     }
   })
+
+  test("given the page's colour, that is what counts as empty, wherever the top left cell happens to be", () => {
+    const buffer = screen()
+    // Something else sits in the top left corner, as a banner row or a toast might.
+    buffer.setCell(0, 0, " ", WHITE, PANEL)
+    expect(paintCells(buffer, [cell(3, 1)], { r: 0, g: 0, b: 0 })).toBe(1)
+    expect(charAt(buffer, 3, 1)).toBe("▌")
+  })
+
+  test("a dimming scrim over everything is not the page: nothing is painted through it", () => {
+    const buffer = OptimizedBuffer.create(10, 4, "wcwidth", { respectAlpha: true } as never)
+    buffer.clear(PANEL)
+    expect(paintCells(buffer, [cell(3, 1), cell(0, 0)], { r: 0, g: 0, b: 0 })).toBe(0)
+    // Without being told the page's colour it takes the top left cell for it, as before.
+    expect(paintCells(buffer, [cell(3, 1)])).toBe(1)
+  })
 })

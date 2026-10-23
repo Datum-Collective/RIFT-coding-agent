@@ -513,20 +513,22 @@ export class Pond implements Habitat {
     const bg = this.pal.bg
     const canvas = to8(bg)
     const px: [Rgb, Rgb, Rgb, Rgb] = [bg, bg, bg, bg]
-    for (let row = 0; row < this.rows; row++) {
-      for (let col = 0; col < this.cols; col++) {
-        const i0 = row * 2 * this.pw + col * 2
-        let any = false
-        const indexes = [i0, i0 + 1, i0 + this.pw, i0 + this.pw + 1]
-        for (let k = 0; k < 4; k++) {
-          const c = this.colourAt(indexes[k]!)
-          px[k] = c ?? bg
-          if (c) any = true
-        }
-        if (!any) continue
+    const { pw, cols, rows } = this
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const i0 = row * 2 * pw + col * 2
+        const c0 = this.colourAt(i0)
+        const c1 = this.colourAt(i0 + 1)
+        const c2 = this.colourAt(i0 + pw)
+        const c3 = this.colourAt(i0 + pw + 1)
+        if (!c0 && !c1 && !c2 && !c3) continue
+        px[0] = c0 ?? bg
+        px[1] = c1 ?? bg
+        px[2] = c2 ?? bg
+        px[3] = c3 ?? bg
         const cell = fit(px)
         if (cell.mask === 0 && cell.bg[0] === canvas[0] && cell.bg[1] === canvas[1] && cell.bg[2] === canvas[2]) continue
-        out.push({ col, row, ...cell })
+        out.push({ col, row, mask: cell.mask, fg: cell.fg, bg: cell.bg })
       }
     }
     return out
@@ -555,6 +557,18 @@ function petalWidth(along: number) {
   const f = clamp(along, 0, 1) * PETAL_STEPS
   const i = Math.min(Math.trunc(f), PETAL_STEPS - 1)
   return PETAL_TABLE[i]! + (PETAL_TABLE[i + 1]! - PETAL_TABLE[i]!) * (f - i)
+}
+
+/** Of every ten times a pond appears, this many are the quiet pond and the rest the chase. */
+const POND_IN_TEN = 6
+
+/**
+ * Which scene a seed gets. It is drawn from a seed of its own: the pond starts from the same seed,
+ * and two generators that start alike give the same first number, which would tie the scene to
+ * the pond's layout.
+ */
+export function sceneFor(seed: number): Scene {
+  return random(Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) >>> 0).float() < POND_IN_TEN / 10 ? "pond" : "chase"
 }
 
 export function createPond(options: Options): Pond {

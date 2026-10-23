@@ -57,10 +57,10 @@ export function quote(version: string) {
   return QUOTES[hash % QUOTES.length]
 }
 
-/** RIFT_NO_ANIMATION=1 (or true) turns RIFT's animations off; 0, false or empty leave them on. */
+/** RIFT_NO_ANIMATION turns RIFT's animations off with any value but the plain "no" words: 0, false, no, off or empty. */
 export function animationOff(env: Record<string, string | undefined>) {
   const value = (env["RIFT_NO_ANIMATION"] ?? "").toLowerCase()
-  return value === "1" || value === "true"
+  return value !== "" && value !== "0" && value !== "false" && value !== "no" && value !== "off"
 }
 
 /** Whether to animate: a real terminal, not CI, not a dumb terminal, and the user hasn't opted out. */

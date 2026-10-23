@@ -141,5 +141,6 @@ One exception: after ten seconds with no key, paste or mouse movement, the home 
 the home screen) fades in a koi pond behind the interface (`component/idle-koi`, `koi/`). It is
 painted only into cells the interface left empty, so nothing is ever covered, and the first input
 removes it on the next frame. It uses the palette above and nothing else: the canvas, neutral
-greys and the azure accent. It follows `animations_enabled` and `RIFT_NO_ANIMATION=1` like
-everything else here.
+greys and the azure accent. It stops while the terminal is in the background. It follows the
+`animations_enabled` setting and also `RIFT_NO_ANIMATION` (the spinner and the prompt follow the
+setting only).

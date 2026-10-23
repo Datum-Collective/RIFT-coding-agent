@@ -7,7 +7,7 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { OpencodeKeymapProvider } from "../../src/keymap"
-import { ThemeProvider } from "../../src/context/theme"
+import { ThemeProvider, useTheme } from "../../src/context/theme"
 import { TuiConfigProvider } from "../../src/config"
 import { KVProvider, useKV } from "../../src/context/kv"
 import { createTuiResolvedConfig } from "../fixture/tui-runtime"
@@ -26,9 +26,17 @@ afterEach(() => {
   delete process.env["RIFT_NO_ANIMATION"]
 })
 
-function Screen(props: { show: () => boolean; clock: ReturnType<typeof fakeClock>["clock"]; animations?: boolean; scene?: "pond" | "chase" }) {
+function Screen(props: {
+  show: () => boolean
+  clock: ReturnType<typeof fakeClock>["clock"]
+  animations?: boolean
+  scene?: "pond" | "chase"
+  expose?: (theme: ReturnType<typeof useTheme>) => void
+}) {
   const kv = useKV()
+  const theme = useTheme()
   onMount(() => {
+    props.expose?.(theme)
     if (props.animations === false) kv.set("animations_enabled", false)
   })
   return (
@@ -41,14 +49,20 @@ function Screen(props: { show: () => boolean; clock: ReturnType<typeof fakeClock
   )
 }
 
-function Harness(props: { show: () => boolean; clock: ReturnType<typeof fakeClock>["clock"]; animations?: boolean; scene?: "pond" | "chase" }) {
+function Harness(props: {
+  show: () => boolean
+  clock: ReturnType<typeof fakeClock>["clock"]
+  animations?: boolean
+  scene?: "pond" | "chase"
+  expose?: (theme: ReturnType<typeof useTheme>) => void
+}) {
   const keymap = createDefaultOpenTuiKeymap(useRenderer())
   return (
     <OpencodeKeymapProvider keymap={keymap}>
       <TuiConfigProvider config={createTuiResolvedConfig()}>
         <KVProvider>
           <ThemeProvider mode="dark">
-            <Screen show={props.show} clock={props.clock} animations={props.animations} scene={props.scene} />
+            <Screen show={props.show} clock={props.clock} animations={props.animations} scene={props.scene} expose={props.expose} />
           </ThemeProvider>
         </KVProvider>
       </TuiConfigProvider>
@@ -59,11 +73,12 @@ function Harness(props: { show: () => boolean; clock: ReturnType<typeof fakeCloc
 async function mount(options: { animations?: boolean; width?: number; height?: number; scene?: "pond" | "chase" } = {}) {
   const [show, setShow] = createSignal(true)
   const fake = fakeClock()
+  let theme!: ReturnType<typeof useTheme>
   const state = mkdtempSync(path.join(tmpdir(), "rift-koi-"))
   const app = await testRender(
     () => (
       <TestTuiContexts paths={{ state }}>
-        <Harness show={show} clock={fake.clock} animations={options.animations} scene={options.scene} />
+        <Harness show={show} clock={fake.clock} animations={options.animations} scene={options.scene} expose={(value) => (theme = value)} />
       </TestTuiContexts>
     ),
     { width: options.width ?? 100, height: options.height ?? 30 },
@@ -77,7 +92,7 @@ async function mount(options: { animations?: boolean; width?: number; height?: n
     if (app.captureCharFrame().includes("hello")) break
     await new Promise((resolve) => setTimeout(resolve, 20))
   }
-  return { app, setShow, ...fake }
+  return { app, setShow, get theme() { return theme }, ...fake }
 }
 
 type Mounted = Awaited<ReturnType<typeof mount>>
@@ -87,6 +102,32 @@ async function drawn(app: Mounted["app"]) {
   await app.renderOnce()
   return [...app.captureCharFrame()].filter((char) => char !== " " && char !== "\n").length
 }
+
+const BLOCKS = /[▘▝▀▖▌▞▛▗▚▐▜▄▙▟█]/
+
+/** Every colour the pond's cells are drawn in, as "r,g,b". */
+function pondColours(app: Mounted["app"]) {
+  const found = new Set<string>()
+  for (const line of app.captureSpans().lines) {
+    for (const span of line.spans) {
+      if (!BLOCKS.test(span.text)) continue
+      for (const colour of [span.fg, span.bg]) found.add(`${colour.buffer[0]},${colour.buffer[1]},${colour.buffer[2]}`)
+    }
+  }
+  return found
+}
+
+/** A theme colour as the pond sees it. */
+const asKey = (colour: { r: number; g: number; b: number }) => `${Math.round(colour.r * 255)},${Math.round(colour.g * 255)},${Math.round(colour.b * 255)}`
+
+/** Characters on screen from this row down. */
+const below = (app: Mounted["app"], row: number) =>
+  app
+    .captureCharFrame()
+    .split("\n")
+    .slice(row)
+    .join("")
+    .replace(/\s/g, "").length
 
 /** Goes quiet for the whole delay and lets the fade-in finish. */
 async function goQuiet(screen: Mounted) {
@@ -256,6 +297,143 @@ describe("the idle koi pond on the home screen", () => {
       await screen.app.renderOnce()
     }
     expect(screen.app.captureCharFrame()).not.toBe(before)
+  })
+
+  test("the renderer's own hover events, sent when what is under a still pointer changes, are not the user", async () => {
+    const screen = await mount()
+    await goQuiet(screen)
+    expect(await drawn(screen.app)).toBeGreaterThan(20)
+    const root = screen.app.renderer.root
+    root.processMouseEvent({ type: "over", x: 3, y: 3, button: 0, modifiers: {} } as never)
+    root.processMouseEvent({ type: "out", x: 3, y: 3, button: 0, modifiers: {} } as never)
+    expect(await drawn(screen.app)).toBeGreaterThan(20)
+    root.processMouseEvent({ type: "move", x: 4, y: 3, button: 0, modifiers: {} } as never)
+    expect(await drawn(screen.app)).toBe(5)
+  })
+
+  test("if something goes wrong while drawing, the pond ends and the screen is left alone, instead of every frame failing", async () => {
+    const screen = await mount()
+    let draw: ((buffer: unknown) => void) | undefined
+    const { addPostProcessFn, removePostProcessFn } = screen.app.renderer
+    let removed = 0
+    screen.app.renderer.addPostProcessFn = (fn) => {
+      draw = fn as never
+      addPostProcessFn.call(screen.app.renderer, fn)
+    }
+    screen.app.renderer.removePostProcessFn = (fn) => {
+      removed++
+      removePostProcessFn.call(screen.app.renderer, fn)
+    }
+    let live = 0
+    const { requestLive, dropLive } = screen.app.renderer
+    screen.app.renderer.requestLive = () => {
+      live++
+      requestLive.call(screen.app.renderer)
+    }
+    screen.app.renderer.dropLive = () => {
+      live--
+      dropLive.call(screen.app.renderer)
+    }
+
+    await goQuiet(screen)
+    expect(draw).toBeDefined()
+    expect(live).toBe(1)
+
+    // A buffer that is not one: whatever goes wrong inside, the frame loop must not see it.
+    expect(() => draw!({})).not.toThrow()
+    expect(removed).toBe(1)
+    expect(live).toBe(0)
+    expect(await drawn(screen.app)).toBe(5)
+
+    // And it does not try again for as long as this screen is up.
+    screen.advance(DELAY * 3)
+    expect(await drawn(screen.app)).toBe(5)
+    expect(live).toBe(0)
+  })
+
+  test("in the background the renderer is let go of, and picked up again on coming back, exactly once each way", async () => {
+    const screen = await mount()
+    let live = 0
+    const { requestLive, dropLive } = screen.app.renderer
+    screen.app.renderer.requestLive = () => {
+      live++
+      requestLive.call(screen.app.renderer)
+    }
+    screen.app.renderer.dropLive = () => {
+      live--
+      dropLive.call(screen.app.renderer)
+    }
+    await goQuiet(screen)
+    expect(live).toBe(1)
+
+    screen.app.renderer.emit("blur")
+    screen.app.renderer.emit("blur")
+    expect(live).toBe(0)
+    screen.app.renderer.emit("focus")
+    screen.app.renderer.emit("focus")
+    expect(live).toBe(1)
+
+    // Input while it is in the background lets go once, not twice.
+    screen.app.renderer.emit("blur")
+    expect(live).toBe(0)
+    screen.app.mockInput.pressKey("a")
+    expect(live).toBe(0)
+    screen.app.renderer.emit("focus")
+    expect(live).toBe(0)
+  })
+
+  test("a pond that comes up while the terminal is in the background does not hold the renderer", async () => {
+    const screen = await mount()
+    let live = 0
+    const { requestLive, dropLive } = screen.app.renderer
+    screen.app.renderer.requestLive = () => {
+      live++
+      requestLive.call(screen.app.renderer)
+    }
+    screen.app.renderer.dropLive = () => {
+      live--
+      dropLive.call(screen.app.renderer)
+    }
+    screen.app.renderer.emit("blur")
+    await goQuiet(screen)
+    expect(live).toBe(0)
+    screen.app.renderer.emit("focus")
+    expect(live).toBe(1)
+  })
+
+  test("when the theme changes while the pond is out, the pond changes colour with it", async () => {
+    const screen = await mount({ scene: "pond" })
+    await goQuiet(screen)
+    const before = asKey(screen.theme.theme.text)
+    expect(pondColours(screen.app).has(before)).toBe(true)
+
+    screen.theme.setMode(screen.theme.mode() === "dark" ? "light" : "dark")
+    await screen.app.renderOnce()
+    const after = asKey(screen.theme.theme.text)
+    expect(after).not.toBe(before)
+    screen.advance(100)
+    await screen.app.renderOnce()
+    expect(pondColours(screen.app).has(after)).toBe(true)
+    expect(pondColours(screen.app).has(before)).toBe(false)
+  })
+
+  test("a window dragged bigger gets one new pond once it stops, while the old one swims on in the meantime", async () => {
+    const screen = await mount({ scene: "pond" })
+    await goQuiet(screen)
+    expect(await drawn(screen.app)).toBeGreaterThan(20)
+
+    for (const width of [104, 110, 118, 126, 140]) {
+      screen.app.resize(width, 40)
+      screen.advance(20)
+    }
+    // Still the old pond, drawn for 30 rows: nothing yet in the new rows.
+    await screen.app.renderOnce()
+    expect(below(screen.app, 30)).toBe(0)
+    expect(await drawn(screen.app)).toBeGreaterThan(20)
+
+    screen.advance(200)
+    await screen.app.renderOnce()
+    expect(below(screen.app, 30)).toBeGreaterThan(0)
   })
 
   test("leaving gives the root's mouse handling back as it was, unless someone else has wrapped it since", async () => {

@@ -31,14 +31,18 @@ const eligible: Placed[] = []
 /**
  * Draws `cells` into `buffer`. Returns how many were drawn.
  *
+ * `page` is the colour of the empty page. Given it, a cell is empty only if it shows exactly that,
+ * so a panel, or a dimming scrim over everything, is never painted through. Left out (a theme with
+ * a transparent background has no colour to name) the page is taken to be whatever the top left
+ * cell shows.
+ *
  * Every cell is judged against the frame as the interface drew it, before any of the pond goes in,
  * so one painted cell never counts as the interface for the cell beside it.
  */
-export function paintCells(buffer: OptimizedBuffer, cells: readonly Placed[]) {
+export function paintCells(buffer: OptimizedBuffer, cells: readonly Placed[], page?: { r: number; g: number; b: number }) {
   const { width, height } = buffer
   const { char, bg } = buffer.buffers
-  // The page background is whatever the top left cell has: nothing draws there on the home screen.
-  const [r, g, b, a] = [bg[0]!, bg[1]!, bg[2]!, bg[3]!]
+  const [r, g, b, a] = page ? [Math.round(page.r), Math.round(page.g), Math.round(page.b), 255] : [bg[0]!, bg[1]!, bg[2]!, bg[3]!]
   eligible.length = 0
   for (const cell of cells) {
     if (cell.col < 0 || cell.col >= width || cell.row < 0 || cell.row >= height) continue

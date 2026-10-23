@@ -5,10 +5,11 @@ Release notes for RIFT versions, newest first. Entries for v0.1.10 to v0.1.13 ar
 ## Unreleased
 
 ### Added
-- **A koi pond when you go quiet.** After ten seconds with no key, paste or mouse movement on the startup screen, a pond fades in behind it: koi drifting between lily pads, or two koi circling a pad, in RIFT's own colors (the canvas, neutral greys and the azure accent). It lies behind the logo, the text and the composer and never covers them, and the first input sends it away on the next frame. Turn it off with `animations_enabled` (the "Disable animations" command) or `RIFT_NO_ANIMATION=1`; `RIFT_NO_ANIMATION=0` leaves animations on. Adapted from [koi-screensaver](https://github.com/erikrjohansson/koi-screensaver) by Erik Johansson (MIT licence); see `THIRD_PARTY_NOTICES.md`.
+- **A koi pond when you go quiet.** After ten seconds with no key, paste or mouse movement on the startup screen, a pond fades in behind it: koi drifting between lily pads, or two koi circling a pad, in RIFT's own colors (the canvas, neutral greys and the azure accent). It lies behind the logo, the text and the composer and never covers them, the first input sends it away on the next frame, and it stops while the terminal is in the background. Turn it off with `animations_enabled` (the "Disable animations" command) or `RIFT_NO_ANIMATION=1`. Adapted from [koi-screensaver](https://github.com/erikrjohansson/koi-screensaver) by Erik Johansson (MIT licence); see `THIRD_PARTY_NOTICES.md`.
+- The release archives and npm packages now include `LICENSE` and `THIRD_PARTY_NOTICES.md`.
 
 ### Fixed
-- `RIFT_NO_ANIMATION=0` or `false` no longer turns the `rift upgrade` animation off; only `1` or `true` do.
+- `RIFT_NO_ANIMATION=0`, `false`, `no` or `off` no longer turn the `rift upgrade` animation off; any other value still does.
 
 ## v0.2.2 (2026-10-22)
 
