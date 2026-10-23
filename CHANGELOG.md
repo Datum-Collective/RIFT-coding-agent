@@ -4,10 +4,11 @@ Release notes for RIFT versions, newest first. Entries for v0.1.10 to v0.1.13 ar
 
 ## v0.2.3 (2026-10-23)
 
-All we have to decide is what to do with the time that is given us. A koi pond for when you stop typing, and the RIFT logo turns into the koi. Full notes: https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v0.2.3
+All we have to decide is what to do with the time that is given us. A koi pond for when you stop typing, the RIFT logo turning into the koi, and small koi that swim above the composer while you type. Full notes: https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v0.2.3
 
 ### Added
 - **A koi pond when you go quiet, and the RIFT logo turns into the koi.** After ten seconds without typing on the startup screen, a pond fades in behind it: koi drifting between lily pads, or two koi circling a pad, in RIFT's own colors (the canvas, neutral greys and the azure accent). The logo rests while the blue behind its letters fades away, then the chrome letters crumble into motes that stream to the koi and build them, and the koi swim off, all in about six seconds. The logo stays hidden while the pond is out. Everything else lies in front of the pond and is never covered. The first key or paste sends it all away on the next frame, with the logo back exactly as it was. The mouse does not: you can move it, click and scroll while the pond plays. It stops being redrawn while the terminal is in the background. Turn it off with `animations_enabled` (the "Disable animations" command) or `RIFT_NO_ANIMATION=1`. Adapted from [koi-screensaver](https://github.com/erikrjohansson/koi-screensaver) by Erik Johansson (MIT licence); see `THIRD_PARTY_NOTICES.md`.
+- **Koi while you type.** The first character typed on the home screen opens a strip of water above the composer and small koi swim through it, darting faster as you type. They stop coming about two and a half seconds after the last keystroke and fade out. Only typing calls them; the mouse, shortcuts, arrows and Enter do not. Same switches as the pond.
 - The release archives and npm packages now include `LICENSE` and `THIRD_PARTY_NOTICES.md`.
 
 ### Fixed
