@@ -1,7 +1,7 @@
 /**
  * Notices when the user has stopped doing anything.
  *
- * `poke()` is called for every key and mouse event, and a mouse can send hundreds a second, so it
+ * `poke()` is called for every keystroke, which can come fast (a paste, a key held down), so it
  * only records the time. One timer is armed at a time, and when it fires it checks how long it
  * has really been quiet and re-arms for the rest if input came in meanwhile. That keeps the cost
  * of an event at one assignment instead of a cancelled and a new timer.
@@ -69,11 +69,14 @@ export function createIdle(input: { delay: number; onIdle: () => void; onWake: (
 }
 
 /**
- * The raw input stream also carries the terminal's own replies to questions RIFT asked it and its
- * focus reports. None of those are the user, and counting them would keep a quiet terminal from
- * ever going idle.
+ * What does not count as typing. The raw input stream also carries the mouse, the terminal's own
+ * replies to questions RIFT asked it, and its focus reports. The pond answers to the keyboard
+ * alone: moving the mouse neither ends it nor holds it back, and a terminal that talks to RIFT
+ * would otherwise keep a quiet one from ever going idle.
  */
-const FROM_TERMINAL = [
+const NOT_TYPING = [
+  /^\x1b\[<\d+;\d+;\d+[Mm]$/, // mouse, in the usual encoding: moving, pressing, releasing, scrolling
+  /^\x1b\[M[\s\S]{3}$/, // mouse, in the old one
   /^\x1b\[[IO]$/, // focus in, focus out
   /^\x1b\[\d+;\d+R$/, // cursor position
   /^\x1b\[\?[\d;]*\$y$/, // mode report
@@ -85,6 +88,7 @@ const FROM_TERMINAL = [
   /^\x1b\[\?997;[12]n$/, // light or dark mode, sent when the OS switches
 ]
 
-export function isUserInput(sequence: string) {
-  return !FROM_TERMINAL.some((pattern) => pattern.test(sequence))
+/** Whether a raw input sequence is the user at the keyboard. */
+export function isTyping(sequence: string) {
+  return !NOT_TYPING.some((pattern) => pattern.test(sequence))
 }

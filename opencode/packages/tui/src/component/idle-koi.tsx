@@ -1,7 +1,8 @@
 /**
- * The home screen's idle mode: after ten quiet seconds, a koi pond fades in behind the interface
- * (koi drifting between lily pads, or two koi circling a pad), and the first key, paste or mouse
- * movement sends it away.
+ * The home screen's idle mode: after ten seconds without typing, the logo turns into koi in a pond
+ * that fades in behind the interface (koi drifting between lily pads, or two koi circling a pad),
+ * and the first key or paste sends it away. The mouse does neither: it can be moved, clicked and
+ * scrolled while the pond is out and while it is waiting.
  *
  * It draws nothing of its own into the layout. While the pond is out, a hook on the finished frame
  * paints it into cells the interface left empty (see `koi/paint`), so text, the composer and
@@ -17,8 +18,7 @@ import type { OptimizedBuffer, RGBA } from "@opentui/core"
 import { Journey } from "@opencode-ai/core/installation/journey"
 import { useKV } from "../context/kv"
 import { useTheme } from "../context/theme"
-import { createIdle, isUserInput, type Clock } from "../util/idle"
-import { onMouseActivity } from "../util/mouse-activity"
+import { createIdle, isTyping, type Clock } from "../util/idle"
 import { logoAnchor } from "./banner-anchor"
 import { logoFromBanner } from "../koi/logo"
 import { banner } from "../banner"
@@ -210,17 +210,16 @@ export function IdleKoi(props: {
     }
     refresh = remake
 
-    // Keys arrive here as raw input. Mouse events are handled by whatever is under the pointer
-    // first, so they are caught where they bubble up to, at the root.
+    // Keys arrive here as raw input. The mouse is left alone: it neither ends the pond nor holds it
+    // back. Only typing does.
     const input = (sequence: string) => {
-      if (isUserInput(sequence)) idle.poke()
+      if (isTyping(sequence)) idle.poke()
       return false
     }
     renderer.prependInputHandler(input)
     // A paste goes to the key handler without passing through the raw input handlers.
     const pasted = () => idle.poke()
     renderer.keyInput.on("paste", pasted)
-    const stopMouse = onMouseActivity(renderer.root, () => idle.poke())
 
     // A terminal in the background has nobody looking at it, so the pond stops being redrawn there
     // and carries on where it was when the terminal comes back.
@@ -244,7 +243,6 @@ export function IdleKoi(props: {
       renderer.keyInput.off("paste", pasted)
       renderer.off("blur", onBlur)
       renderer.off("focus", onFocus)
-      stopMouse()
     })
   })
 

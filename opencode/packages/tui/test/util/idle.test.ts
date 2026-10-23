@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createIdle, isUserInput } from "../../src/util/idle"
+import { createIdle, isTyping } from "../../src/util/idle"
 import { fakeClock } from "../fixture/fake-clock"
 
 function watch(delay = 10_000) {
@@ -77,10 +77,16 @@ describe("createIdle", () => {
   })
 })
 
-describe("isUserInput", () => {
-  test("keys, pastes and mouse reports are the user", () => {
-    for (const sequence of ["a", "\r", "\x1b", "\x1b[A", "\x1bOP", "\x03", "\x1b[<35;5;3M", "\x1b[<0;5;3m", "\x1b[200~hi\x1b[201~"]) {
-      expect(isUserInput(sequence)).toBe(true)
+describe("isTyping", () => {
+  test("keys and pastes are typing", () => {
+    for (const sequence of ["a", "\r", "\x1b", "\x1b[A", "\x1bOP", "\x03", "\x7f", "\x1b[200~hi\x1b[201~", "\x1b[97;5u"]) {
+      expect(isTyping(sequence)).toBe(true)
+    }
+  })
+
+  test("the mouse is not: moving, pressing, releasing and scrolling, in either of the encodings", () => {
+    for (const sequence of ["\x1b[<35;5;3M", "\x1b[<0;5;3M", "\x1b[<0;5;3m", "\x1b[<64;40;12M", "\x1b[<65;40;12M", "\x1b[M #!"]) {
+      expect(isTyping(sequence)).toBe(false)
     }
   })
 
@@ -100,7 +106,7 @@ describe("isUserInput", () => {
       "\x1b[?997;1n",
       "\x1b[?997;2n",
     ]) {
-      expect(isUserInput(sequence)).toBe(false)
+      expect(isTyping(sequence)).toBe(false)
     }
   })
 })

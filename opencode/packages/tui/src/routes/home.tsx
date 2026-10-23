@@ -68,7 +68,7 @@ export function Home() {
 
   // The opening screen: the logo, one line saying what RIFT is, the composer at the logo's width,
   // and a single tip. Everything else is one keypress away (? for shortcuts, ctrl+x l for sessions).
-  // After ten quiet seconds a koi pond fades in behind it; any key or mouse movement sends it away.
+  // After ten seconds without typing the logo turns into koi in a pond behind it; a key sends it away.
   return (
     <HomeSessionDestinationProvider>
       <IdleKoi />

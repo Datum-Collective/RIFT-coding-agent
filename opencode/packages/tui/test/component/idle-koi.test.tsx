@@ -170,19 +170,38 @@ describe("the idle koi pond on the home screen", () => {
     expect(await drawn(screen.app)).toBe(5)
   })
 
-  test("so does moving the mouse", async () => {
+  test("the mouse does not: moving it, pressing, dragging and scrolling leave the pond swimming", async () => {
     const screen = await mount()
     await goQuiet(screen)
     expect(await drawn(screen.app)).toBeGreaterThan(20)
     await screen.app.mockMouse.moveTo(40, 12)
+    await screen.app.mockMouse.moveTo(41, 13)
+    await screen.app.mockMouse.click(40, 12)
+    await screen.app.mockMouse.drag(10, 5, 30, 9)
+    await screen.app.mockMouse.scroll(40, 12, "down")
+    expect(await drawn(screen.app)).toBeGreaterThan(20)
+    // Typing is what ends it.
+    screen.app.mockInput.pressKey("a")
     expect(await drawn(screen.app)).toBe(5)
   })
 
-  test("and a click", async () => {
+  test("mouse events of every kind, sent straight to the root, change nothing either", async () => {
     const screen = await mount()
     await goQuiet(screen)
-    await screen.app.mockMouse.click(40, 12)
-    expect(await drawn(screen.app)).toBe(5)
+    const root = screen.app.renderer.root
+    for (const type of ["over", "out", "move", "drag", "down", "up", "scroll"]) {
+      root.processMouseEvent({ type, x: 3, y: 3, button: 0, modifiers: {} } as never)
+    }
+    expect(await drawn(screen.app)).toBeGreaterThan(20)
+  })
+
+  test("nor does it hold the pond back: moving the mouse while it waits does not postpone it", async () => {
+    const screen = await mount()
+    screen.advance(6000)
+    await screen.app.mockMouse.moveTo(40, 12)
+    screen.advance(4000)
+    screen.advance(FADE)
+    expect(await drawn(screen.app)).toBeGreaterThan(20)
   })
 
   test("and pasting text", async () => {
@@ -312,18 +331,6 @@ describe("the idle koi pond on the home screen", () => {
     expect(screen.app.captureCharFrame()).not.toBe(before)
   })
 
-  test("the renderer's own hover events, sent when what is under a still pointer changes, are not the user", async () => {
-    const screen = await mount()
-    await goQuiet(screen)
-    expect(await drawn(screen.app)).toBeGreaterThan(20)
-    const root = screen.app.renderer.root
-    root.processMouseEvent({ type: "over", x: 3, y: 3, button: 0, modifiers: {} } as never)
-    root.processMouseEvent({ type: "out", x: 3, y: 3, button: 0, modifiers: {} } as never)
-    expect(await drawn(screen.app)).toBeGreaterThan(20)
-    root.processMouseEvent({ type: "move", x: 4, y: 3, button: 0, modifiers: {} } as never)
-    expect(await drawn(screen.app)).toBe(5)
-  })
-
   test("if something goes wrong while drawing, the pond ends and the screen is left alone, instead of every frame failing", async () => {
     const screen = await mount()
     let draw: ((buffer: unknown) => void) | undefined
@@ -449,24 +456,15 @@ describe("the idle koi pond on the home screen", () => {
     expect(below(screen.app, 30)).toBeGreaterThan(0)
   })
 
-  test("leaving gives the root's mouse handling back as it was, unless someone else has wrapped it since", async () => {
-    const before = await mount()
-    const original = Object.getPrototypeOf(before.app.renderer.root).processMouseEvent
-    expect(before.app.renderer.root.processMouseEvent).not.toBe(original)
-    before.setShow(false)
-    await before.app.renderOnce()
-    expect(before.app.renderer.root.processMouseEvent).toBe(original)
-
-    const other = await mount()
-    const root = other.app.renderer.root
-    const ours = root.processMouseEvent
-    const theirs = function (this: typeof root, event: Parameters<typeof ours>[0]) {
-      ours.call(this, event)
-    }
-    root.processMouseEvent = theirs
-    other.setShow(false)
-    await other.app.renderOnce()
-    expect(root.processMouseEvent).toBe(theirs)
+  test("it leaves the root's mouse handling entirely alone", async () => {
+    const screen = await mount()
+    const original = Object.getPrototypeOf(screen.app.renderer.root).processMouseEvent
+    expect(screen.app.renderer.root.processMouseEvent).toBe(original)
+    await goQuiet(screen)
+    expect(screen.app.renderer.root.processMouseEvent).toBe(original)
+    screen.setShow(false)
+    await screen.app.renderOnce()
+    expect(screen.app.renderer.root.processMouseEvent).toBe(original)
   })
 
   describe("with the real banner on the screen", () => {
