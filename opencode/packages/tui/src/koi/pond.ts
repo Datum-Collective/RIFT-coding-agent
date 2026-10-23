@@ -16,6 +16,7 @@ import { FIRST_SURFACE, Tag, type Palette } from "./palette"
 import { chaseSwim, drawRipples, drawSwirls, setupChase, stepChase, type ChaseState } from "./chase"
 import { random, type Random } from "./random"
 import { shapeKoi, type KoiShape } from "./shape"
+import { setupStream, stepStream, streamSwim, type StreamState } from "./stream"
 
 /** A cell of the finished picture, and where it goes. */
 export type Placed = Fitted & { col: number; row: number }
@@ -23,7 +24,8 @@ export type Placed = Fitted & { col: number; row: number }
 /** How finely a ripple's height is tabled, in world units. */
 const RING_STEP = 0.05
 
-export type Scene = "pond" | "chase"
+/** `stream` is the strip above the composer that koi swim through while the user types; it is never chosen for the idle pond. */
+export type Scene = "pond" | "chase" | "stream"
 
 export type Ring = {
   x: number
@@ -103,6 +105,8 @@ export class Pond implements Habitat {
   rings: Ring[] = []
   /** Set for the chase scene only. */
   chase?: ChaseState
+  /** Set for the stream scene only. */
+  stream?: StreamState
   /** Set while the logo is breaking up into koi. */
   intro?: Intro
   /** The cell the logo that has been turned into koi was in with its top left corner: while this is set, the logo is kept off the screen. */
@@ -139,6 +143,11 @@ export class Pond implements Habitat {
     const m = Math.min(this.w, this.h)
     this.size = Math.max(0.9, (m * KOI_LENGTH) / 18)
 
+    if (options.scene === "stream") {
+      // The stream starts empty: its koi swim in from the sides, so there is nothing to settle.
+      setupStream(this)
+      return
+    }
     if (options.scene === "chase") {
       setupChase(this)
     } else {
@@ -238,9 +247,11 @@ export class Pond implements Habitat {
     this.t += dt
     if (this.intro) stepIntro(this, dt)
     if (this.chase) stepChase(this, dt)
+    if (this.stream) stepStream(this, dt)
     for (const k of this.koi) {
       if (k.ease <= 0) continue
       if (this.chase) chaseSwim(this, k, dt * k.ease)
+      else if (this.stream) streamSwim(this, k, dt * k.ease)
       else swim(this, k, dt * k.ease)
     }
 
