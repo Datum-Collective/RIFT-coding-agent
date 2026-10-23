@@ -8,13 +8,14 @@ import { usePromptRef } from "../context/prompt"
 import { useLocal } from "../context/local"
 import { usePluginRuntime } from "../plugin/runtime"
 import { useEditorContext } from "../context/editor"
-import { TextAttributes } from "@opentui/core"
+import { TextAttributes, type BoxRenderable } from "@opentui/core"
 import { useTheme } from "../context/theme"
 import { HomeSessionDestinationProvider } from "./home/session-destination"
 import { Banner, bannerFits } from "../component/banner"
 import { BANNER_WIDTH } from "../banner"
 import { useTerminalDimensions } from "@opentui/solid"
 import { IdleKoi } from "../component/idle-koi"
+import { TypingKoi } from "../component/typing-koi"
 
 let once = false
 const placeholder = {
@@ -28,6 +29,7 @@ export function Home() {
   const route = useRouteData("home")
   const promptRef = usePromptRef()
   const [ref, setRef] = createSignal<PromptRef | undefined>()
+  const [composer, setComposer] = createSignal<BoxRenderable>()
   const args = useArgs()
   const local = useLocal()
   const editor = useEditorContext()
@@ -69,9 +71,11 @@ export function Home() {
   // The opening screen: the logo, one line saying what RIFT is, the composer at the logo's width,
   // and a single tip. Everything else is one keypress away (? for shortcuts, ctrl+x l for sessions).
   // After ten seconds without typing the logo turns into koi in a pond behind it; a key sends it away.
+  // While the user types, small koi swim through a strip just above the composer.
   return (
     <HomeSessionDestinationProvider>
       <IdleKoi />
+      <TypingKoi composer={composer} />
       <box flexGrow={1} minHeight={0} alignItems="center" paddingLeft={2} paddingRight={2}>
         <box flexGrow={1} minHeight={0} />
         <box width="100%" maxWidth={contentWidth()} flexShrink={0} alignItems="center">
@@ -81,7 +85,7 @@ export function Home() {
           </pluginRuntime.Slot>
         </box>
         <box height={1} minHeight={0} flexShrink={1} />
-        <box width="100%" maxWidth={contentWidth()} zIndex={1000} flexShrink={0}>
+        <box ref={setComposer} width="100%" maxWidth={contentWidth()} zIndex={1000} flexShrink={0}>
           <pluginRuntime.Slot name="home_prompt" mode="replace" ref={bind}>
             <Prompt ref={bind} right={<pluginRuntime.Slot name="home_prompt_right" />} placeholders={placeholder} />
           </pluginRuntime.Slot>
