@@ -233,6 +233,29 @@ before rendering, and confirms the MP4's resolution, length and frame rate befor
 
 Rendering needs Node 20 or newer. No paid services are involved.
 
+### Deep research
+
+Type `/deep-research` and a topic:
+
+```
+/deep-research how well do LLM-as-judge scores agree with human ratings
+```
+
+RIFT drafts a research brief, splits the question into angles and sends a subagent to dig into
+each one across papers (OpenAlex, Semantic Scholar, arXiv), code and practitioner discussion.
+Every claim it notes carries a verbatim quote from a source it actually read. It then hunts for
+what is not already common knowledge (sources that contradict each other, gaps nobody has filled,
+overlooked work, methods from one field that apply to another) and puts each candidate through a
+kill test: a search for prior work that already says it. Only what survives goes into the findings.
+
+You get `report.md`, `report.tex` and a compiled `report.pdf` in `research/<topic>/`. Before it
+calls the report done, RIFT checks that every citation matches the bibliography, resolves every
+DOI, arXiv id and URL, spot-checks quotes against their sources and builds the PDF.
+
+It needs Python 3, and [tectonic](https://tectonic-typesetting.github.io) (`brew install
+tectonic`) for the PDF. The workflow is inspired by
+[Deep-Research-skills](https://github.com/Weizhena/Deep-Research-skills).
+
 ### Share a session
 
 Type `/share` and a link is on your clipboard in about two seconds. It opens the session in the
@@ -280,8 +303,8 @@ rift mcp add                      # connect an MCP server
 rift remotion setup               # install Remotion's skills for /remotion
 ```
 
-In a session, `/share` copies a link, `/unshare` takes it down, `/mcp` manages MCP servers and
-`/remotion` makes a video.
+In a session, `/share` copies a link, `/unshare` takes it down, `/mcp` manages MCP servers,
+`/remotion` makes a video and `/deep-research` writes a cited research report.
 
 | Key         | Action                                        |
 | ----------- | --------------------------------------------- |

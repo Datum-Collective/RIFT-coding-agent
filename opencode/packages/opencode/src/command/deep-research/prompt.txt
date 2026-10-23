@@ -1,0 +1,143 @@
+Research this: $ARGUMENTS
+
+If no topic was given above, ask for one and stop.
+
+Turn the topic into a cited report (`report.md`, `report.tex`, `report.pdf`) whose centre of gravity
+is what is _unique_: the contradictions, gaps, sleepers and bridges a quick search would miss. Every
+claim traces to a source you actually read, and the run ends with a check that proves it. Follow
+these steps in order.
+
+The research kit is in `${kit}`: `sources.md`, `writing.md`, `template.tex` and `check.py`.
+
+## Workspace
+
+Everything for one topic lives in `research/<slug>/` under the current directory:
+
+```
+research/<slug>/
+  brief.md          question, audience, depth, window
+  plan.md           the angles
+  notes/<angle>.md  sourced claims, one file per angle
+  notes/<angle>.bib BibTeX for that angle's sources
+  refs.bib          merged bibliography
+  findings.md       the unique findings, after the kill test
+  report.md  report.tex  report.pdf
+```
+
+If the folder already exists, read it and resume at the first step whose output is missing.
+
+## 1. Brief
+
+The user is _vibe researching_: they may give one line. Draft the brief yourself, filling in
+defaults, then confirm it in a single question:
+
+- **Question**: one sentence, answerable. Turn a topic ("RAG evaluation") into a question ("Which
+  RAG evaluation methods agree with human judgement, and where do they break?").
+- **Audience**: researcher in the field (default), newcomer, or decision-maker.
+- **Depth**: _quick_ (4 angles) or _deep_ (8 angles, default).
+- **Window**: all time (default), or since a year.
+- **Must include / exclude**: papers, authors or sources the user names.
+
+Done when `brief.md` holds the confirmed brief.
+
+## 2. Map
+
+Break the question into **angles**: independent sub-questions that together cover it. Mix kinds:
+the established core, the latest frontier (last 12 months), the method or mechanism, the critics
+and failure reports, adjacent fields that touch the same problem, and practice (code, benchmarks,
+what practitioners say). Tag each angle with its source lenses from `${kit}/sources.md`.
+
+List seed works you already know under each angle, marked `[unverified]`: they are leads for the
+dig, not citations.
+
+Done when `plan.md` holds the angles and the user has confirmed or edited them.
+
+## 3. Dig
+
+Dispatch one subagent per angle with the task tool, at most 4 at a time, each with this prompt,
+filled in:
+
+```
+Research this angle of a larger question and write your notes to files.
+
+Question: <brief question>
+Angle: <angle sub-question>
+Window: <window>   Today: <YYYY-MM-DD>
+Seed leads (unverified): <seeds>
+Search strategy: read ${kit}/sources.md and use the lenses <lenses>.
+
+Write <workspace>/notes/<angle-slug>.md:
+- One bullet per claim: the claim in your own words, its citation key, then a verbatim quote of 1-3 sentences from the source that supports it:
+  - Retrieval quality explains most of the variance in answer quality. [@smith2024rag] > "We find that 71% of ..."
+- Cite only sources you opened and read in this run. Seeds you could not confirm go under "## Unconfirmed".
+- Under "## Tensions", note any sources that disagree, and any claim that rests on one source only.
+- Under "## Surprises", note anything that cut against your expectation or that few sources mention.
+
+Write <workspace>/notes/<angle-slug>.bib with one BibTeX entry per cited source. Every entry has a url, and a doi or eprint when one exists. Keys are <firstauthorlastname><year><firstword>, lowercase.
+
+Aim for 8-15 claims from at least 5 distinct sources. Reply with one line: claim count, source count, and the single most surprising thing you found.
+```
+
+Then merge the bibliographies:
+
+```
+python3 ${kit}/check.py merge research/<slug>
+```
+
+Done when every angle has a notes file with at least 5 sourced claims, or a "## Dead end" section
+saying what was searched, and `refs.bib` exists.
+
+## 4. Hunt
+
+This is the step that makes the report worth reading. Read every notes file, then look for
+candidates through each lens:
+
+- **Contradiction**: sources that disagree on a fact or result. Find out why: different data,
+  setting, metric or era.
+- **Gap**: a question the sources circle but none answers, or a combination nobody has tried.
+- **Sleeper**: relevant work with few citations, a recent preprint, a thesis, a non-English source
+  or a GitHub repo that settles something the papers argue about.
+- **Bridge**: a method or result from one angle or field that applies to another and has not been
+  applied.
+- **Stale consensus**: a widely repeated claim whose evidence is old, small or a single source.
+
+Put every candidate through the **kill test**: search specifically for prior work that already
+states it (for a gap, someone who filled it; for a contradiction, a paper that already resolves it).
+If you find one, the candidate is known: cite that work and move it into the report body as
+background. Survivors are the unique findings.
+
+Write `findings.md` with one section per survivor: the finding, its evidence keys, why it is
+non-obvious, what the kill test searched, a confidence level (high, medium, speculative) and one
+concrete way to test or use it.
+
+Done when every candidate has been through the kill test and `findings.md` lists the survivors
+(aim for 3-7).
+
+## 5. Write
+
+Read `${kit}/writing.md`, then write `report.md` and `report.tex` (from `${kit}/template.tex`)
+carrying the same content and the same citation keys.
+
+Done when both files exist and every key cited in either is in `refs.bib`.
+
+## 6. Verify
+
+Run the checks and fix what they report until they pass:
+
+```
+python3 ${kit}/check.py verify research/<slug>
+python3 ${kit}/check.py online research/<slug>
+cd research/<slug> && tectonic report.tex        # or: latexmk -pdf report.tex
+```
+
+`verify` checks citation keys across the report, notes and bibliography. `online` resolves every
+DOI, arXiv id and URL and spot-checks quotes against their sources. A source that no longer
+resolves gets replaced or its claim removed. A quote that cannot be found is re-read at the source
+and corrected.
+
+If Python 3 is missing, say how to install it. If no TeX engine is installed, tell the user to
+install `tectonic` (`brew install tectonic`) and leave `report.tex` ready to build.
+
+Done when `verify` passes, `online` reports no dead sources, and `report.pdf` builds. Then tell the
+user the paths, the source count, the unique findings in one line each, and anything that could
+not be verified.

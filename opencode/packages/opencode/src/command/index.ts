@@ -10,6 +10,7 @@ import { Skill } from "../skill"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
 import PROMPT_REMOTION from "./template/remotion.txt"
+import { DeepResearch } from "./deep-research"
 import { LegacyEvent } from "@opencode-ai/schema/legacy-event"
 
 type State = {
@@ -49,6 +50,7 @@ export const Default = {
   REVIEW: "review",
   REMOTION: "remotion",
   VIDEO: "video",
+  DEEP_RESEARCH: "deep-research",
 } as const
 
 export interface Interface {
@@ -101,6 +103,16 @@ const layer = Layer.effect(
         ...commands[Default.REMOTION],
         name: Default.VIDEO,
         description: "same as /remotion",
+      }
+      commands[Default.DEEP_RESEARCH] = {
+        name: Default.DEEP_RESEARCH,
+        description: "research a topic, hunt for what is new, write a cited report as .md and .tex/.pdf",
+        source: "command",
+        // The kit is written to the cache only when the command runs, not when commands are listed.
+        get template() {
+          return DeepResearch.template()
+        },
+        hints: hints(DeepResearch.PROMPT),
       }
       for (const [name, command] of Object.entries(cfg.command ?? {})) {
         commands[name] = {
