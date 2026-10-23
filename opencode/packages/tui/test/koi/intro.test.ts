@@ -237,16 +237,33 @@ describe("the letters become koi", () => {
     }
   })
 
-  test("it takes a few seconds, not a few moments and not a minute", () => {
+  test("it takes about six seconds, in either scene, whatever the seed and the size of the terminal", () => {
+    // Six seconds is long enough for the logo to be read and for the koi to be seen forming, and
+    // short enough that nobody is waiting on it.
+    for (const [cols, rows] of [[100, 30], [120, 40], [200, 60]] as const) {
+      for (const scene of ["pond", "chase"] as const) {
+        for (let seed = 1; seed <= 6; seed++) {
+          const pond = withLogo({ cols, rows, scene, seed })
+          const began = pond.t
+          let ended = -1
+          for (let step = 0; step < 30 * 60 && ended < 0; step++) {
+            pond.step(1 / 60)
+            if (!pond.intro) ended = pond.t - began
+          }
+          expect(ended).toBeGreaterThan(5.4)
+          expect(ended).toBeLessThan(6.5)
+        }
+      }
+    }
+  })
+
+  test("the logo still rests for long enough to be read before it breaks up", () => {
+    expect(INTRO_HOLD).toBeGreaterThanOrEqual(2)
+  })
+
+  test("no mote is in the air for less time than it takes to follow it", () => {
     const pond = withLogo()
-    // The pond's own clock already holds the seconds it was given to settle.
-    const began = pond.t
-    let ended = 0
-    run(pond, 30, () => {
-      if (!pond.intro && ended === 0) ended = pond.t - began
-    })
-    expect(ended).toBeGreaterThan(INTRO_HOLD + 2)
-    expect(ended).toBeLessThan(14)
+    for (const mote of pond.intro!.motes) expect(mote.dur).toBeGreaterThanOrEqual(1.1)
   })
 
   test("while it is happening, the koi that are building do not swim off, and when they are released they do", () => {

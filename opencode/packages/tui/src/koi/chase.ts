@@ -6,7 +6,7 @@
  * Adapted from koi-screensaver by Erik Johansson (MIT licence). See THIRD_PARTY_NOTICES.md.
  */
 import { clamp } from "./colour"
-import { INTRO_HOLD } from "./intro"
+import { INTRO_HOLD, RELEASE_EASE } from "./intro"
 import { JOINTS, PATTERNS, SEG, follow, newKoi, type Koi } from "./koi"
 import { angleTo, remainder, smooth } from "./math"
 import type { Pond } from "./pond"
@@ -98,7 +98,7 @@ export function stepChase(p: Pond, dt: number) {
   // While the logo is up the pad waits; it opens out as the letters lift off the water.
   // In steps: the pad's pixels are worked out afresh whenever its size changes, so it opens in a
   // few dozen sizes and not a new one every frame.
-  const grow = intro ? Math.round(smooth((intro.t - INTRO_HOLD) / 2.5) * PAD_STEPS) / PAD_STEPS : 1
+  const grow = intro ? Math.round(smooth((intro.t - INTRO_HOLD) / RELEASE_EASE) * PAD_STEPS) / PAD_STEPS : 1
   p.pads[0]!.r = c.padR * grow
 
   // Now and then one of them flicks its tail.

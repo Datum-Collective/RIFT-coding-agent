@@ -17,18 +17,37 @@ import { Tag } from "./palette"
 import type { Pond } from "./pond"
 import type { KoiShape } from "./shape"
 
+/**
+ * The whole intro takes about six seconds. Each part is as short as it can be and still read: the
+ * logo needs two seconds or so to be recognised, a mote needs about a second to be followed through
+ * the air, and a koi needs a moment to close up before it is let go.
+ */
+
 /** Seconds the logo rests before it breaks up. */
-export const INTRO_HOLD = 3.0
+export const INTRO_HOLD = 2.5
+
+/** Seconds between one koi's letters letting go and the next's. */
+const STAGGER = 0.18
+
+/** Seconds the motes of one koi are spread over, from the first to leave to the last. */
+const SPREAD = 0.65
+
+/** Seconds a mote is in the air: at least this, and up to half as much again. */
+const FLIGHT = 1.2
+const FLIGHT_EXTRA = 0.5
 
 /** Seconds a landed mote takes to melt into the koi. */
 const MELT = 0.5
 
 /** Seconds the koi takes to close up after the last mote. */
-const CLOSE_UP = 0.7
+const CLOSE_UP = 0.6
 
-/** The blue backdrop fades out over the second half of the rest, so it is gone as the letters go. */
-const BACKDROP_FROM = 1.2
-const BACKDROP_FOR = 1.6
+/** Seconds a koi takes to get up to speed once it is let go, and a chase's pad to open out. */
+export const RELEASE_EASE = 2.2
+
+/** The blue backdrop fades out in the second half of the rest, so it is gone as the letters go. */
+const BACKDROP_FROM = 0.9
+const BACKDROP_FOR = 1.3
 
 /** A logo pixel is a cell wide and half a cell tall: this many pond pixels across and down. */
 const ACROSS = 2
@@ -227,7 +246,7 @@ export function startIntro(p: Pond, logo: Logo, at: { col: number; row: number }
     const bands = Math.max(1, Math.trunc(Math.sqrt(m) / 2))
     let curl = 0.15 + 0.1 * p.rng.float()
     if (p.rng.int(2) === 0) curl = -curl
-    const start = INTRO_HOLD + 0.22 * i
+    const start = INTRO_HOLD + STAGGER * i
     intro.release[i] = start + 0.3
     for (let band = 0; band < bands; band++) {
       const lo = Math.trunc((band * m) / bands)
@@ -251,8 +270,8 @@ export function startIntro(p: Pond, logo: Logo, at: { col: number; row: number }
           fo: target.fo,
           tag,
           color: colourOf(q),
-          start: start + (0.8 * band) / bands + 0.3 * p.rng.float(),
-          dur: 1.4 + 0.6 * p.rng.float(),
+          start: start + (SPREAD * band) / bands + 0.3 * p.rng.float(),
+          dur: FLIGHT + FLIGHT_EXTRA * p.rng.float(),
           curl: curl * (0.7 + 0.6 * p.rng.float()),
         }
         intro.end = Math.max(intro.end, mote.start + mote.dur)
@@ -300,7 +319,7 @@ export function stepIntro(p: Pond, dt: number) {
     // Drawn whole from the first landing on, but only where motes have landed (see revealMask).
     k.grow = 0
     if (intro.t >= intro.first[i]!) k.grow = 1
-    k.ease = smooth((intro.t - intro.release[i]!) / 2.5)
+    k.ease = smooth((intro.t - intro.release[i]!) / RELEASE_EASE)
     if (!intro.splashed[i] && intro.t >= intro.release[i]! - 0.3) {
       // The letter lifts off the water.
       intro.splashed[i] = true
@@ -308,7 +327,7 @@ export function stepIntro(p: Pond, dt: number) {
       p.addRing(c.x, c.y, 2 * p.size, 6 * p.size, 0.7, 2.6, 1.0 * p.size)
     }
   })
-  let done = intro.t >= intro.end && intro.t >= intro.release[intro.release.length - 1]! + 2.5
+  let done = intro.t >= intro.end && intro.t >= intro.release[intro.release.length - 1]! + RELEASE_EASE
   for (let i = 0; i < intro.count.length; i++) if (intro.count[i]! > 0 && !built(intro, i)) done = false
   if (done) {
     for (const k of p.koi) {
