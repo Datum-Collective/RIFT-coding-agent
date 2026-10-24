@@ -97,6 +97,28 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Ag
 
 export const use = serviceUse(Service)
 
+/** Directories outside the project that still ask before RIFT touches them. */
+export const SENSITIVE_DIRS = [
+  "~/.ssh/*",
+  "~/.aws/*",
+  "~/.gnupg/*",
+  "~/.kube/*",
+  "~/.docker/*",
+  "~/.config/*",
+  "~/Library/Keychains/*",
+  "/etc/*",
+  "/private/etc/*",
+  "/System/*",
+  "/Library/*",
+  "/usr/bin/*",
+  "/usr/sbin/*",
+  "/usr/lib/*",
+  "/bin/*",
+  "/sbin/*",
+  "/boot/*",
+  "/var/root/*",
+]
+
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -123,18 +145,19 @@ const layer = Layer.effect(
           ...skillDirs.map((dir) => path.join(dir, "*")),
           ...referenceDirs.map((dir) => path.join(dir, "*")),
         ]
-        const readonlyExternalDirectory = {
-          "*": "ask",
+        // Outside the project RIFT works without asking, like Claude Code does for reads and temp files. Only
+        // places where a mistake is costly still ask: credentials, system directories and other tools' config.
+        // The last matching rule wins, so the allowed directories come after the ones that ask.
+        const externalDirectory = {
+          "*": "allow",
+          ...Object.fromEntries(SENSITIVE_DIRS.map((dir) => [dir, "ask"])),
           ...Object.fromEntries(whitelistedDirs.map((dir) => [dir, "allow"])),
         } satisfies Record<string, "allow" | "ask" | "deny">
 
         const defaults = Permission.fromConfig({
           "*": "allow",
           doom_loop: "ask",
-          external_directory: {
-            "*": "ask",
-            ...Object.fromEntries(whitelistedDirs.map((dir) => [dir, "allow"])),
-          },
+          external_directory: externalDirectory,
           question: "deny",
           plan_enter: "deny",
           plan_exit: "deny",
@@ -218,7 +241,7 @@ const layer = Layer.effect(
                 webfetch: "allow",
                 websearch: "allow",
                 read: "allow",
-                external_directory: readonlyExternalDirectory,
+                external_directory: externalDirectory,
               }),
               user,
             ),
@@ -236,7 +259,7 @@ const layer = Layer.effect(
                 edit: "deny",
                 todowrite: "deny",
                 task: "deny",
-                external_directory: readonlyExternalDirectory,
+                external_directory: externalDirectory,
               }),
               user,
             ),

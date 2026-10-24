@@ -1,6 +1,7 @@
 import { afterEach, expect } from "bun:test"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Cause, Effect, Exit, Layer } from "effect"
+import os from "os"
 import path from "path"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
@@ -120,11 +121,12 @@ it.instance("explore agent denies edit and write", () =>
   }),
 )
 
-it.instance("explore agent asks for external directories and allows whitelisted external paths", () =>
+it.instance("explore agent allows external directories, asks for sensitive ones and allows whitelisted paths", () =>
   Effect.gen(function* () {
     const explore = yield* load((svc) => svc.get("explore"))
     expect(explore).toBeDefined()
-    expect(Permission.evaluate("external_directory", "/some/other/path", explore!.permission).action).toBe("ask")
+    expect(Permission.evaluate("external_directory", "/some/other/path", explore!.permission).action).toBe("allow")
+    expect(Permission.evaluate("external_directory", "/etc/*", explore!.permission).action).toBe("ask")
     expect(Permission.evaluate("external_directory", Truncate.GLOB, explore!.permission).action).toBe("allow")
     expect(
       Permission.evaluate("external_directory", path.join(Global.Path.tmp, "agent-work"), explore!.permission).action,
@@ -466,12 +468,40 @@ it.instance("Agent.get returns undefined for non-existent agent", () =>
   }),
 )
 
-it.instance("default permission includes doom_loop and external_directory as ask", () =>
+it.instance("default permission asks for doom_loop and lets RIFT work outside the project", () =>
   Effect.gen(function* () {
     const build = yield* load((svc) => svc.get("build"))
     expect(evalPerm(build, "doom_loop")).toBe("ask")
-    expect(evalPerm(build, "external_directory")).toBe("ask")
+    expect(evalPerm(build, "external_directory")).toBe("allow")
   }),
+)
+
+it.instance("external directories only ask where a mistake is costly", () =>
+  Effect.gen(function* () {
+    const build = yield* load((svc) => svc.get("build"))
+    const action = (target: string) => Permission.evaluate("external_directory", target, build!.permission).action
+    for (const dir of ["/tmp/*", "/private/tmp/x/*", "/var/folders/ab/T/*", "/Users/someone/Desktop/test/*", "/usr/local/lib/*"])
+      expect(action(dir)).toBe("allow")
+    for (const dir of [
+      path.join(os.homedir(), ".ssh/*"),
+      path.join(os.homedir(), ".aws/*"),
+      path.join(os.homedir(), ".config/gh/*"),
+      "/etc/*",
+      "/System/Library/*",
+      "/usr/bin/*",
+    ])
+      expect(action(dir)).toBe("ask")
+  }),
+)
+
+it.instance(
+  "a user can turn the external directory questions back on",
+  () =>
+    Effect.gen(function* () {
+      const build = yield* load((svc) => svc.get("build"))
+      expect(Permission.evaluate("external_directory", "/tmp/*", build!.permission).action).toBe("ask")
+    }),
+  { config: { permission: { external_directory: "ask" } } },
 )
 
 it.instance("webfetch is allowed by default", () =>
@@ -547,7 +577,7 @@ it.instance("global tmp directory children are allowed for external_directory", 
     expect(
       Permission.evaluate("external_directory", path.join(Global.Path.tmp, "scratch"), build!.permission).action,
     ).toBe("allow")
-    expect(Permission.evaluate("external_directory", "/some/other/path", build!.permission).action).toBe("ask")
+    expect(Permission.evaluate("external_directory", "/some/other/path", build!.permission).action).toBe("allow")
   }),
 )
 
