@@ -1,23 +1,66 @@
 #!/usr/bin/env python3
 """Measured checks for a build123d model, so "it looks right" is never the evidence.
 
+  check.py setup
   check.py verify <script.py> [--expect X=40,Y=20,Z=10] [--tol 0.1] [--multi] [--step out.step] [--stl out.stl]
   check.py render <script.py> <out_dir>
+
+`setup` makes a private Python environment in `venv/` next to this file, installs build123d, trimesh and numpy into
+it (nothing else on the machine changes) and prints the interpreter to use. `verify` and `render` switch to that
+environment by themselves when the Python they were started with lacks build123d.
 
 The script must leave its final solid in a variable called `result` (or `part`).
 `verify` exits 1 when a check fails; a check that could not run is "not run" and never a pass.
 `render` writes four isometric views (view1.png ... view4.png) that draw only feature edges.
-Needs build123d. Watertightness and `render` also need trimesh and numpy.
 """
 
 import argparse
 import math
+import os
 import runpy
+import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 KIT = Path(__file__).resolve().parent
+
+
+PACKAGES = ["build123d", "trimesh", "numpy"]
+
+
+def venv_python():
+    return KIT / "venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+
+def has_libs(python):
+    done = subprocess.run([str(python), "-c", "import build123d, trimesh, numpy"], capture_output=True)
+    return done.returncode == 0
+
+
+def setup(_args):
+    python = venv_python()
+    if python.exists() and has_libs(python):
+        print(python)
+        return 0
+    names = ("python3.13", "python3.12", "python3.11", "python3.10")
+    candidates = list(dict.fromkeys([sys.executable, *[found for found in map(shutil.which, names) if found]]))
+    for candidate in candidates:
+        print(f"setting up build123d with {candidate} (first use only, a minute or two)...", file=sys.stderr)
+        shutil.rmtree(KIT / "venv", ignore_errors=True)
+        made = subprocess.run([candidate, "-m", "venv", str(KIT / "venv")], capture_output=True, text=True)
+        if made.returncode != 0:
+            print(made.stderr.strip()[-400:], file=sys.stderr)
+            continue
+        installed = subprocess.run([str(python), "-m", "pip", "install", "-q", *PACKAGES], capture_output=True, text=True)
+        if installed.returncode == 0 and has_libs(python):
+            print(python)
+            return 0
+        print((installed.stderr or installed.stdout).strip()[-600:], file=sys.stderr)
+    shutil.rmtree(KIT / "venv", ignore_errors=True)
+    print("could not set up build123d. Run by hand: pip install " + " ".join(PACKAGES), file=sys.stderr)
+    return 1
 
 
 def num(value):
@@ -227,14 +270,20 @@ def main():
     one.add_argument("--multi", action="store_true")
     one.add_argument("--step")
     one.add_argument("--stl")
+    sub.add_parser("setup")
     two = sub.add_parser("render")
     two.add_argument("script")
     two.add_argument("out_dir")
     args = parser.parse_args()
+    if args.command == "setup":
+        return setup(args)
     try:
         import build123d  # noqa: F401
     except ImportError:
-        print("build123d is not installed for this Python. Ask the user before running: pip install build123d trimesh numpy")
+        python = venv_python()
+        if python.exists() and Path(sys.prefix).resolve() != (KIT / "venv").resolve() and has_libs(python):
+            os.execv(str(python), [str(python), str(Path(__file__).resolve()), *sys.argv[1:]])
+        print(f"build123d is not installed for this Python. Run: python3 {KIT / 'check.py'} setup")
         return 2
     return verify(args) if args.command == "verify" else render(args)
 

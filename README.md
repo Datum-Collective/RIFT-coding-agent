@@ -265,8 +265,9 @@ never by deleting a requested feature. It also renders four isometric views with
 removed, and exports `.step` and `.stl`. When a picture and a measurement disagree, the measurement
 wins.
 
-Needs Python 3 with `pip install build123d trimesh numpy`. RIFT tells you if they are missing and does
-not install them on its own.
+Needs Python 3.10 or newer. The first time you run it, RIFT makes a private Python environment in its cache
+folder (`~/.cache/opencode/cad/venv`) and installs build123d, trimesh and numpy into it, which takes a minute or
+two and about 750 MB. Nothing else on your machine changes, and deleting that folder undoes it.
 
 ### Deep research
 

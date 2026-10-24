@@ -27,6 +27,7 @@ it.instance("/cad writes its kit and points the prompt at it", () =>
       expect(fs.existsSync(path.join(dir, file))).toBe(true)
     }
     expect(template).not.toContain("${kit}")
+    expect(template).toContain(`python3 ${dir}/check.py setup`)
     expect(template).toContain(`python3 ${dir}/check.py verify`)
     expect(template).toContain(`python3 ${dir}/check.py render`)
     expect(fs.readFileSync(path.join(dir, "check.py"), "utf8")).toContain("RESULT: PASS")

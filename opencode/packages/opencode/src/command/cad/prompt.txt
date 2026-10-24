@@ -11,7 +11,8 @@ record what each step did) and `check.py` (the verifier and renderer).
 ## Workspace
 
 Everything lives in `cad/<slug>/` under the current directory: `model.py`, `renders/`, and the exports
-`<slug>.step` and `<slug>.stl`. If the folder exists, read `model.py` and carry on from it.
+`<slug>.step` and `<slug>.stl`. If the user names a folder, work there instead and do not ask. If the
+folder already has a `model.py`, read it and carry on from it.
 
 ## 1. Spec
 
@@ -22,8 +23,10 @@ this list is later measured; a requirement you cannot measure, say so.
 
 ## 2. Toolchain
 
-Run `python3 -c "import build123d, trimesh, numpy"`. If it fails, tell the user the one line to run
-(`pip install build123d trimesh numpy`) and stop. Do not install packages without being asked.
+Run `python3 ${kit}/check.py setup`. The first time it makes a private Python environment inside the kit
+and installs build123d, trimesh and numpy into it, which takes a minute or two and changes nothing else on
+the machine. It prints the interpreter path: call it PY and use it for your own build123d snippets. `check.py`
+switches to it by itself. If setup fails, show the user its error and the one line to run by hand, then stop.
 
 ## 3. Model
 
