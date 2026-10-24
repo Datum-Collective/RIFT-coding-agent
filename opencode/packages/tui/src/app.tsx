@@ -40,7 +40,7 @@ import { SyncProvider, useSync } from "./context/sync"
 import { DataProvider } from "./context/data"
 import { LocationProvider } from "./context/location"
 import { LocalProvider, useLocal } from "./context/local"
-import { PermissionProvider } from "./context/permission"
+import { PermissionProvider, PERMISSION_MODE_LABEL } from "./context/permission"
 import { DialogModel } from "./component/dialog-model"
 import { DialogVibeModels } from "./component/dialog-vibe-models"
 import { MissionControl } from "./component/control/mission-control"
@@ -121,6 +121,7 @@ const appBindingCommands = [
   "mcp.list",
   "agent.cycle",
   "agent.cycle.reverse",
+  "permission.cycle",
   "variant.cycle",
   "variant.list",
   "provider.connect",
@@ -1046,6 +1047,16 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
           kv.set("session_directory_filter_enabled", !kv.get("session_directory_filter_enabled", true))
           await sync.session.refresh()
           dialog.clear()
+        },
+      },
+      {
+        name: "permission.cycle",
+        title: "Cycle permission mode",
+        category: "Agent",
+        hidden: true,
+        run: () => {
+          const mode = local.permission.cycle()
+          toast.show({ message: `Mode: ${PERMISSION_MODE_LABEL[mode]}`, variant: "info", duration: 1500 })
         },
       },
       {

@@ -233,6 +233,17 @@ before rendering, and confirms the MP4's resolution, length and frame rate befor
 
 Rendering needs Node 20 or newer. No paid services are involved.
 
+### Permission modes
+
+Press `shift+tab` to cycle how much RIFT asks, shown next to the agent name under the prompt:
+
+- normal: RIFT works freely and only asks before touching credentials, system folders and other tools' config.
+- accept edits: also asks before running shell commands.
+- ask first: asks before edits and shell commands.
+- auto: approves every request itself, including the ones normal would ask about.
+
+The mode belongs to the session. Plan mode keeps its read-only limits in every mode. `tab` still switches agents.
+
 ### Backgrounds
 
 Type `/background` (or `/bg`) for one list of everything that animates behind your text:

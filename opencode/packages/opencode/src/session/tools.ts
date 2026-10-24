@@ -127,7 +127,12 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           ...req,
           sessionID: input.session.id,
           tool: { messageID: input.processor.message.id, callID: options.toolCallId },
-          ruleset: Permission.merge(input.agent.permission, input.session.permission ?? []),
+          ruleset: Permission.strict(
+            input.session.metadata?.[Permission.MODE_KEY],
+            req.permission,
+            req.patterns,
+            Permission.merge(input.agent.permission, input.session.permission ?? []),
+          ),
         })
         .pipe(Effect.orDie),
   })

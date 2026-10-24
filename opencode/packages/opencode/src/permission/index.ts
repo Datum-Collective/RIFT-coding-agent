@@ -43,6 +43,30 @@ export function evaluate(permission: string, pattern: string, ...rulesets: Permi
   )
 }
 
+/**
+ * How much the user wants to be asked, chosen in the TUI and kept on the session as `permission_mode`.
+ * `normal` and `auto` leave the rules alone (auto is the TUI approving every request itself). `ask` also
+ * asks before edits and shell commands, `edits` only before shell commands.
+ */
+export const MODE_KEY = "permission_mode"
+export type Mode = "normal" | "ask" | "edits" | "auto"
+
+const ASKED: Record<Mode, string[]> = { normal: [], auto: [], ask: ["edit", "bash"], edits: ["bash"] }
+
+/** Turns allowed requests into asks for the mode. A deny stays a deny, so plan mode keeps its limits. */
+export function strict(
+  mode: unknown,
+  permission: string,
+  patterns: readonly string[],
+  ruleset: PermissionV1.Ruleset,
+): PermissionV1.Ruleset {
+  if (typeof mode !== "string" || !(ASKED[mode as Mode] ?? []).includes(permission)) return ruleset
+  const asks = patterns
+    .filter((pattern) => evaluate(permission, pattern, ruleset).action === "allow")
+    .map((pattern): PermissionV1.Rule => ({ permission, pattern, action: "ask" }))
+  return asks.length === 0 ? ruleset : [...ruleset, ...asks]
+}
+
 export class Service extends Context.Service<Service, Interface>()("@opencode/Permission") {}
 
 const layer = Layer.effect(
