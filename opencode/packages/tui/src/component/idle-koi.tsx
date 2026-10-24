@@ -62,7 +62,8 @@ export function IdleKoi(props: {
   const dimensions = useTerminalDimensions()
   const kv = useKV()
   const { theme } = useTheme()
-  const enabled = () => kv.get("animations_enabled", true) !== false && !Journey.animationOff(process.env)
+  const enabled = () =>
+    kv.get("animations_enabled", true) !== false && kv.get("koi_enabled", true) !== false && !Journey.animationOff(process.env)
 
   let pond: Pond | undefined
   /** Set while the watcher is running: fits the pond to a new terminal size. */

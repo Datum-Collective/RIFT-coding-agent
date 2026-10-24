@@ -443,6 +443,68 @@ export function deterministicClaims(summary: string, results: CheckResult[], edi
   return items
 }
 
+const TEST_FILE =
+  /(^|\/)(__tests__|tests?|specs?)\/|\.(test|spec)\.[cm]?[jt]sx?$|_test\.(go|py)$|(^|\/)test_[^/]+\.py$|(Test|Tests|IT)\.(java|kt)$/
+// One match per test case declaration, so removing a case shows up as a net loss.
+const TEST_CASE = /^\s*(?:(?:it|test)(?:\.(?:each|concurrent|only))?\s*[(`]|(?:async\s+)?def\s+test_|func\s+Test\w|@Test\b|#\[test\])/
+// A case or suite that stays in the file but no longer runs.
+const TEST_SKIP =
+  /(?:\b(?:it|test|describe|suite)\.(?:skip|todo)\s*\(|\b(?:xit|xtest|xdescribe)\s*\(|@pytest\.mark\.skip\b|\bt\.Skip(?:f|Now)?\s*\(|@Disabled\b|@Ignore\b|#\[ignore\])/
+
+/**
+ * Ways a turn can make checks pass without fixing anything: deleting a test file, dropping test
+ * cases, or switching them off. Read from the diff alone, so it is instant and needs no model.
+ * Moving a test shows as one removed and one added case in the same file and is not reported.
+ */
+export function weakenedChecks(diff: string): string[] {
+  const files = new Map<string, { removed: number; added: number; skipped: number; deleted: boolean }>()
+  let current: ReturnType<typeof files.get>
+  let hunk = false
+  const open = (name: string) => {
+    const entry = files.get(name) ?? { removed: 0, added: 0, skipped: 0, deleted: false }
+    files.set(name, entry)
+    return TEST_FILE.test(name.replace(/\\/g, "/")) || /\.rs$/.test(name) ? entry : undefined
+  }
+  for (const line of diff.split("\n")) {
+    const git = /^diff --git a\/(.+?) b\/(.+)$/.exec(line)
+    if (git) {
+      current = open(git[2]!)
+      hunk = false
+      continue
+    }
+    const section = /^--- (?:new file|current contents, no git history): (.+?)(?: \(unreadable\))? ---$/.exec(line)
+    if (!hunk && section) {
+      current = open(section[1]!)
+      hunk = true
+      continue
+    }
+    if (line === "") {
+      hunk = false
+      continue
+    }
+    if (!current) continue
+    if (!hunk && line.startsWith("deleted file mode")) current.deleted = true
+    if (line.startsWith("@@")) {
+      hunk = true
+      continue
+    }
+    if (!hunk) continue
+    const body = line.slice(1)
+    if (line.startsWith("-") && TEST_CASE.test(body)) current.removed++
+    if (line.startsWith("+") && TEST_CASE.test(body)) current.added++
+    if (line.startsWith("+") && TEST_SKIP.test(body)) current.skipped++
+  }
+  const findings: string[] = []
+  for (const [name, entry] of files) {
+    if (entry.deleted && TEST_FILE.test(name) && /\.(?:[cm]?[jt]sx?|py|go|rs|java|kt)$/.test(name)) findings.push(`${name}: test file deleted`)
+    else if (entry.removed > entry.added)
+      findings.push(`${name}: ${entry.removed - entry.added} test ${entry.removed - entry.added === 1 ? "case" : "cases"} removed`)
+    if (entry.skipped > 0)
+      findings.push(`${name}: ${entry.skipped} ${entry.skipped === 1 ? "test" : "tests"} switched off (skip/todo/ignore)`)
+  }
+  return findings
+}
+
 /** Changed lines in a unified diff, ignoring the file headers. */
 export function diffSize(diff: string) {
   return diff.split("\n").filter((line) => /^[+-](?![+-]{2} )/.test(line)).length
@@ -467,6 +529,8 @@ export interface Report {
   done: boolean
   claims?: Claims
   browser?: BrowserCheck
+  /** Tests the turn deleted or switched off, from `weakenedChecks`. */
+  weakened?: string[]
   /** Per-node evidence RIFT gathered for the engineering graph. */
   evidence?: Evidence.Record[]
 }
@@ -543,6 +607,7 @@ export interface Summary {
   scopeWarnFiles: number
   claims?: Claims
   browser?: BrowserCheck
+  weakened?: string[]
   /** Evidence without command output: the transcript text carries that for failures. */
   evidence?: Array<Omit<Evidence.Record, "output">>
 }
@@ -568,6 +633,7 @@ export function summarize(report: Report): Summary {
     scopeWarnFiles: report.scopeWarnFiles,
     claims: report.claims,
     browser: report.browser,
+    weakened: report.weakened?.length ? report.weakened : undefined,
     evidence: report.evidence?.map(({ output: _, ...record }) => record),
   }
 }
@@ -644,6 +710,11 @@ export function format(report: Report) {
       lines.push("", `⚠ Summary does not match the diff (${claims.items.length}):`)
       for (const item of claims.items) lines.push(`- Claimed: ${item.claim}`, `  Actually: ${item.reality}`)
     }
+  }
+  if (report.weakened?.length) {
+    lines.push("", "⚠ Tests were deleted or switched off in this turn, so a passing run proves less than it seems:")
+    for (const item of report.weakened) lines.push(`- ${item}`)
+    lines.push("Fix the code instead, or tell the user why the test is wrong.")
   }
   if (scopeWarnFiles > 0 && scopeFiles.length > scopeWarnFiles) {
     lines.push(

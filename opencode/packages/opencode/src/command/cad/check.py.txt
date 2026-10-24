@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+"""Measured checks for a build123d model, so "it looks right" is never the evidence.
+
+  check.py setup
+  check.py verify <script.py> [--expect X=40,Y=20,Z=10] [--tol 0.1] [--multi] [--step out.step] [--stl out.stl]
+  check.py render <script.py> <out_dir>
+
+`setup` makes a private Python environment in `venv/` next to this file, installs build123d, trimesh and numpy into
+it (nothing else on the machine changes) and prints the interpreter to use. `verify` and `render` switch to that
+environment by themselves when the Python they were started with lacks build123d.
+
+The script must leave its final solid in a variable called `result` (or `part`).
+`verify` exits 1 when a check fails; a check that could not run is "not run" and never a pass.
+`render` writes four isometric views (view1.png ... view4.png) that draw only feature edges.
+"""
+
+import argparse
+import math
+import os
+import runpy
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+KIT = Path(__file__).resolve().parent
+
+
+PACKAGES = ["build123d", "trimesh", "numpy"]
+
+
+def venv_python():
+    return KIT / "venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+
+def has_libs(python):
+    done = subprocess.run([str(python), "-c", "import build123d, trimesh, numpy"], capture_output=True)
+    return done.returncode == 0
+
+
+def setup(_args):
+    python = venv_python()
+    if python.exists() and has_libs(python):
+        print(python)
+        return 0
+    names = ("python3.13", "python3.12", "python3.11", "python3.10")
+    candidates = list(dict.fromkeys([sys.executable, *[found for found in map(shutil.which, names) if found]]))
+    for candidate in candidates:
+        print(f"setting up build123d with {candidate} (first use only, a minute or two)...", file=sys.stderr)
+        shutil.rmtree(KIT / "venv", ignore_errors=True)
+        made = subprocess.run([candidate, "-m", "venv", str(KIT / "venv")], capture_output=True, text=True)
+        if made.returncode != 0:
+            print(made.stderr.strip()[-400:], file=sys.stderr)
+            continue
+        installed = subprocess.run([str(python), "-m", "pip", "install", "-q", *PACKAGES], capture_output=True, text=True)
+        if installed.returncode == 0 and has_libs(python):
+            print(python)
+            return 0
+        print((installed.stderr or installed.stdout).strip()[-600:], file=sys.stderr)
+    shutil.rmtree(KIT / "venv", ignore_errors=True)
+    print("could not set up build123d. Run by hand: pip install " + " ".join(PACKAGES), file=sys.stderr)
+    return 1
+
+
+def num(value):
+    return value() if callable(value) else value
+
+
+def load(script):
+    sys.path.insert(0, str(KIT))
+    sys.path.insert(0, str(Path(script).resolve().parent))
+    namespace = runpy.run_path(script, run_name="__cad__")
+    for name in ("result", "part"):
+        if name in namespace:
+            shape = namespace[name]
+            return getattr(shape, "part", shape) if not hasattr(shape, "solids") else shape
+    raise SystemExit(f"{script} must leave its final solid in a variable called `result`")
+
+
+def parse_expect(text):
+    spans = {}
+    for item in text.split(","):
+        axis, _, value = item.partition("=")
+        axis = axis.strip().upper()
+        if axis not in ("X", "Y", "Z") or not value:
+            raise SystemExit(f"--expect wants X=..,Y=..,Z=.. (got {item!r})")
+        spans[axis] = float(value)
+    return spans
+
+
+def mesh_of(shape, path):
+    from build123d import export_stl
+
+    export_stl(shape, str(path), tolerance=0.01, angular_tolerance=0.1)
+    import trimesh
+
+    return trimesh.load(str(path), force="mesh")
+
+
+def verify(args):
+    import rift_cad
+    from build123d import export_step, export_stl
+
+    shape = load(args.script)
+    checks = []
+
+    def add(name, status, detail=""):
+        checks.append((name, status, detail))
+
+    add("valid solid", "passed" if bool(num(shape.is_valid)) else "failed", "BRep validity check")
+
+    count = len(shape.solids())
+    if args.multi:
+        add("solids", "passed" if count >= 1 else "failed", f"{count} solid(s)")
+    else:
+        add("single body", "passed" if count == 1 else "failed", f"{count} solid(s); separate pieces need overlap of 0.2-0.5 mm to fuse")
+
+    volume = float(num(shape.volume))
+    add("volume", "passed" if volume > 0 else "failed", f"{volume:.3f} mm^3")
+
+    box = shape.bounding_box()
+    spans = {"X": float(box.size.X), "Y": float(box.size.Y), "Z": float(box.size.Z)}
+    add("bounding box", "passed", "X={X:.3f} Y={Y:.3f} Z={Z:.3f} mm".format(**spans))
+    for axis, want in (parse_expect(args.expect) if args.expect else {}).items():
+        off = spans[axis] - want
+        ok = abs(off) <= args.tol
+        add(f"span {axis}", "passed" if ok else "failed", f"{spans[axis]:.3f} vs {want:g} (off by {off:+.3f}, tolerance {args.tol:g})")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        stl = Path(args.stl) if args.stl else Path(tmp) / "model.stl"
+        try:
+            mesh = mesh_of(shape, stl)
+            add("watertight", "passed" if mesh.is_watertight else "failed", "mesh has no open edges" if mesh.is_watertight else "the mesh has open edges")
+        except ImportError:
+            export_stl(shape, str(stl), tolerance=0.01, angular_tolerance=0.1)
+            add("watertight", "not_run", "trimesh is not installed")
+        if args.step:
+            export_step(shape, args.step)
+            add("step export", "passed", args.step)
+
+    issues = [item for item in rift_cad.LOG if item["kind"] == "issue"]
+    for item in issues:
+        failed = item["code"] in ("MISSED_CUT", "FILLET_FAILED")
+        add(f"{item['code']} {item['name']}", "failed" if failed else "warning", item["detail"])
+
+    marks = {"passed": "ok  ", "failed": "FAIL", "not_run": "skip", "warning": "warn"}
+    for name, status, detail in checks:
+        print(f"[{marks[status]}] {name}: {detail}")
+    features = [item for item in rift_cad.LOG if item["kind"] == "feature"]
+    if features:
+        print("features before merge (size X,Y,Z / min corner):")
+        for item in features:
+            print(f"  {item['name']}: {item['size']} / {item['min']}")
+
+    failed = [name for name, status, _ in checks if status == "failed"]
+    skipped = [name for name, status, _ in checks if status == "not_run"]
+    if failed:
+        print("RESULT: FAIL - " + ", ".join(failed))
+        return 1
+    print("RESULT: PASS" + (f" - not verified: {', '.join(skipped)}" if skipped else ""))
+    return 0
+
+
+def write_png(path, rgb):
+    import struct
+    import zlib
+
+    height, width, _ = rgb.shape
+    raw = b"".join(b"\x00" + rgb[row].tobytes() for row in range(height))
+
+    def chunk(kind, data):
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    Path(path).write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
+
+
+def draw(mesh, sharp_segments, azimuth, elevation, size=512):
+    """Flat-shaded z-buffer render with hidden feature edges removed. Returns an RGB array."""
+    import numpy as np
+
+    a, e = math.radians(azimuth), math.radians(elevation)
+    toward = np.array([math.cos(e) * math.cos(a), math.cos(e) * math.sin(a), math.sin(e)])
+    right = np.array([-math.sin(a), math.cos(a), 0.0])
+    up = np.cross(toward, right)
+
+    low, high = mesh.bounds
+    centre = (low + high) / 2
+    scale = size * 0.46 / (float(np.linalg.norm(high - low)) / 2)
+
+    def project(points):
+        rel = points - centre
+        return np.stack([rel @ right * scale + size / 2, size / 2 - rel @ up * scale, rel @ toward], axis=-1)
+
+    tri = project(mesh.vertices[mesh.faces])
+    light = np.array([0.4, -0.5, 0.75])
+    light /= np.linalg.norm(light)
+    shade = 0.35 + 0.65 * np.clip(mesh.face_normals @ light, 0, 1)
+
+    image = np.full((size, size, 3), 255, dtype=np.uint8)
+    depth = np.full((size, size), -np.inf)
+    for t, k in zip(tri, shade):
+        x0, y0 = np.floor(t[:, :2].min(axis=0)).astype(int)
+        x1, y1 = np.ceil(t[:, :2].max(axis=0)).astype(int)
+        x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, size - 1), min(y1, size - 1)
+        if x1 < x0 or y1 < y0:
+            continue
+        gx, gy = np.meshgrid(np.arange(x0, x1 + 1) + 0.5, np.arange(y0, y1 + 1) + 0.5)
+        (ax, ay, az), (bx, by, bz), (cx, cy, cz) = t
+        det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+        if abs(det) < 1e-12:
+            continue
+        wa = ((by - cy) * (gx - cx) + (cx - bx) * (gy - cy)) / det
+        wb = ((cy - ay) * (gx - cx) + (ax - cx) * (gy - cy)) / det
+        wc = 1 - wa - wb
+        inside = (wa >= -1e-9) & (wb >= -1e-9) & (wc >= -1e-9)
+        z = wa * az + wb * bz + wc * cz
+        window = depth[y0 : y1 + 1, x0 : x1 + 1]
+        win = inside & (z > window)
+        window[win] = z[win]
+        image[y0 : y1 + 1, x0 : x1 + 1][win] = (np.array([0.62, 0.72, 0.9]) * k * 255).astype(np.uint8)
+
+    slack = 0.01 * float(np.linalg.norm(high - low))
+    for segment in sharp_segments:
+        p0, p1 = project(segment)
+        steps = int(np.linalg.norm(p1[:2] - p0[:2])) + 2
+        pts = np.linspace(p0, p1, steps)
+        px, py = pts[:, 0].astype(int), pts[:, 1].astype(int)
+        ok = (px >= 0) & (px < size) & (py >= 0) & (py < size)
+        px, py, pz = px[ok], py[ok], pts[ok, 2]
+        visible = pz >= depth[py, px] - slack
+        for dx in (0, 1):
+            for dy in (0, 1):
+                xs, ys = np.clip(px[visible] + dx, 0, size - 1), np.clip(py[visible] + dy, 0, size - 1)
+                image[ys, xs] = 0
+    return image
+
+
+def render(args):
+    shape = load(args.script)
+    out = Path(args.out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    from build123d import export_stl
+    import trimesh
+
+    with tempfile.TemporaryDirectory() as tmp:
+        stl = Path(tmp) / "model.stl"
+        export_stl(shape, str(stl), tolerance=0.05, angular_tolerance=0.2)
+        mesh = trimesh.load(str(stl), force="mesh")
+
+    # Only edges between faces more than 10 degrees apart: it is what makes the picture readable.
+    sharp = mesh.face_adjacency_angles > math.radians(10)
+    segments = mesh.vertices[mesh.face_adjacency_edges[sharp]]
+    for index, azimuth in enumerate((45, 135, 225, 315), start=1):
+        path = out / f"view{index}.png"
+        write_png(path, draw(mesh, segments, azimuth, 30))
+        print(path)
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="command", required=True)
+    one = sub.add_parser("verify")
+    one.add_argument("script")
+    one.add_argument("--expect")
+    one.add_argument("--tol", type=float, default=0.1)
+    one.add_argument("--multi", action="store_true")
+    one.add_argument("--step")
+    one.add_argument("--stl")
+    sub.add_parser("setup")
+    two = sub.add_parser("render")
+    two.add_argument("script")
+    two.add_argument("out_dir")
+    args = parser.parse_args()
+    if args.command == "setup":
+        return setup(args)
+    try:
+        import build123d  # noqa: F401
+    except ImportError:
+        python = venv_python()
+        if python.exists() and Path(sys.prefix).resolve() != (KIT / "venv").resolve() and has_libs(python):
+            os.execv(str(python), [str(python), str(Path(__file__).resolve()), *sys.argv[1:]])
+        print(f"build123d is not installed for this Python. Run: python3 {KIT / 'check.py'} setup")
+        return 2
+    return verify(args) if args.command == "verify" else render(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -51,6 +51,8 @@ import { DialogDebug } from "./component/dialog-debug"
 import { DialogThemeList } from "./component/dialog-theme-list"
 import { DialogHelp } from "./ui/dialog-help"
 import { DialogAgent } from "./component/dialog-agent"
+import { DialogBackground } from "./component/dialog-background"
+import { BackgroundHost } from "./component/background"
 import { DialogSessionList } from "./component/dialog-session-list"
 import { DialogWorkspaceList } from "./component/dialog-workspace-list"
 import { ThemeProvider, useTheme } from "./context/theme"
@@ -979,6 +981,30 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         },
       },
       {
+        name: "app.background",
+        title: "Background",
+        desc: "fish and wallpapers behind the text",
+        category: "System",
+        slashName: "background",
+        slashAliases: ["wallpaper", "bg"],
+        run: () => {
+          dialog.replace(() => <DialogBackground />)
+        },
+      },
+      {
+        name: "app.toggle.koi",
+        title: kv.get("koi_enabled", true) ? "Disable fish" : "Enable fish",
+        desc: kv.get("koi_enabled", true)
+          ? "stop the koi pond and the koi that swim while you type"
+          : "bring back the koi pond and the typing koi",
+        category: "System",
+        slashName: kv.get("koi_enabled", true) ? "disable fish" : "enable fish",
+        run: () => {
+          kv.set("koi_enabled", !kv.get("koi_enabled", true))
+          dialog.clear()
+        },
+      },
+      {
         name: "app.toggle.file_context",
         title: kv.get("file_context_enabled", true) ? "Disable file context" : "Enable file context",
         category: "System",
@@ -1194,6 +1220,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         <TimeToFirstDraw />
       </Show>
       <SessionStatusStrip />
+      <BackgroundHost />
       <Show when={ready()}>
         <box flexGrow={1} minHeight={0} flexDirection="column">
           <Switch>

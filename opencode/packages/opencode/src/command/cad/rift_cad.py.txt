@@ -1,0 +1,78 @@
+"""Helpers that make a build123d script record what each step really did.
+
+Import from a model script:
+
+    import sys; sys.path.insert(0, "<kit>")
+    from rift_cad import measure, cut, fillet
+
+`check.py verify` reads what these record. Nothing here changes a result except `fillet`, which
+retries a failing radius at smaller sizes and says so.
+"""
+
+from build123d import Shape, fillet as _fillet
+
+LOG = []
+
+_RETRIES = (1, 0.5, 0.25, 0.125)
+
+
+def _num(value):
+    return value() if callable(value) else value
+
+
+def volume(shape):
+    return float(_num(shape.volume))
+
+
+def _changed(before, after):
+    return abs(before - after) > max(1e-6, abs(before) * 1e-6)
+
+
+def measure(name, shape):
+    """Record a feature's bounding box before it is merged, so a repair can tell a wrong feature from a wrong merge."""
+    box = shape.bounding_box()
+    LOG.append(
+        {
+            "kind": "feature",
+            "name": name,
+            "size": [round(float(box.size.X), 3), round(float(box.size.Y), 3), round(float(box.size.Z), 3)],
+            "min": [round(float(box.min.X), 3), round(float(box.min.Y), 3), round(float(box.min.Z), 3)],
+        }
+    )
+    return shape
+
+
+def cut(base, tool, name="cut"):
+    """base - tool. A cut that removes no material is recorded as MISSED_CUT (the tool missed the part)."""
+    before = volume(base)
+    out = base - tool
+    if not _changed(before, volume(out)):
+        LOG.append({"kind": "issue", "code": "MISSED_CUT", "name": name, "detail": "the cut removed no material"})
+    return out
+
+
+def fillet(shape, edges, radius, name="fillet"):
+    """Fillet `edges` of `shape`. Retries at R/2, R/4, R/8. Returns `shape` unchanged, recorded as FILLET_FAILED, if none work."""
+    before = volume(shape)
+    for scale in _RETRIES:
+        used = radius * scale
+        try:
+            out = _fillet(edges, used)
+        except Exception as error:
+            last = str(error) or type(error).__name__
+            continue
+        if not isinstance(out, Shape) or not bool(_num(out.is_valid)) or not _changed(before, volume(out)):
+            last = "the fillet left the shape invalid or unchanged"
+            continue
+        if scale != 1:
+            LOG.append(
+                {
+                    "kind": "issue",
+                    "code": "FILLET_DEGRADED",
+                    "name": name,
+                    "detail": f"radius {radius} failed, used {used}",
+                }
+            )
+        return out
+    LOG.append({"kind": "issue", "code": "FILLET_FAILED", "name": name, "detail": last})
+    return shape

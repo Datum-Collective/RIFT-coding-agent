@@ -11,6 +11,7 @@ import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
 import PROMPT_REMOTION from "./template/remotion.txt"
 import { DeepResearch } from "./deep-research"
+import { Cad } from "./cad"
 import { LegacyEvent } from "@opencode-ai/schema/legacy-event"
 
 type State = {
@@ -51,6 +52,7 @@ export const Default = {
   REMOTION: "remotion",
   VIDEO: "video",
   DEEP_RESEARCH: "deep-research",
+  CAD: "cad",
 } as const
 
 export interface Interface {
@@ -113,6 +115,16 @@ const layer = Layer.effect(
           return DeepResearch.template()
         },
         hints: hints(DeepResearch.PROMPT),
+      }
+      commands[Default.CAD] = {
+        name: Default.CAD,
+        description: "build a CAD model with build123d, then check it by measurement and export STEP/STL",
+        source: "command",
+        // The kit is written to the cache only when the command runs, not when commands are listed.
+        get template() {
+          return Cad.template()
+        },
+        hints: hints(Cad.PROMPT),
       }
       for (const [name, command] of Object.entries(cfg.command ?? {})) {
         commands[name] = {

@@ -36,6 +36,7 @@ function Screen(props: {
   show: () => boolean
   clock: ReturnType<typeof fakeClock>["clock"]
   animations?: boolean
+  fish?: boolean
   scene?: "pond" | "chase"
   expose?: (theme: ReturnType<typeof useTheme>) => void
   banner?: boolean
@@ -45,6 +46,7 @@ function Screen(props: {
   onMount(() => {
     props.expose?.(theme)
     if (props.animations === false) kv.set("animations_enabled", false)
+    if (props.fish === false) kv.set("koi_enabled", false)
   })
   return (
     <box width={props.banner ? undefined : 100} height={30}>
@@ -65,6 +67,7 @@ function Harness(props: {
   show: () => boolean
   clock: ReturnType<typeof fakeClock>["clock"]
   animations?: boolean
+  fish?: boolean
   scene?: "pond" | "chase"
   expose?: (theme: ReturnType<typeof useTheme>) => void
   banner?: boolean
@@ -75,7 +78,7 @@ function Harness(props: {
       <TuiConfigProvider config={createTuiResolvedConfig()}>
         <KVProvider>
           <ThemeProvider mode="dark">
-            <Screen show={props.show} clock={props.clock} animations={props.animations} scene={props.scene} expose={props.expose} banner={props.banner} />
+            <Screen show={props.show} clock={props.clock} animations={props.animations} fish={props.fish} scene={props.scene} expose={props.expose} banner={props.banner} />
           </ThemeProvider>
         </KVProvider>
       </TuiConfigProvider>
@@ -83,7 +86,7 @@ function Harness(props: {
   )
 }
 
-async function mount(options: { animations?: boolean; width?: number; height?: number; scene?: "pond" | "chase"; banner?: boolean } = {}) {
+async function mount(options: { fish?: boolean; animations?: boolean; width?: number; height?: number; scene?: "pond" | "chase"; banner?: boolean } = {}) {
   const [show, setShow] = createSignal(true)
   const fake = fakeClock()
   let theme!: ReturnType<typeof useTheme>
@@ -91,7 +94,7 @@ async function mount(options: { animations?: boolean; width?: number; height?: n
   const app = await testRender(
     () => (
       <TestTuiContexts paths={{ state }}>
-        <Harness show={show} clock={fake.clock} animations={options.animations} scene={options.scene} expose={(value) => (theme = value)} banner={options.banner} />
+        <Harness show={show} clock={fake.clock} animations={options.animations} fish={options.fish} scene={options.scene} expose={(value) => (theme = value)} banner={options.banner} />
       </TestTuiContexts>
     ),
     { width: options.width ?? 100, height: options.height ?? 30 },
@@ -234,6 +237,12 @@ describe("the idle koi pond on the home screen", () => {
 
   test("with animations turned off they never appear", async () => {
     const screen = await mount({ animations: false })
+    screen.advance(DELAY * 3)
+    expect(await drawn(screen.app)).toBe(5)
+  })
+
+  test("with fish turned off the pond never appears", async () => {
+    const screen = await mount({ fish: false })
     screen.advance(DELAY * 3)
     expect(await drawn(screen.app)).toBe(5)
   })

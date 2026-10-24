@@ -316,6 +316,84 @@ describe("verify", () => {
       ])
     })
 
+    test("weakenedChecks flags deleted, removed and skipped tests only", () => {
+      const removed = [
+        "diff --git a/src/a.test.ts b/src/a.test.ts",
+        "index 1..2 100644",
+        "--- a/src/a.test.ts",
+        "+++ b/src/a.test.ts",
+        "@@ -1,6 +1,2 @@",
+        " import { test } from 'bun:test'",
+        "-test('one', () => {})",
+        "-  it(`two`, () => {})",
+        "+// gone",
+      ].join("\n")
+      expect(Verify.weakenedChecks(removed)).toEqual(["src/a.test.ts: 2 test cases removed"])
+
+      const skipped = [
+        "diff --git a/tests/b.py b/tests/b.py",
+        "--- a/tests/b.py",
+        "+++ b/tests/b.py",
+        "@@ -1,2 +1,3 @@",
+        "+@pytest.mark.skip",
+        " def test_x():",
+        "     assert f() == 1",
+      ].join("\n")
+      expect(Verify.weakenedChecks(skipped)).toEqual(["tests/b.py: 1 test switched off (skip/todo/ignore)"])
+
+      const deleted = [
+        "diff --git a/pkg/c_test.go b/pkg/c_test.go",
+        "deleted file mode 100644",
+        "--- a/pkg/c_test.go",
+        "+++ /dev/null",
+        "@@ -1,3 +0,0 @@",
+        "-func TestC(t *testing.T) {",
+        "-}",
+      ].join("\n")
+      expect(Verify.weakenedChecks(deleted)).toEqual(["pkg/c_test.go: test file deleted"])
+
+      // A test that moves within its file, a deleted fixture, and a skip in production code are fine.
+      const benign = [
+        "diff --git a/src/d.test.ts b/src/d.test.ts",
+        "--- a/src/d.test.ts",
+        "+++ b/src/d.test.ts",
+        "@@ -1,2 +1,2 @@",
+        "-test('moved', () => {})",
+        "+test('moved', () => {})",
+        "",
+        "diff --git a/test/fixtures/data.json b/test/fixtures/data.json",
+        "deleted file mode 100644",
+        "--- a/test/fixtures/data.json",
+        "+++ /dev/null",
+        "@@ -1 +0,0 @@",
+        "-{}",
+        "",
+        "diff --git a/src/prod.ts b/src/prod.ts",
+        "--- a/src/prod.ts",
+        "+++ b/src/prod.ts",
+        "@@ -1 +1 @@",
+        "-const a = 1",
+        "+it.skip('x', () => {})",
+      ].join("\n")
+      expect(Verify.weakenedChecks(benign)).toEqual([])
+
+      // New files from turnDiff arrive as plain additions.
+      expect(Verify.weakenedChecks("--- new file: src/e.test.ts ---\n+describe.skip('s', () => {})")).toEqual([
+        "src/e.test.ts: 1 test switched off (skip/todo/ignore)",
+      ])
+      expect(Verify.weakenedChecks("")).toEqual([])
+    })
+
+    test("format lists weakened tests and summarize carries them", () => {
+      const base = { entries: [], scopeFiles: [], scopeWarnFiles: 15, done: true }
+      const text = Verify.format({ ...base, weakened: ["src/a.test.ts: 2 test cases removed"] })
+      expect(text).toContain("Tests were deleted or switched off")
+      expect(text).toContain("- src/a.test.ts: 2 test cases removed")
+      expect(Verify.format(base)).not.toContain("switched off")
+      expect(Verify.summarize({ ...base, weakened: ["x"] }).weakened).toEqual(["x"])
+      expect(Verify.summarize({ ...base, weakened: [] }).weakened).toBeUndefined()
+    })
+
     test("format renders each claims state distinctly", () => {
       const base = { entries: [], scopeFiles: [], scopeWarnFiles: 15, done: true }
       expect(Verify.format({ ...base, claims: { status: "off" } })).not.toContain("Summary")

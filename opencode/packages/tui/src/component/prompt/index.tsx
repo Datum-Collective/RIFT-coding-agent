@@ -1019,6 +1019,17 @@ export function Prompt(props: PromptProps) {
       void exit()
       return true
     }
+    const fish = /^\/(disable|enable)\s+fish$/i.exec(trimmed)
+    if (fish) {
+      const on = fish[1]!.toLowerCase() === "enable"
+      kv.set("koi_enabled", on)
+      input.extmarks.clear()
+      input.setText("")
+      setStore("prompt", { input: "", parts: [] })
+      setStore("extmarkToPartIndex", new Map())
+      toast.show({ message: on ? "Fish are back. /disable fish to stop them." : "Fish are gone. /enable fish to bring them back.", variant: "info" })
+      return true
+    }
     if (agent.name === "vibe" && !local.agent.vibe.configured()) {
       toast.show({
         title: "Whoa there, vibe coder!",
