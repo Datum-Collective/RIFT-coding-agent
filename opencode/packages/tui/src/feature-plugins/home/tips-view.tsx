@@ -198,6 +198,7 @@ const TIPS: Tip[] = [
   "Type {highlight}/remotion{/highlight} and one sentence to get an MP4. It checks a frame from every scene first, which is more QA than most launch videos get",
   "Type {highlight}/deep-research{/highlight} and a topic for a cited report in Markdown and LaTeX. It opens every source it cites, which puts it ahead of most related-work sections",
   "Type {highlight}/cad{/highlight} and describe a part to get a STEP and STL file. It measures the model against your numbers instead of trusting how it looks, which most CAD demos skip",
+  "Press {highlight}shift+tab{/highlight} to cycle permission modes: normal, accept edits, ask first and auto. Tab still switches agents",
   "Type {highlight}/background{/highlight} to put RIFT's own azure rift, the Matrix rain, a neon megacity or the koi behind your text. It speeds up while RIFT works and the text stays readable",
 
   // Prompting
