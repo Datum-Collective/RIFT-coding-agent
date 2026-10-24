@@ -61,7 +61,8 @@ export function TypingKoi(props: {
   const dimensions = useTerminalDimensions()
   const kv = useKV()
   const { theme } = useTheme()
-  const enabled = () => kv.get("animations_enabled", true) !== false && !Journey.animationOff(process.env)
+  const enabled = () =>
+    kv.get("animations_enabled", true) !== false && kv.get("koi_enabled", true) !== false && !Journey.animationOff(process.env)
 
   createEffect(() => {
     if (!enabled()) return

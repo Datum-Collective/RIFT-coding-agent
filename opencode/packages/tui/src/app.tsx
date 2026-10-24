@@ -979,6 +979,19 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         },
       },
       {
+        name: "app.toggle.koi",
+        title: kv.get("koi_enabled", true) ? "Disable fish" : "Enable fish",
+        desc: kv.get("koi_enabled", true)
+          ? "stop the koi pond and the koi that swim while you type"
+          : "bring back the koi pond and the typing koi",
+        category: "System",
+        slashName: kv.get("koi_enabled", true) ? "disable fish" : "enable fish",
+        run: () => {
+          kv.set("koi_enabled", !kv.get("koi_enabled", true))
+          dialog.clear()
+        },
+      },
+      {
         name: "app.toggle.file_context",
         title: kv.get("file_context_enabled", true) ? "Disable file context" : "Enable file context",
         category: "System",

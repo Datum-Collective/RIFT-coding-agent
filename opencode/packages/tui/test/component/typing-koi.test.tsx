@@ -26,11 +26,13 @@ afterEach(() => {
   open = []
 })
 
-function Screen(props: { clock: ReturnType<typeof fakeClock>["clock"]; animations?: boolean }) {
+function Screen(props: { clock: ReturnType<typeof fakeClock>["clock"]; animations?: boolean
+  fish?: boolean }) {
   const kv = useKV()
   const [composer, setComposer] = createSignal<BoxRenderable>()
   onMount(() => {
     if (props.animations === false) kv.set("animations_enabled", false)
+    if (props.fish === false) kv.set("koi_enabled", false)
   })
   return (
     <box width={100} height={30}>
@@ -44,13 +46,13 @@ function Screen(props: { clock: ReturnType<typeof fakeClock>["clock"]; animation
   )
 }
 
-async function mount(options: { animations?: boolean } = {}) {
+async function mount(options: { fish?: boolean; animations?: boolean } = {}) {
   const fake = fakeClock()
   const state = mkdtempSync(path.join(tmpdir(), "rift-typing-koi-"))
   const app = await testRender(
     () => (
       <TestTuiContexts paths={{ state }}>
-        <Harness clock={fake.clock} animations={options.animations} />
+        <Harness clock={fake.clock} animations={options.animations} fish={options.fish} />
       </TestTuiContexts>
     ),
     { width: 100, height: 30 },
@@ -65,14 +67,15 @@ async function mount(options: { animations?: boolean } = {}) {
   return { app, ...fake }
 }
 
-function Harness(props: { clock: ReturnType<typeof fakeClock>["clock"]; animations?: boolean }) {
+function Harness(props: { clock: ReturnType<typeof fakeClock>["clock"]; animations?: boolean
+  fish?: boolean }) {
   const keymap = createDefaultOpenTuiKeymap(useRenderer())
   return (
     <OpencodeKeymapProvider keymap={keymap}>
       <TuiConfigProvider config={createTuiResolvedConfig()}>
         <KVProvider>
           <ThemeProvider mode="dark">
-            <Screen clock={props.clock} animations={props.animations} />
+            <Screen clock={props.clock} animations={props.animations} fish={props.fish} />
           </ThemeProvider>
         </KVProvider>
       </TuiConfigProvider>
@@ -162,6 +165,13 @@ describe("koi above the composer while typing", () => {
 
   test("with animations turned off they never come", async () => {
     const screen = await mount({ animations: false })
+    screen.app.mockInput.pressKey("h")
+    await swim(screen, 1500)
+    expect(koiRows(screen)).toEqual([])
+  })
+
+  test("with fish turned off they never come", async () => {
+    const screen = await mount({ fish: false })
     screen.app.mockInput.pressKey("h")
     await swim(screen, 1500)
     expect(koiRows(screen)).toEqual([])
