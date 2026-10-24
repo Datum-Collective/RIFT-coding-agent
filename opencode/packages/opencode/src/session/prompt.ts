@@ -1488,6 +1488,7 @@ const layer = Layer.effect(
       let scopeFiles: string[] = []
       let claims: Verify.Claims = { status: "off" }
       let browser: Verify.BrowserCheck | undefined
+      let weakened: string[] = []
       const planned = Evidence.plan(yield* graph.get(sessionID))
       const evidence = planned.map(Evidence.queued)
       const publish = (done: boolean) => {
@@ -1498,6 +1499,7 @@ const layer = Layer.effect(
           done,
           claims,
           browser,
+          weakened,
           evidence,
         }
         return sessions.updatePart({
@@ -1626,6 +1628,12 @@ const layer = Layer.effect(
               )
           yield* publish(false)
         }
+
+        weakened = Verify.weakenedChecks(
+          yield* Effect.promise(() => Verify.turnDiff(ctx.directory, edited)).pipe(
+            Effect.catchCause(() => Effect.succeed("")),
+          ),
+        )
 
         const before = new Set(baseline)
         scopeFiles = (yield* Effect.promise(() => Verify.changedFiles(ctx.directory))).filter(
