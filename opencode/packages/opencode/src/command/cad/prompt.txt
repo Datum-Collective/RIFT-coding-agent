@@ -14,6 +14,15 @@ Everything lives in `cad/<slug>/` under the current directory: `model.py`, `rend
 `<slug>.step` and `<slug>.stl`. If the user names a folder, work there instead and do not ask. If the
 folder already has a `model.py`, read it and carry on from it.
 
+## Graph
+
+The user watches the graph panel. After the spec, call `graphwrite` once with the whole tree: a root node
+for the part, and under it the steps `spec`, `toolchain`, `model`, `verify`, `look` and `report`, each a
+child of the root, with the spec's key features as children of `model`. Mark `spec` done and the step you
+are starting in_progress. Call it again, passing every node, as each step finishes and when `verify`
+passes or fails (failed, with the reason in `decisions`). Give `model` and `verify` the `files` they
+produce. Keep titles short.
+
 ## 1. Spec
 
 Write the requirements as a list of numbers before any code: overall X, Y and Z in mm, each feature

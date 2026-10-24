@@ -15,6 +15,7 @@ import { registerOpencodeSpinner } from "../register-spinner"
 import path from "path"
 import { fileURLToPath } from "url"
 import { useLocal } from "../../context/local"
+import { PERMISSION_MODE_KEY, PERMISSION_MODE_LABEL } from "../../context/permission"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { useTheme } from "../../context/theme"
 import { RoundedBorder } from "../../ui/border"
@@ -278,6 +279,21 @@ export function Prompt(props: PromptProps) {
 
   const mcpConnected = createMemo(() => Object.values(sync.data.mcp).filter((item) => item.status === "connected").length)
   const mcpFailing = createMemo(() => Object.values(sync.data.mcp).some((item) => item.status === "failed"))
+  // The server decides what to ask about from the session's metadata, so the chosen mode has to live there.
+  let pushedMode: string | undefined
+  createEffect(() => {
+    const id = props.sessionID
+    const mode = local.permission.mode
+    if (!id) return
+    const session = sync.session.get(id)
+    if (!session || session.metadata?.[PERMISSION_MODE_KEY] === mode || pushedMode === `${id}:${mode}`) return
+    pushedMode = `${id}:${mode}`
+    void sdk.client.session.update({
+      sessionID: id,
+      metadata: { ...(session.metadata ?? {}), [PERMISSION_MODE_KEY]: mode },
+    })
+  })
+
   const pendingApprovals = createMemo(() => (props.sessionID ? (sync.data.permission[props.sessionID]?.length ?? 0) : 0))
 
   const usage = createMemo(() => {
@@ -1084,7 +1100,11 @@ export function Prompt(props: PromptProps) {
           // Brain Rot Mode chosen on the home screen has no session to live on yet, so it rides along.
           const rot = kv.get("brain_rot")
           const vibe = agent.name === "vibe" ? local.agent.vibe.metadata() : undefined
-          return typeof rot === "boolean" ? { ...(vibe ?? {}), brain_rot: rot } : vibe
+          return {
+            ...(vibe ?? {}),
+            ...(typeof rot === "boolean" ? { brain_rot: rot } : {}),
+            [PERMISSION_MODE_KEY]: local.permission.mode,
+          }
         })(),
       })
 
@@ -1627,8 +1647,12 @@ export function Prompt(props: PromptProps) {
                       <text fg={fadeColor(store.mode === "shell" ? theme.warning : highlight(), agentMetaAlpha())} wrapMode="none">
                         {store.mode === "shell" ? "shell" : agent().name}
                       </text>
-                      <Show when={store.mode === "normal" && local.permission.mode === "auto"}>
-                        <text fg={fadeColor(theme.warning, agentMetaAlpha())}>auto</text>
+                      <Show when={store.mode === "normal" && local.permission.mode !== "normal"}>
+                        <text
+                          fg={fadeColor(local.permission.mode === "auto" ? theme.warning : theme.accent, agentMetaAlpha())}
+                        >
+                          {PERMISSION_MODE_LABEL[local.permission.mode]}
+                        </text>
                       </Show>
                       <Show when={store.mode === "normal"}>
                         <Switch>
