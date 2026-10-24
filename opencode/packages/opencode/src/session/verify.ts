@@ -136,9 +136,32 @@ export async function detect(dir: string, root = dir): Promise<Check[]> {
   const pyproject = await read(path.join(dir, "pyproject.toml"))
   if ((await exists(path.join(dir, "pytest.ini"))) || pyproject?.includes("[tool.pytest")) {
     checks.push({ name: "pytest", command: "pytest" })
+  } else {
+    const start = await unittestStart(dir)
+    if (start) {
+      const python = process.platform === "win32" ? "python" : "python3"
+      checks.push({ name: "unittest", command: `${python} -m unittest discover -s ${start} -p "test*.py"` })
+    }
   }
 
   return checks
+}
+
+// A file that only imports unittest.mock runs zero tests under unittest, and Python 3.12+ fails that run,
+// so a suite counts only when a test file defines a TestCase.
+const UNITTEST_SUITE = /^\s*(?:import unittest\b|from unittest\b)[\s\S]*\bTestCase\b/m
+
+/** Where `unittest discover` should start: the directory itself or its `tests` folder, if either holds a suite. */
+async function unittestStart(dir: string) {
+  for (const start of [".", "tests"]) {
+    const files = await Array.fromAsync(new Bun.Glob("test*.py").scan({ cwd: path.join(dir, start), onlyFiles: true })).catch(
+      () => [] as string[],
+    )
+    for (const file of files) {
+      if (UNITTEST_SUITE.test((await read(path.join(dir, start, file))) ?? "")) return start
+    }
+  }
+  return undefined
 }
 
 function tail(text: string, lines = 40) {
