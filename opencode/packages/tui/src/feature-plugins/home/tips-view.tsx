@@ -197,6 +197,7 @@ const TIPS: Tip[] = [
   "Mention {highlight}@agent-name{/highlight} to hand a job to a subagent. Delegation works better when the delegate can't say no",
   "Type {highlight}/remotion{/highlight} and one sentence to get an MP4. It checks a frame from every scene first, which is more QA than most launch videos get",
   "Type {highlight}/deep-research{/highlight} and a topic for a cited report in Markdown and LaTeX. It opens every source it cites, which puts it ahead of most related-work sections",
+  "Type {highlight}/cad{/highlight} and describe a part to get a STEP and STL file. It measures the model against your numbers instead of trusting how it looks, which most CAD demos skip",
 
   // Prompting
   "Type {highlight}@{/highlight} and a filename to attach it. Pasting 400 lines also works, the way shouting also works",

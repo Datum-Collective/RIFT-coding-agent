@@ -1,0 +1,62 @@
+Build this CAD model: $ARGUMENTS
+
+If nothing was given above, ask what to build and stop.
+
+Make a parametric build123d model, then prove it with measurements. A render that looks right proves
+nothing: the numbers decide. Follow these steps in order.
+
+The CAD kit is in `${kit}`: `rules.md` (read it before writing any code), `rift_cad.py` (helpers that
+record what each step did) and `check.py` (the verifier and renderer).
+
+## Workspace
+
+Everything lives in `cad/<slug>/` under the current directory: `model.py`, `renders/`, and the exports
+`<slug>.step` and `<slug>.stl`. If the folder exists, read `model.py` and carry on from it.
+
+## 1. Spec
+
+Write the requirements as a list of numbers before any code: overall X, Y and Z in mm, each feature
+with its size and position, and what must be one solid. Fill sensible defaults for anything missing
+and state them. Ask the user only if the part itself is unclear, in one question. Every dimension in
+this list is later measured; a requirement you cannot measure, say so.
+
+## 2. Toolchain
+
+Run `python3 -c "import build123d, trimesh, numpy"`. If it fails, tell the user the one line to run
+(`pip install build123d trimesh numpy`) and stop. Do not install packages without being asked.
+
+## 3. Model
+
+Write `cad/<slug>/model.py` following `${kit}/rules.md`: parameters at the top, the algebra API, cuts
+through `cut(...)`, fillets last through `fillet(...)`, the final solid in `result`.
+
+## 4. Verify
+
+```
+python3 ${kit}/check.py verify cad/<slug>/model.py --expect X=..,Y=..,Z=.. --step cad/<slug>/<slug>.step --stl cad/<slug>/<slug>.stl
+```
+
+Pass the overall size from the spec to `--expect`. Add `--tol` for looser tolerances and `--multi` only
+when separate solids are required. The output is the evidence: validity, single body, volume, bounding
+box, watertightness and every missed cut or failed fillet.
+
+Then check every feature in the spec that `verify` cannot see (hole positions, wall thickness) with a
+few lines of build123d that print the measured value, and compare to the spec.
+
+## 5. Repair loop
+
+On a failure, fix the first one and re-run, following the repair rules in `rules.md`. At most 5 rounds.
+Stop earlier, and report what you measured, when the same check fails 3 times in a row or the kernel
+cannot build a feature. Never remove a requested feature to make a check pass.
+
+## 6. Look
+
+Run `python3 ${kit}/check.py render cad/<slug>/model.py cad/<slug>/renders`, then open the four
+`view*.png` files. Look for what numbers miss: a feature on the wrong side, a missing hole, odd
+proportions. If a picture and a measurement disagree, trust the measurement and find out why.
+
+## 7. Report
+
+Finish with a table: each requirement, the measured value and pass or fail. Say what was not verified
+and any `DEFENSIVE CORRECTION` you made. Give the paths of the `.step` and `.stl`. Do not say the model
+is correct unless `check.py verify` printed `RESULT: PASS` on the final file.

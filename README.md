@@ -233,6 +233,25 @@ before rendering, and confirms the MP4's resolution, length and frame rate befor
 
 Rendering needs Node 20 or newer. No paid services are involved.
 
+### CAD
+
+Type `/cad` and a description of the part:
+
+```
+/cad a 40 x 20 x 10 mm mounting plate with a 6 mm through hole 10 mm from the centre and rounded corners
+```
+
+RIFT writes the requirements as numbers, builds a parametric [build123d](https://github.com/gumyr/build123d)
+model, and then measures it instead of trusting how it looks. `check.py verify` reports BRep
+validity, single body, volume, bounding box against the requested size, watertightness, and any cut
+that removed nothing or fillet that failed. It repairs one failure at a time, at most five rounds,
+never by deleting a requested feature. It also renders four isometric views with hidden edges
+removed, and exports `.step` and `.stl`. When a picture and a measurement disagree, the measurement
+wins.
+
+Needs Python 3 with `pip install build123d trimesh numpy`. RIFT tells you if they are missing and does
+not install them on its own.
+
 ### Deep research
 
 Type `/deep-research` and a topic:
@@ -304,7 +323,8 @@ rift remotion setup               # install Remotion's skills for /remotion
 ```
 
 In a session, `/share` copies a link, `/unshare` takes it down, `/mcp` manages MCP servers,
-`/remotion` makes a video and `/deep-research` writes a cited research report.
+`/remotion` makes a video, `/deep-research` writes a cited research report and `/cad` builds a
+measured CAD model.
 
 | Key         | Action                                        |
 | ----------- | --------------------------------------------- |
