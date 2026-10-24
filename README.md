@@ -233,6 +233,22 @@ before rendering, and confirms the MP4's resolution, length and frame rate befor
 
 Rendering needs Node 20 or newer. No paid services are involved.
 
+### Backgrounds
+
+Type `/background` (or `/bg`) for one list of everything that animates behind your text:
+
+- **Fish**: the koi pond that appears when you go quiet, and the koi that swim while you type. Switch
+  them off and on from the list, or type `/disable fish` and `/enable fish`.
+- **Wallpapers**: Rift (RIFT's own: a seam of azure light that widens while the agent works and runs green when it finishes), Matrix, City, Megacity, Dome, Rider, Space, 3D Pipes and Mystify, drawn in the terminal's own cells behind the text, dimmed
+  so the text stays readable. They speed up while RIFT is working and bring a visitor when it finishes. Pick
+  **None** to turn the wallpaper off. The settings below the list set how much happens, the time of day
+  (auto follows your clock) and the brightness.
+
+Wallpapers need a truecolor terminal and are off until you choose one. They stop with `animations_enabled` off or
+`RIFT_NO_ANIMATION=1`. The engine and scenes are adapted from
+[opencode-wallpapers](https://github.com/vaprdev/opencode-wallpapers) (MIT); see
+`opencode/packages/tui/src/background/NOTICE.md`.
+
 ### CAD
 
 Type `/cad` and a description of the part:
@@ -323,8 +339,8 @@ rift remotion setup               # install Remotion's skills for /remotion
 ```
 
 In a session, `/share` copies a link, `/unshare` takes it down, `/mcp` manages MCP servers,
-`/remotion` makes a video, `/deep-research` writes a cited research report and `/cad` builds a
-measured CAD model.
+`/remotion` makes a video, `/deep-research` writes a cited research report, `/cad` builds a
+measured CAD model and `/background` picks the fish and wallpapers.
 
 | Key         | Action                                        |
 | ----------- | --------------------------------------------- |
