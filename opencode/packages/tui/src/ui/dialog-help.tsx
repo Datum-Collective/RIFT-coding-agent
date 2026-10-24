@@ -37,6 +37,7 @@ export function DialogHelp() {
       entries: [
         bound("command.palette.show", "all commands"),
         bound("agent.cycle", "switch agent"),
+        bound("permission.cycle", "permission mode"),
         bound("model.list", "switch model"),
         bound("session.new", "new session"),
         bound("session.list", "sessions"),
@@ -60,11 +61,19 @@ export function DialogHelp() {
     },
   ]
 
+  const commands: Entry[] = [
+    fixed("/cad", "design a part, verified by measuring"),
+    fixed("/background", "wallpapers and fish behind the text"),
+    fixed("/disable fish", "turn the fish off (/enable fish)"),
+    fixed("/deep-research", "cited report on a topic"),
+    fixed("/help", "this sheet"),
+  ]
+
   useBindings(() => ({
     bindings: [
-      { key: "return", desc: "Close shortcuts", group: "Dialog", cmd: () => dialog.clear() },
-      { key: "escape", desc: "Close shortcuts", group: "Dialog", cmd: () => dialog.clear() },
-      { key: "?", desc: "Close shortcuts", group: "Dialog", cmd: () => dialog.clear() },
+      { key: "return", desc: "Close cheat sheet", group: "Dialog", cmd: () => dialog.clear() },
+      { key: "escape", desc: "Close cheat sheet", group: "Dialog", cmd: () => dialog.clear() },
+      { key: "?", desc: "Close cheat sheet", group: "Dialog", cmd: () => dialog.clear() },
     ],
   }))
 
@@ -74,7 +83,7 @@ export function DialogHelp() {
     <box paddingLeft={2} paddingRight={2} paddingBottom={1} gap={1}>
       <box flexDirection="row" justifyContent="space-between">
         <text attributes={TextAttributes.BOLD} fg={theme.text}>
-          Keyboard shortcuts
+          Cheat sheet
         </text>
         <text fg={theme.textMuted} onMouseUp={() => dialog.clear()}>
           <span style={{ fg: theme.text }}>esc</span> close
@@ -97,6 +106,19 @@ export function DialogHelp() {
                   </Show>
                 )}
               </For>
+            </box>
+          )}
+        </For>
+      </box>
+      <box>
+        <text fg={theme.textMuted}>commands</text>
+        <For each={commands}>
+          {(entry) => (
+            <box flexDirection="row">
+              <text width={16} flexShrink={0} fg={theme.primary} wrapMode="none">
+                {entry.key()}
+              </text>
+              <text fg={theme.text}>{entry.label}</text>
             </box>
           )}
         </For>

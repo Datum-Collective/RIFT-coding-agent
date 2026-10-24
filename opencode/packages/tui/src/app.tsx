@@ -889,9 +889,9 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       },
       {
         name: "help.show",
-        title: "Keyboard shortcuts",
+        title: "Cheat sheet",
         slashName: "help",
-        slashAliases: ["keys", "shortcuts"],
+        slashAliases: ["keys", "shortcuts", "cheatsheet"],
         run: () => {
           dialog.replace(() => <DialogHelp />)
         },
