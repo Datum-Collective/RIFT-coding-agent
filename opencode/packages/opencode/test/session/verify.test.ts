@@ -30,6 +30,41 @@ describe("verify", () => {
     expect((await Verify.detect(dir)).map((c) => c.command)).toEqual(["go vet ./...", "go test ./..."])
   })
 
+  describe("python unittest", () => {
+    const python = process.platform === "win32" ? "python" : "python3"
+    const suite = "import unittest\nfrom calc import add\n\nclass T(unittest.TestCase):\n    def test_add(self):\n        self.assertEqual(add(2, 2), 4)\n"
+
+    test("detects a suite next to the code", async () => {
+      const dir = await project({ "calc.py": "def add(a, b):\n    return a + b\n", "test_calc.py": suite })
+      expect(await Verify.detect(dir)).toEqual([
+        { name: "unittest", command: `${python} -m unittest discover -s . -p "test*.py"` },
+      ])
+    })
+
+    test("detects a suite in a tests folder", async () => {
+      const dir = await project({ "calc.py": "", "tests/test_calc.py": suite })
+      expect((await Verify.detect(dir)).map((c) => c.command)).toEqual([`${python} -m unittest discover -s tests -p "test*.py"`])
+    })
+
+    test("ignores test files that only use unittest.mock, which unittest would run as zero tests", async () => {
+      const dir = await project({ "test_x.py": "from unittest import mock\n\ndef test_x():\n    assert mock\n" })
+      expect(await Verify.detect(dir)).toEqual([])
+    })
+
+    test("configured pytest wins over unittest", async () => {
+      const dir = await project({ "pytest.ini": "[pytest]\n", "test_calc.py": suite })
+      expect((await Verify.detect(dir)).map((c) => c.name)).toEqual(["pytest"])
+    })
+
+    test.skipIf(!Bun.which(python))("the detected command passes a good suite and fails a broken one", async () => {
+      const good = await project({ "calc.py": "def add(a, b):\n    return a + b\n", "test_calc.py": suite })
+      const bad = await project({ "calc.py": "def add(a, b):\n    return a - b\n", "test_calc.py": suite })
+      const [check] = await Verify.detect(good)
+      expect((await Verify.runCheck(check, good, { timeoutMs: 30_000 })).status).toBe("passed")
+      expect((await Verify.runCheck(check, bad, { timeoutMs: 30_000 })).status).toBe("failed")
+    })
+  })
+
   test("runs real commands and reports pass/fail with output", async () => {
     const dir = await project({
       "fail.js": 'process.stderr.write("broken\\n"); process.exit(3)',
