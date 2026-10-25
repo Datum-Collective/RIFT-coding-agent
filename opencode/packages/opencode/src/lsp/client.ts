@@ -498,6 +498,14 @@ export async function create(input: {
 
   async function waitForDocumentDiagnostics(request: { path: string; version: number; after?: number }) {
     const startedAt = request.after ?? Date.now()
+
+    const publishedInfo = published.get(request.path)
+    const hasMatchingPushDiagnostics =
+      publishedInfo !== undefined &&
+      (publishedInfo.version === undefined || publishedInfo.version === request.version) &&
+      (pushDiagnostics.get(request.path)?.length ?? 0) > 0
+    if (hasMatchingPushDiagnostics) return
+
     const pushWait = waitForFreshPush({
       path: request.path,
       version: request.version,
@@ -520,6 +528,14 @@ export async function create(input: {
 
   async function waitForFullDiagnostics(request: { path: string; version: number; after?: number }) {
     const startedAt = request.after ?? Date.now()
+
+    const publishedInfo = published.get(request.path)
+    const hasMatchingPushDiagnostics =
+      publishedInfo !== undefined &&
+      (publishedInfo.version === undefined || publishedInfo.version === request.version) &&
+      (pushDiagnostics.get(request.path)?.length ?? 0) > 0
+    if (hasMatchingPushDiagnostics) return
+
     const pushWait = waitForFreshPush({
       path: request.path,
       version: request.version,
