@@ -485,4 +485,114 @@ describe("LSPClient interop", () => {
       },
     })
   })
+
+  test("document mode ignores push diagnostics for different version", async () => {
+    const handle = spawnFakeServer() as any
+    await using tmp = await tmpdir()
+    const file = path.join(tmp.path, "client.ts")
+    await Bun.write(file, "const x = 1\n")
+
+    await withTestInstance({
+      directory: tmp.path,
+      fn: async (ctx) => {
+        const client = await LSPClient.create({
+          serverID: "fake",
+          server: handle as unknown as LSPServer.Handle,
+          root: tmp.path,
+          directory: tmp.path,
+          instance: ctx,
+        })
+
+        const version = await client.notify.open({ path: file })
+        await client.connection.sendNotification("test/publish-diagnostics", {
+          uri: pathToFileURL(file).href,
+          version,
+          diagnostics: [
+            {
+              range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } },
+              message: "push diagnostic v1",
+              severity: 1,
+            },
+          ],
+        })
+
+        for (let i = 0; i < 20 && (client.diagnostics.get(file)?.length ?? 0) === 0; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 25))
+        }
+        expect(client.diagnostics.get(file)?.[0]?.message).toBe("push diagnostic v1")
+
+        const nextVersion = await client.notify.open({ path: file })
+        await client.connection.sendNotification("test/publish-diagnostics", {
+          uri: pathToFileURL(file).href,
+          version: nextVersion,
+          diagnostics: [
+            {
+              range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } },
+              message: "push diagnostic v2",
+              severity: 1,
+            },
+          ],
+        })
+
+        for (let i = 0; i < 20 && (client.diagnostics.get(file)?.[0]?.message ?? "") !== "push diagnostic v2"; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 25))
+        }
+        expect(client.diagnostics.get(file)?.[0]?.message).toBe("push diagnostic v2")
+
+        await client.waitForDiagnostics({ path: file, version, mode: "document" })
+
+        const diagnostics = client.diagnostics.get(file) ?? []
+        expect(diagnostics[0]?.message).toBe("push diagnostic v2")
+
+        await client.shutdown()
+      },
+    })
+  })
+
+  test("document mode ignores push diagnostics for different document", async () => {
+    const handle = spawnFakeServer() as any
+    await using tmp = await tmpdir()
+    const file = path.join(tmp.path, "client.ts")
+    const otherFile = path.join(tmp.path, "other.ts")
+    await Bun.write(file, "const x = 1\n")
+    await Bun.write(otherFile, "const y = 2\n")
+
+    await withTestInstance({
+      directory: tmp.path,
+      fn: async (ctx) => {
+        const client = await LSPClient.create({
+          serverID: "fake",
+          server: handle as unknown as LSPServer.Handle,
+          root: tmp.path,
+          directory: tmp.path,
+          instance: ctx,
+        })
+
+        const version = await client.notify.open({ path: file })
+        await client.connection.sendNotification("test/publish-diagnostics", {
+          uri: pathToFileURL(otherFile).href,
+          version,
+          diagnostics: [
+            {
+              range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } },
+              message: "other file diagnostic",
+              severity: 1,
+            },
+          ],
+        })
+
+        for (let i = 0; i < 20 && (client.diagnostics.get(otherFile)?.length ?? 0) === 0; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 25))
+        }
+        expect(client.diagnostics.get(otherFile)?.[0]?.message).toBe("other file diagnostic")
+
+        await client.waitForDiagnostics({ path: file, version, mode: "document" })
+
+        const diagnostics = client.diagnostics.get(file) ?? []
+        expect(diagnostics.length).toBe(0)
+
+        await client.shutdown()
+      },
+    })
+  })
 })
