@@ -1,11 +1,11 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { makeGlobalNode } from "@opencode-ai/core/effect/app-node"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
 import { Effect, Layer, Stream } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
-import { Installation } from "../../src/installation"
+import { Installation, isCurlInstallPath } from "../../src/installation"
 import { InstallationChannel } from "@opencode-ai/core/installation/version"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { testEffect } from "../lib/effect"
@@ -67,6 +67,50 @@ function testLayer(
 }
 
 describe("installation", () => {
+  describe("isCurlInstallPath", () => {
+    test("recognizes Windows RIFT installer path with backslashes", () => {
+      expect(isCurlInstallPath("C:\\Users\\DAN\\AppData\\Local\\rift\\bin\\rift.exe")).toBe(true)
+    })
+
+    test("recognizes Windows RIFT installer path with forward slashes", () => {
+      expect(isCurlInstallPath("C:/Users/DAN/AppData/Local/rift/bin/rift.exe")).toBe(true)
+    })
+
+    test("recognizes Windows RIFT installer path case-insensitively", () => {
+      expect(isCurlInstallPath("C:\\USERS\\DAN\\APPDATA\\LOCAL\\RIFT\\BIN\\RIFT.EXE")).toBe(true)
+    })
+
+    test("recognizes Unix .rift hidden directory", () => {
+      expect(isCurlInstallPath("/home/dan/.rift/bin/rift")).toBe(true)
+    })
+
+    test("recognizes Unix legacy .opencode directory", () => {
+      expect(isCurlInstallPath("/home/dan/.opencode/bin/rift")).toBe(true)
+    })
+
+    test("recognizes Unix .local/bin directory", () => {
+      expect(isCurlInstallPath("/home/dan/.local/bin/rift")).toBe(true)
+    })
+
+    test("recognizes paths with mixed separators", () => {
+      expect(isCurlInstallPath("C:/Users/DAN\\AppData/Local\\rift/bin/rift.exe")).toBe(true)
+    })
+
+    test("returns false for package manager install paths", () => {
+      expect(isCurlInstallPath("/usr/local/bin/rift")).toBe(false)
+      expect(isCurlInstallPath("/opt/homebrew/bin/rift")).toBe(false)
+      expect(isCurlInstallPath("C:\\Program Files\\rift\\bin\\rift.exe")).toBe(false)
+      expect(isCurlInstallPath("C:\\scoop\\apps\\rift\\current\\bin\\rift.exe")).toBe(false)
+      expect(isCurlInstallPath("C:\\ProgramData\\chocolatey\\bin\\rift.exe")).toBe(false)
+    })
+
+    test("returns false for unknown paths", () => {
+      expect(isCurlInstallPath("/tmp/rift")).toBe(false)
+      expect(isCurlInstallPath("C:\\temp\\rift.exe")).toBe(false)
+      expect(isCurlInstallPath("/home/dan/.config/rift/bin/rift")).toBe(false)
+    })
+  })
+
   describe("latest", () => {
     testEffect(testLayer(() => jsonResponse({ tag_name: "v1.2.3" }))).effect(
       "reads release version from GitHub releases",

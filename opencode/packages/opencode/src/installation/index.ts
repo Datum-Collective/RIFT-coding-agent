@@ -23,6 +23,34 @@ import { InstallationEvent } from "@opencode-ai/schema/installation-event"
 
 export type Method = "curl" | "npm" | "yarn" | "pnpm" | "bun" | "brew" | "scoop" | "choco" | "unknown"
 
+/**
+ * Checks if the given executable path corresponds to a curl-based installation.
+ * Handles both Unix (/.rift/bin/, /.opencode/bin/, /.local/bin/) and Windows
+ * (%LOCALAPPDATA%/rift/bin/) paths by normalizing separators and case.
+ */
+export function isCurlInstallPath(executablePath: string): boolean {
+  const normalized = executablePath.replace(/\\/g, "/").toLowerCase()
+
+  // Unix-style hidden directories: /.rift/bin/, /.opencode/bin/, /.local/bin/
+  // These are typically directly under the home directory.
+  const unixDirs = [INSTALL_DIR_NAME, LEGACY_INSTALL_DIR_NAME, ".local"]
+  for (const dir of unixDirs) {
+    const normalizedDir = dir.replace(/\\/g, "/").toLowerCase()
+    if (normalized.includes(`/${normalizedDir}/bin/`)) {
+      return true
+    }
+  }
+
+  // Windows curl installer: %LOCALAPPDATA%\rift\bin
+  // This expands to something like C:/Users/<user>/AppData/Local/rift/bin/
+  // The key signature is "Local/rift/bin" or "AppData/Local/rift/bin"
+  if (normalized.includes("/local/rift/bin/") || normalized.includes("/appdata/local/rift/bin/")) {
+    return true
+  }
+
+  return false
+}
+
 export type ReleaseType = "patch" | "minor" | "major"
 
 export const Event = InstallationEvent
@@ -182,10 +210,7 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
         }
       }),
       method: Effect.fn("Installation.method")(function* () {
-        if (process.execPath.includes(path.join(INSTALL_DIR_NAME, "bin"))) return "curl" as Method
-        // An install made before the rename still lives here, and should still self-upgrade.
-        if (process.execPath.includes(path.join(LEGACY_INSTALL_DIR_NAME, "bin"))) return "curl" as Method
-        if (process.execPath.includes(path.join(".local", "bin"))) return "curl" as Method
+        if (isCurlInstallPath(process.execPath)) return "curl" as Method
         const exec = process.execPath.toLowerCase()
 
         const checks: Array<{ name: Method; command: () => Effect.Effect<string> }> = [
