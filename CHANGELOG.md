@@ -2,6 +2,27 @@
 
 Release notes for RIFT versions, newest first. Entries for v0.1.10 to v0.1.13 are only on the Releases page. Full notes and downloads: https://github.com/Datum-Collective/RIFT-coding-agent/releases
 
+## v0.4.0 (2026-10-27)
+
+The board is set, the pieces are moving. Everything merged since v0.3.0: `/cad`, `/background`, permission modes on shift+tab, a cheat sheet, fewer permission prompts, and checks that run Python test suites. Full notes: https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v0.4.0
+
+### Added
+- **`/cad`, 3D models checked by measurement.** Describe a part and RIFT models it in build123d, then verifies it before calling it done: a valid solid, one body, the expected volume and bounding box, watertight, and STEP and STL exports. It renders four views with hidden edges removed. The first run sets up build123d, trimesh and numpy in a private environment inside the kit folder, so there is nothing to `pip install`. The build is declared as a graph, so the side panel shows the pipeline. Name a folder and the model goes there; otherwise it goes in `cad/<name>/`. Needs Python 3.
+- **`/background` (also `/bg` and `/wallpaper`).** One list for the koi and the wallpapers drawn behind the text: Rift (new, RIFT's own), Matrix, City, Megacity, Dome, Rider, Space, 3D Pipes and Mystify, with activity, time of day and brightness settings. A wallpaper only loads when you pick it. The engine and eight scenes are adapted from opencode-wallpapers (MIT); see `src/background/NOTICE.md`.
+- **`/disable fish` and `/enable fish`.** Turn off the idle pond and the typing koi without stopping spinners and other animations.
+- **Permission modes on shift+tab.** Cycle through normal, accept edits (edits go through, commands still ask), ask first (asks before edits and commands too) and auto (approves everything). Any mode other than normal shows next to the agent name under the prompt.
+- **`/help` is a cheat sheet** of keys, the permission mode key and RIFT's own slash commands. `/keys`, `/shortcuts` and `/cheatsheet` open it too.
+- **Python `unittest` suites run after your edits.** A project whose `test*.py` files define a `TestCase`, at the root or in `tests/`, no longer shows "Not configured". Files that only import `unittest.mock` are ignored.
+- **Weakened tests are flagged.** The verification report lists test files deleted, test cases removed and skip, todo or ignore markers added during the turn.
+
+### Changed
+- **Far fewer permission prompts.** Paths outside the project no longer ask, much as Claude Code allows reads and temp files. Credentials (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.docker`, `~/.config`, Keychains) and system directories still ask. `permission.external_directory` in the config brings the old behaviour back.
+- **The agent proves its work.** It runs the tests that cover a change and names the command and result, adds a regression test when it fixes a bug (unless told not to touch tests), and fixes every instance of a repeated flaw rather than only the one reported. On a six-task quality benchmark, runs passing every hidden test went from 15 of 18 to 18 of 18, at about 10% more tokens.
+
+### Fixed
+- **`rift upgrade` works on Windows.** It failed with "Unknown installation method: unknown" for installs in `%LOCALAPPDATA%\rift\bin`.
+- LSP diagnostics that have already arrived for the current version of a file are used straight away instead of waiting for the debounce.
+
 ## v0.3.0 (2026-10-24)
 
 All that is gold does not glitter. `/deep-research` gets its announcement: it shipped in v0.2.3 without release notes. Full notes: https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v0.3.0
