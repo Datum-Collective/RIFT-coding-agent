@@ -6,3 +6,15 @@ core: test/location-layer.test.ts::LocationServiceMap::isolates provider state b
 # Assert "ctrl+p commands" and token usage in the footer. RIFT writes "ctrl+p:commands" and shows usage in the header.
 tui: test/feature-plugins/prompt-footer.test.tsx::::prompt footer separates simultaneous subagent, shell, and usage status
 tui: test/feature-plugins/prompt-footer.test.tsx::::prompt footer can hide details
+
+# Checks the exact upstream text "ctrl+p commands". RIFT's layout patch (0005/0006) uses "ctrl+p:commands".
+tui: test/plugin-keymap.test.tsx::::failed setup reports batched layer errors and disposes earlier and later setup layers
+
+# Checks the exact upstream text "Build · Source Model Provider" from the deleted PromptMetadataRow. RIFT's
+# border title (promptTitle in feature-plugins/rift/format.ts) uses a different order and drops the provider name.
+tui: test/app-lifecycle.test.tsx::::keeps the prompt display stable while a new location catalog loads
+
+# Pre-existing, order-dependent flakiness, not a RIFT regression: fails identically on genuine pristine v2.2.5
+# when isolated via `-t` (verified 2026-11-02). session.ts's module-level `session`/`takeDraft` state depends
+# on file execution order; isolating one of the two `for (const queued of [false, true])` cases breaks it.
+tui: test/session-media-refs.test.tsx::::an /undo that finishes after leaving and returning joins what was typed since
