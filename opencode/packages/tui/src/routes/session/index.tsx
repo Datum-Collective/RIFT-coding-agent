@@ -73,7 +73,6 @@ import { DialogMessage } from "./dialog-message"
 import { DialogFork } from "./dialog-fork"
 import { DialogTimeline } from "./dialog-timeline"
 import { DialogGoUpsell } from "../../component/dialog-go-upsell"
-import { shouldShowGoUpsell } from "../../feature-plugins/rift/go-upsell"
 import { UsageLimitNotice, useLimitNotice, useUsageAlerts } from "../../component/usage"
 import { useStorage } from "../../context/storage"
 import { Composer } from "./composer"
@@ -668,8 +667,6 @@ export function Session(props: {
       if (!empty(current) || current.mode !== "normal") return
       if (restored) current.set(restored)
       if (type === "provider.go-limit" || dialog.stack.length > 0) return
-      // RIFT suppresses OpenCode's own Go subscription upsell by default: see feature-plugins/rift/go-upsell.ts.
-      if (!shouldShowGoUpsell(process.env)) return
       if (goUpsell.dontShow || goUpsellMemory.dontShow) return
       const now = Date.now()
       const seen = Math.max(goUpsell.lastSeenAt ?? 0, goUpsellMemory.lastSeenAt ?? 0)
@@ -1510,7 +1507,6 @@ export function Session(props: {
           paddingRight={dimensions().width < 44 ? 1 : 2}
         >
           <Show when={session()}>
-            <Slot path="session.header" input={{ sessionID: route.sessionID }} />
             <box flexGrow={1} minHeight={0} position="relative">
               <scrollbox
                 ref={(r) => {
