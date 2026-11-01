@@ -1,0 +1,78 @@
+name: upstream-sync
+
+# Follows OpenCode. A new upstream release is rebuilt with RIFT on top and put through rift/check.sh.
+# It passes: a pull request that merges itself. It fails: an issue, and main stays where it is.
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Upstream version, e.g. v2.2.6. Empty takes the newest."
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  sync:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ secrets.RIFT_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RIFT_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+      - name: Find the release
+        id: find
+        run: |
+          version="${{ inputs.version }}"
+          [ -n "$version" ] || version=$(python3 rift/latest.py)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "branch=upstream/$version" >> "$GITHUB_OUTPUT"
+      - name: Pin bun to what the release needs
+        if: steps.find.outputs.version != ''
+        run: |
+          ref="${{ steps.find.outputs.version }}"
+          want=$(curl -fsSL "https://raw.githubusercontent.com/anomalyco/opencode/$ref/package.json" | python3 -c "import json,sys;print(json.load(sys.stdin)['packageManager'].split('@')[1])")
+          echo "BUN_VERSION=$want" >> "$GITHUB_ENV"
+      - uses: oven-sh/setup-bun@v2
+        if: steps.find.outputs.version != ''
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Rebuild and check
+        id: check
+        if: steps.find.outputs.version != ''
+        run: |
+          set +e
+          rift/sync.sh "${{ steps.find.outputs.version }}" 2>&1 | tee /tmp/sync.log
+          code=${PIPESTATUS[0]}
+          [ "$code" -eq 0 ] || { echo "stage=sync" >> "$GITHUB_OUTPUT"; exit "$code"; }
+          rift/check.sh 2>&1 | tee /tmp/check.log
+          code=${PIPESTATUS[0]}
+          [ "$code" -eq 0 ] || echo "stage=check" >> "$GITHUB_OUTPUT"
+          exit "$code"
+      - name: Open a pull request that merges itself
+        if: steps.find.outputs.version != '' && success()
+        run: |
+          version="${{ steps.find.outputs.version }}"
+          git config user.name "rift-sync"
+          git config user.email "rift-sync@users.noreply.github.com"
+          git checkout -b "${{ steps.find.outputs.branch }}"
+          git add -A opencode rift
+          git commit -m "update OpenCode to $version"
+          git push -u origin HEAD
+          gh pr create --base main --title "Update OpenCode to $version" --body "OpenCode $version with RIFT on top. rift/check.sh passed."
+          gh pr merge --auto --squash
+      - name: Report a failed update
+        if: failure() && steps.find.outputs.version != ''
+        run: |
+          version="${{ steps.find.outputs.version }}"
+          gh issue list --search "OpenCode $version in:title" --state open --json number --jq '.[0].number' | grep -q . && exit 0
+          log=/tmp/check.log; [ "${{ steps.check.outputs.stage }}" = "sync" ] && log=/tmp/sync.log
+          { echo "Stopped at: ${{ steps.check.outputs.stage }}. main is unchanged."; echo; echo '```'; tail -80 "$log"; echo '```'; } > /tmp/body.md
+          gh issue create --title "OpenCode $version needs RIFT changes" --body-file /tmp/body.md
