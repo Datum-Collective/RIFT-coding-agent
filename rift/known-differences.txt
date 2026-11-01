@@ -1,0 +1,4 @@
+# Upstream tests RIFT fails on purpose. One test name per line, with why above it.
+
+# Asserts upstream's exact tool list. RIFT adds graphwrite.
+core: isolates provider state by location

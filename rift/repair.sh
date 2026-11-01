@@ -13,7 +13,7 @@ attempts=${2:-3}
 agent=${RIFT_REPAIR_AGENT:-claude -p --permission-mode acceptEdits --allowedTools Read,Edit,Write,Grep,Glob}
 
 protected() {
-  git diff --name-only HEAD -- rift/check.sh rift/sync.sh rift/repair.sh rift/repair.md .github
+  git diff --name-only HEAD -- rift/check.sh rift/sync.sh rift/repair.sh rift/repair.md rift/regress.py rift/known-differences.txt .github
   git diff --name-only HEAD -- rift | grep -E '(^|/)(test|tests)/' || true
   git status --porcelain --untracked-files=all -- rift | sed 's/^...//' | grep -E '(^|/)(test|tests)/' || true
 }
