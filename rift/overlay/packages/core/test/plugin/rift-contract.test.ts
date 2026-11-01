@@ -120,6 +120,8 @@ describe("rift contract", () => {
       expect(reports(messages)[0]?.text).toContain("FAILED: bun run test")
       const stored = yield* storage.pipe(Effect.flatMap((store) => store.get(`session:${session.id}`)))
       expect(JSON.stringify(stored)).toContain("ok: bun run test")
+      const state = yield* storage.pipe(Effect.flatMap((store) => store.get(`state:${session.id}`)))
+      expect(state).toMatchObject({ running: false, round: 1, checks: [{ command: "bun run test", status: "passed" }] })
     }),
   )
 
