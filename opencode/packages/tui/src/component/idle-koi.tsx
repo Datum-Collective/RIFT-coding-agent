@@ -10,7 +10,7 @@
  * all while the terminal is in the background; the rest of the time this costs one timer.
  *
  * Mount it and it is on; unmount it and it is gone. It is also off for anyone who turned
- * animations off (the `animations_enabled` setting) or set RIFT_NO_ANIMATION.
+ * animations off (the /background toggle or the project's `animations` config) or set RIFT_NO_ANIMATION.
  */
 import { createEffect, on, onCleanup, untrack } from "solid-js"
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"

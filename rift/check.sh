@@ -12,7 +12,7 @@ bun install --no-summary
 (cd packages/cli && bun run typecheck)
 
 (cd packages/core && bun test --timeout 60000 test/plugin/rift-contract.test.ts test/plugin/rift-checks.test.ts test/plugin/rift-graph.test.ts test/plugin/rift-deep.test.ts test/plugin/provider/claude-agent)
-(cd packages/tui && bun test --timeout 30000 test/koi test/banner.test.ts test/feature-plugins/rift-sidebar.test.ts test/feature-plugins/rift-sidebar-render.test.tsx test/feature-plugins/rift-format.test.ts test/feature-plugins/rift-log.test.ts test/feature-plugins/rift-layout-render.test.tsx test/feature-plugins/rift-go-upsell.test.ts test/koi/koi-enabled.test.ts)
+(cd packages/tui && bun test --timeout 30000 test/koi test/banner.test.ts test/feature-plugins/rift-sidebar.test.ts test/feature-plugins/rift-sidebar-render.test.tsx test/feature-plugins/rift-format.test.ts test/feature-plugins/rift-log.test.ts test/feature-plugins/rift-layout-render.test.tsx test/feature-plugins/rift-go-upsell.test.ts)
 
 (cd packages/cli && bun run script/build.ts --single --skip-install --skip-web-ui)
 binary=$(find packages/cli/dist -type f -name opencode -path '*/bin/*' | head -1)
