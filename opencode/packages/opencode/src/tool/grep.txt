@@ -1,1 +1,0 @@
-Search file contents with a regex; filter files with `include`. Returns paths and matching lines. Use `rg` in the shell for counts and the task tool for open-ended exploration.

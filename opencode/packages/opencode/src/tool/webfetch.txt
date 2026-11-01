@@ -1,1 +1,0 @@
-Fetch a URL as markdown (default), text or html. HTTP is upgraded to HTTPS. Read-only; large pages may be summarised.

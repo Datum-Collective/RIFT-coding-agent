@@ -1,1 +1,0 @@
-Search the web for current information. The current year is {{year}}; use it in queries about recent events.

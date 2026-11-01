@@ -1,5 +1,0 @@
-node_modules
-.remotion
-out/frame-*.png
-# Rendered videos and stills; regenerate them with the `render:*` scripts.
-out/

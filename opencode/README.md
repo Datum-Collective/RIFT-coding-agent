@@ -10,8 +10,8 @@
 <p align="center">The open source AI coding agent.</p>
 <p align="center">
   <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
-  <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
-  <a href="https://github.com/anomalyco/opencode/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/opencode/publish.yml?style=flat-square&branch=dev" /></a>
+  <a href="https://www.npmjs.com/package/@opencode/cli"><img alt="npm" src="https://img.shields.io/npm/v/@opencode/cli?style=flat-square" /></a>
+  <a href="https://github.com/anomalyco/opencode/actions/workflows/release.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/opencode/release.yml?style=flat-square&branch=dev" /></a>
 </p>
 
 <p align="center">
@@ -46,30 +46,17 @@
 ### Installation
 
 ```bash
-# macOS, Linux, WSL, Git Bash
-curl -fsSL https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install | bash
-```
+# YOLO
+curl -fsSL https://opencode.ai/v2/install | bash
 
-```powershell
-# Windows
-irm https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install.ps1 | iex
-```
-
-Both `rift` and `opencode` start it. Update with `rift upgrade`.
-
-RIFT is not published to npm, Homebrew, scoop or choco — the installers above download a
-prebuilt binary from [Releases](https://github.com/Datum-Collective/RIFT-coding-agent/releases).
-
-<!-- upstream package managers, kept for reference; these install OpenCode, not RIFT
-npm i -g opencode-ai@latest        # or bun/pnpm/yarn
-scoop install opencode             # Windows
-choco install opencode             # Windows
-brew install anomalyco/tap/opencode # macOS and Linux
+# Package managers
+npm i -g @opencode/cli@latest      # or bun/pnpm/yarn
+brew install anomalyco/tap/opencode-v2 # macOS and Linux (recommended, always up to date)
 brew install opencode              # macOS and Linux (official brew formula, updated less)
 sudo pacman -S opencode            # Arch Linux (Stable)
-paru -S opencode-bin               # Arch Linux (Latest from AUR)
+paru -S opencode-beta              # Arch Linux (Latest from AUR)
 mise use -g opencode               # Any OS
-nix run nixpkgs#opencode           # or github:anomalyco/opencode for latest dev branch
+nix run github:anomalyco/opencode  # Nix
 ```
 
 > [!TIP]
@@ -77,33 +64,23 @@ nix run nixpkgs#opencode           # or github:anomalyco/opencode for latest dev
 
 ### Desktop App (BETA)
 
-OpenCode is also available as a desktop application. Download directly from the [releases page](https://github.com/anomalyco/opencode/releases) or [opencode.ai/download](https://opencode.ai/download).
+OpenCode is also available as a desktop application. Download it from [opencode.ai/download](https://opencode.ai/download).
 
 | Platform              | Download                           |
 | --------------------- | ---------------------------------- |
 | macOS (Apple Silicon) | `opencode-desktop-mac-arm64.dmg`   |
 | macOS (Intel)         | `opencode-desktop-mac-x64.dmg`     |
-| Windows               | `opencode-desktop-windows-x64.exe` |
+| Windows               | `opencode-desktop-win-x64.exe`     |
 | Linux                 | `.deb`, `.rpm`, or `.AppImage`     |
 
 ```bash
 # macOS (Homebrew)
 brew install --cask opencode-desktop
-# Windows (Scoop)
-scoop bucket add extras; scoop install extras/opencode-desktop
 ```
 
 #### Installation Directory
 
-The install script puts the binary in `$RIFT_INSTALL_DIR` when it is set, and
-`$HOME/.rift/bin` otherwise.
-
-```bash
-# Example
-RIFT_INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install | bash
-```
-
-On Windows the equivalent is `-InstallDir`, or the `RIFT_INSTALL_DIR` environment variable.
+The install script installs OpenCode to `$HOME/.opencode/bin`.
 
 ### Agents
 
@@ -118,11 +95,11 @@ OpenCode includes two built-in agents you can switch between with the `Tab` key.
 Also included is a **general** subagent for complex searches and multistep tasks.
 This is used internally and can be invoked using `@general` in messages.
 
-Learn more about [agents](https://opencode.ai/docs/agents).
+Learn more about [agents](https://opencode.ai/v2/docs/agents).
 
 ### Documentation
 
-For more info on how to configure OpenCode, [**head over to our docs**](https://opencode.ai/docs).
+For more info on how to configure OpenCode, [**head over to our docs**](https://opencode.ai/v2/docs).
 
 ### Contributing
 

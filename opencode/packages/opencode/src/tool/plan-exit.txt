@@ -1,1 +1,0 @@
-Call when the plan is written and questions are resolved, to ask the user to switch to the build agent. Not before the plan is final or while the user wants to keep planning.
