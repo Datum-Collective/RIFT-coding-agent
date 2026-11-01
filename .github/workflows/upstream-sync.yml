@@ -1,7 +1,8 @@
 name: upstream-sync
 
 # Follows OpenCode. A new upstream release is rebuilt with RIFT on top and put through rift/check.sh.
-# It passes: a pull request that merges itself. It fails: an issue, and main stays where it is.
+# It passes: a pull request that merges itself. It fails: an agent tries to repair RIFT inside rift/repair.sh's limits,
+# and a repair becomes a pull request for a person. A failed repair is an issue. main never moves on a failure.
 on:
   schedule:
     - cron: "17 */6 * * *"
@@ -68,8 +69,31 @@ jobs:
           git push -u origin HEAD
           gh pr create --base main --title "Update OpenCode to $version" --body "OpenCode $version with RIFT on top. rift/check.sh passed."
           gh pr merge --auto --squash
+      - name: Repair RIFT for the release
+        id: repair
+        if: failure() && steps.find.outputs.version != '' && vars.RIFT_REPAIR == 'on'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          git checkout -- opencode rift/upstream.json
+          rift/repair.sh "${{ steps.find.outputs.version }}" | tee /tmp/repair.log
+          exit "${PIPESTATUS[0]}"
+      - name: Open a pull request for the repair
+        id: repaired
+        if: steps.repair.conclusion == 'success'
+        run: |
+          version="${{ steps.find.outputs.version }}"
+          git config user.name "rift-sync"
+          git config user.email "rift-sync@users.noreply.github.com"
+          git checkout -b "${{ steps.find.outputs.branch }}"
+          git add -A opencode rift
+          git commit -m "update OpenCode to $version, with repairs"
+          git push -u origin HEAD
+          { echo "OpenCode $version broke RIFT. An agent repaired it and rift/check.sh passes. Review before merging."; echo; echo '```'; tail -30 /tmp/repair.log; echo '```'; } > /tmp/pr.md
+          gh pr create --base main --title "Update OpenCode to $version (needs review)" --body-file /tmp/pr.md
       - name: Report a failed update
-        if: failure() && steps.find.outputs.version != ''
+        if: failure() && steps.find.outputs.version != '' && steps.repaired.conclusion != 'success'
         run: |
           version="${{ steps.find.outputs.version }}"
           gh issue list --search "OpenCode $version in:title" --state open --json number --jq '.[0].number' | grep -q . && exit 0
