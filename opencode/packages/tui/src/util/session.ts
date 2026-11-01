@@ -56,7 +56,6 @@ export function contextUsage(
   const model = models?.find((model) => model.providerID === last.model.providerID && model.id === last.model.id)
   return {
     tokens,
-    limit: model?.limit.context,
     percent: model?.limit.context ? Math.round((tokens / model.limit.context) * 100) : undefined,
   }
 }
