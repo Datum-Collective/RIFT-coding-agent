@@ -1,4 +1,8 @@
-# Upstream tests RIFT fails on purpose. One test name per line, with why above it.
+# Upstream tests RIFT fails on purpose. One test per line: package: file::describe::name, with why above it.
 
 # Asserts upstream's exact tool list. RIFT adds graphwrite.
-core: isolates provider state by location
+core: test/location-layer.test.ts::LocationServiceMap::isolates provider state by location
+
+# Assert "ctrl+p commands" and token usage in the footer. RIFT writes "ctrl+p:commands" and shows usage in the header.
+tui: test/feature-plugins/prompt-footer.test.tsx::::prompt footer separates simultaneous subagent, shell, and usage status
+tui: test/feature-plugins/prompt-footer.test.tsx::::prompt footer can hide details

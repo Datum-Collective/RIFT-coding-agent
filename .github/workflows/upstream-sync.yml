@@ -20,7 +20,7 @@ permissions:
 jobs:
   sync:
     runs-on: macos-latest
-    timeout-minutes: 90
+    timeout-minutes: 300
     env:
       GH_TOKEN: ${{ secrets.RIFT_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
     steps:
@@ -67,6 +67,11 @@ jobs:
           git add -A opencode rift
           git commit -m "update OpenCode to $version"
           git push -u origin HEAD
+          if [ -f /tmp/rift-needs-review ]; then
+            { echo "OpenCode $version with RIFT on top. rift/check.sh passed, but these tests failed intermittently on RIFT only. Review before merging."; echo; echo '```'; cat /tmp/rift-needs-review; echo '```'; } > /tmp/pr.md
+            gh pr create --base main --title "Update OpenCode to $version (needs review)" --body-file /tmp/pr.md
+            exit 0
+          fi
           gh pr create --base main --title "Update OpenCode to $version" --body "OpenCode $version with RIFT on top. rift/check.sh passed."
           gh pr merge --auto --squash
       - name: Repair RIFT for the release

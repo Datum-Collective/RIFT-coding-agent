@@ -175,6 +175,7 @@ const appBindingCommands = [
   "help.show",
   "docs.open",
   "diff.open",
+  "rift.log",
   "app.debug",
   "app.console",
   "terminal.suspend",

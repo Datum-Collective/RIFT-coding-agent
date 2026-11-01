@@ -1507,6 +1507,7 @@ export function Session(props: {
           paddingRight={dimensions().width < 44 ? 1 : 2}
         >
           <Show when={session()}>
+            <Slot path="session.header" input={{ sessionID: route.sessionID }} />
             <box flexGrow={1} minHeight={0} position="relative">
               <scrollbox
                 ref={(r) => {

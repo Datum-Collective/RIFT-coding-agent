@@ -62,6 +62,7 @@ export const Definitions = {
   "service.restart": keybind("none", "Restart service"),
   "location.reload": keybind("none", "Reload configuration"),
   "diff.open": keybind("none", "Open diff viewer"),
+  "rift.log": keybind("<leader>j", "Toggle log"),
   "diff.close": keybind("escape,q", "Close diff viewer"),
   "diff.down": keybind("j,down", "Move diff viewer down"),
   "diff.up": keybind("k,up", "Move diff viewer up"),

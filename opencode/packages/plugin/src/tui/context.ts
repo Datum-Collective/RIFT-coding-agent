@@ -195,6 +195,7 @@ export interface SlotMap {
   readonly "prompt.footer": PromptFooterInput
   readonly "prompt.footer.status": PromptFooterInput
   readonly "prompt.footer.file": PromptFooterInput
+  readonly "session.header": { readonly sessionID: string }
   readonly "session.composer.top": { readonly sessionID: string }
   readonly "session.panel": PanelInput
   readonly "sidebar.content": { readonly sessionID: string }

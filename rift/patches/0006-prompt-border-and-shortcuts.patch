@@ -1,0 +1,206 @@
+diff --git a/opencode/packages/tui/src/component/prompt/index.tsx b/opencode/packages/tui/src/component/prompt/index.tsx
+index 075f037dcc..4558a38db0 100644
+--- a/opencode/packages/tui/src/component/prompt/index.tsx
++++ b/opencode/packages/tui/src/component/prompt/index.tsx
+@@ -15,7 +15,6 @@ import { useLocal } from "../../context/local"
+ import { useTheme, useThemes } from "../../context/theme"
+ import { tint } from "../../theme/color"
+ import { createAnimatable, tween } from "../../ui/animation"
+-import { EmptyBorder, SplitBorder } from "../../ui/border"
+ import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
+ import { useClipboard } from "../../context/clipboard"
+ import { Spinner } from "../spinner"
+@@ -57,6 +56,7 @@ import { useArgs } from "../../context/args"
+ import { Keymap, type KeymapCommand } from "../../context/keymap"
+ import { useInteractivity } from "../../context/interactivity"
+ import { abbreviateHome } from "../../runtime"
++import { fitTitle, promptTitle } from "../../feature-plugins/rift/format"
+ import { Slot } from "../../plugin/render"
+ import type { SessionInbox } from "@opencode/schema/session-inbox"
+ import {
+@@ -69,7 +69,6 @@ import { useDirectoryRecents } from "../../prompt/directory-recents"
+ import { directoryRecentValue } from "../../prompt/directory-completion"
+ import { useWorkingDirectoryActions } from "../../ui/working-directory-actions"
+ import { truncateFilePath } from "../../ui/file-path"
+-import { PromptMetadataRow } from "./metadata"
+ import { limitLabel, useUsageLimits } from "../usage"
+ 
+ export type PromptProps = {
+@@ -1596,14 +1595,6 @@ export function Prompt(props: PromptProps) {
+   const animateMetadata = !revealedPromptMetadata.has(local)
+   const metadataAnimationsEnabled = () => animationsEnabled() && animateMetadata
+   const agentMetaAlpha = createFadeIn(() => !!agentLabel(), metadataAnimationsEnabled)
+-  const modelMetaAlpha = createFadeIn(
+-    () => !!promptDisplay().agentLabel && store.mode === "normal",
+-    metadataAnimationsEnabled,
+-  )
+-  const variantMetaAlpha = createFadeIn(
+-    () => !!promptDisplay().agentLabel && store.mode === "normal" && !!promptDisplay().variant,
+-    metadataAnimationsEnabled,
+-  )
+   createEffect(() => {
+     if (agentLabel()) revealedPromptMetadata.add(local)
+   })
+@@ -1676,23 +1667,37 @@ export function Prompt(props: PromptProps) {
+   const maxHeight = createMemo(() => Math.max(6, Math.floor(dimensions().height / 3)))
+ 
+   const promptBg = createMemo(() => theme.decrease(theme.background.raised.base))
++  const [promptWidth, setPromptWidth] = createSignal(Number.POSITIVE_INFINITY)
+ 
+   return (
+     <>
+       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
+         <box
+           width="100%"
+-          border={["left"]}
++          border
++          borderStyle="rounded"
+           borderColor={borderHighlight()}
+-          customBorderChars={{
+-            ...SplitBorder.customBorderChars,
+-            bottomLeft: "╹",
++          onSizeChange={function (this: BoxRenderable) {
++            const width = this.width
++            queueMicrotask(() => setPromptWidth(width))
+           }}
++          bottomTitle={fitTitle(
++            promptTitle({
++              model: promptDisplay().modelLabel,
++              variant: promptDisplay().variant,
++              agent: agentLabel() ?? "",
++              auto: local.permission.mode === "autoaccept",
++              limit: limit()?.text,
++              shell: store.mode === "shell",
++            }),
++            promptWidth(),
++          )}
++          bottomTitleAlignment="right"
++          titleColor={limit()?.danger ? theme.text.feedback.error.base : theme.text.muted}
+         >
+           <box
+-            paddingLeft={dimensions().width < 44 ? 1 : 2}
+-            paddingRight={dimensions().width < 44 ? 1 : 2}
+-            paddingTop={1}
++            paddingLeft={1}
++            paddingRight={1}
+             flexShrink={0}
+             backgroundColor={promptBg()}
+             flexGrow={1}
+@@ -1853,50 +1858,8 @@ export function Prompt(props: PromptProps) {
+               cursorColor={disabled() ? theme.background.raised.base : theme.text.base}
+               syntaxStyle={syntax()}
+             />
+-            <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
+-              <PromptMetadataRow
+-                mode={store.mode}
+-                agent={agentLabel()}
+-                auto={local.permission.mode === "autoaccept"}
+-                model={promptDisplay().modelLabel}
+-                provider={promptDisplay().providerLabel}
+-                variant={promptDisplay().variant}
+-                limit={limit()}
+-                muted={!!muted()}
+-                highlight={highlight()}
+-                agentAlpha={agentMetaAlpha()}
+-                modelAlpha={modelMetaAlpha()}
+-                variantAlpha={variantMetaAlpha()}
+-              />
+-            </box>
+           </box>
+         </box>
+-        <box
+-          height={1}
+-          border={["left"]}
+-          borderColor={borderHighlight()}
+-          customBorderChars={{
+-            ...EmptyBorder,
+-            vertical: promptBg().a !== 0 ? "╹" : " ",
+-          }}
+-        >
+-          <box
+-            height={1}
+-            border={["bottom"]}
+-            borderColor={promptBg()}
+-            customBorderChars={
+-              promptBg().a !== 0
+-                ? {
+-                    ...EmptyBorder,
+-                    horizontal: "▀",
+-                  }
+-                : {
+-                    ...EmptyBorder,
+-                    horizontal: " ",
+-                  }
+-            }
+-          />
+-        </box>
+         <box width="100%" flexDirection="row" justifyContent="space-between" gap={2}>
+           <Slot path="prompt.footer" input={footerInput()}>
+             <Slot path="prompt.footer.status" input={footerInput()}>
+diff --git a/opencode/packages/tui/src/feature-plugins/prompt/footer.tsx b/opencode/packages/tui/src/feature-plugins/prompt/footer.tsx
+index a997d9af39..25eca984f7 100644
+--- a/opencode/packages/tui/src/feature-plugins/prompt/footer.tsx
++++ b/opencode/packages/tui/src/feature-plugins/prompt/footer.tsx
+@@ -1,10 +1,8 @@
+ import { Plugin } from "@opencode/plugin/tui"
+ import { createMemo, createSignal, Match, Show, Switch } from "solid-js"
+-import { contextUsage, formatContextUsage } from "../../util/session"
+ import { useTerminalDimensions } from "@opentui/solid"
+-import { TextAttributes } from "@opentui/core"
+-import { useInteractivity } from "../../context/interactivity"
+ import { stringWidth } from "../../util/string-width"
++import { PromptShortcuts } from "../rift/chrome"
+ import { createGoal, GoalStatus } from "./goal"
+ 
+ const money = new Intl.NumberFormat("en-US", {
+@@ -38,21 +36,13 @@ export function PromptFooter(props: {
+     if (!props.sessionID) return []
+     const session = props.context.data.session.get(props.sessionID)
+     if (!session) return []
+-    const usage = contextUsage(
+-      props.context.data.session.message.list(props.sessionID),
+-      props.context.data.location.model.list(session.location),
+-      session.revert?.messageID,
+-    )
+     const cost = props.context.data.session.cost(props.sessionID)
+     return [
+-      usage ? formatContextUsage(usage.tokens, usage.percent) : undefined,
+       cost > 0 ? money.format(cost) : undefined,
+     ].filter((item): item is string => Boolean(item))
+   })
+   const live = createMemo(() => Boolean(subagents() || shells()))
+   const goal = createGoal(props.context, () => props.sessionID)
+-  // Prompt hints read as disabled while the session does not own input, e.g. while a side panel is focused.
+-  const interactive = useInteractivity()
+   const shortcut = (id: string) => props.context.keymap.shortcuts(id)[0]
+   const layout = createMemo(() => {
+     const command = shortcut("command.palette.show")
+@@ -106,27 +96,9 @@ export function PromptFooter(props: {
+               </Show>
+             </box>
+           </Match>
+-          <Match when={props.showDetails && layout().shortcuts}>
+-            <text
+-              fg={interactive() ? props.context.theme.text.base : props.context.theme.text.action.primary.disabled}
+-              attributes={interactive() ? 0 : TextAttributes.DIM}
+-              flexShrink={0}
+-            >
+-              {shortcut("agent.cycle")}{" "}
+-              <span style={interactive() ? { fg: props.context.theme.text.muted } : {}}>agents</span>
+-            </text>
+-          </Match>
+         </Switch>
+         <Show when={props.showDetails && layout().shortcuts}>
+-          <text
+-            fg={interactive() ? props.context.theme.text.base : props.context.theme.text.action.primary.disabled}
+-            attributes={interactive() ? 0 : TextAttributes.DIM}
+-            wrapMode="none"
+-            flexShrink={0}
+-          >
+-            {shortcut("command.palette.show")}{" "}
+-            <span style={interactive() ? { fg: props.context.theme.text.muted } : {}}>commands</span>
+-          </text>
++          <PromptShortcuts context={props.context} sessionID={props.sessionID} />
+         </Show>
+       </Match>
+       <Match when={props.mode === "shell"}>

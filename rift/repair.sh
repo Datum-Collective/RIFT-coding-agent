@@ -16,6 +16,8 @@ protected() {
   git diff --name-only HEAD -- rift/check.sh rift/sync.sh rift/repair.sh rift/repair.md rift/regress.py rift/known-differences.txt .github
   git diff --name-only HEAD -- rift | grep -E '(^|/)(test|tests)/' || true
   git status --porcelain --untracked-files=all -- rift | sed 's/^...//' | grep -E '(^|/)(test|tests)/' || true
+  # A patch reaches upstream's tests and test setup, which live under opencode/, so read what the patches target.
+  grep -hE '^\+\+\+ ' rift/patches/*.patch | grep -E '(^|/)(test|tests)/|\.test\.|bunfig\.toml|/script/test' || true
 }
 
 gate() {

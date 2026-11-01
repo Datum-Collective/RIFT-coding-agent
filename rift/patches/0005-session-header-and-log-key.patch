@@ -1,0 +1,60 @@
+diff --git a/opencode/packages/plugin/src/tui/context.ts b/opencode/packages/plugin/src/tui/context.ts
+index fe641b39d5..31a4e6abae 100644
+--- a/opencode/packages/plugin/src/tui/context.ts
++++ b/opencode/packages/plugin/src/tui/context.ts
+@@ -195,6 +195,7 @@ export interface SlotMap {
+   readonly "prompt.footer": PromptFooterInput
+   readonly "prompt.footer.status": PromptFooterInput
+   readonly "prompt.footer.file": PromptFooterInput
++  readonly "session.header": { readonly sessionID: string }
+   readonly "session.composer.top": { readonly sessionID: string }
+   readonly "session.panel": PanelInput
+   readonly "sidebar.content": { readonly sessionID: string }
+diff --git a/opencode/packages/tui/src/app.tsx b/opencode/packages/tui/src/app.tsx
+index 569f217638..92d188652d 100644
+--- a/opencode/packages/tui/src/app.tsx
++++ b/opencode/packages/tui/src/app.tsx
+@@ -175,6 +175,7 @@ const appBindingCommands = [
+   "help.show",
+   "docs.open",
+   "diff.open",
++  "rift.log",
+   "app.debug",
+   "app.console",
+   "terminal.suspend",
+diff --git a/opencode/packages/tui/src/config/keybind.ts b/opencode/packages/tui/src/config/keybind.ts
+index e93ac4d655..3a77255a31 100644
+--- a/opencode/packages/tui/src/config/keybind.ts
++++ b/opencode/packages/tui/src/config/keybind.ts
+@@ -62,6 +62,7 @@ export const Definitions = {
+   "service.restart": keybind("none", "Restart service"),
+   "location.reload": keybind("none", "Reload configuration"),
+   "diff.open": keybind("none", "Open diff viewer"),
++  "rift.log": keybind("<leader>j", "Toggle log"),
+   "diff.close": keybind("escape,q", "Close diff viewer"),
+   "diff.down": keybind("j,down", "Move diff viewer down"),
+   "diff.up": keybind("k,up", "Move diff viewer up"),
+diff --git a/opencode/packages/tui/src/routes/session/index.tsx b/opencode/packages/tui/src/routes/session/index.tsx
+index ce5d3cbc29..fdd1d12115 100644
+--- a/opencode/packages/tui/src/routes/session/index.tsx
++++ b/opencode/packages/tui/src/routes/session/index.tsx
+@@ -1507,6 +1507,7 @@ export function Session(props: {
+           paddingRight={dimensions().width < 44 ? 1 : 2}
+         >
+           <Show when={session()}>
++            <Slot path="session.header" input={{ sessionID: route.sessionID }} />
+             <box flexGrow={1} minHeight={0} position="relative">
+               <scrollbox
+                 ref={(r) => {
+diff --git a/opencode/packages/tui/src/util/session.ts b/opencode/packages/tui/src/util/session.ts
+index c7213e2205..b8173497c5 100644
+--- a/opencode/packages/tui/src/util/session.ts
++++ b/opencode/packages/tui/src/util/session.ts
+@@ -56,6 +56,7 @@ export function contextUsage(
+   const model = models?.find((model) => model.providerID === last.model.providerID && model.id === last.model.id)
+   return {
+     tokens,
++    limit: model?.limit.context,
+     percent: model?.limit.context ? Math.round((tokens / model.limit.context) * 100) : undefined,
+   }
+ }

@@ -15,7 +15,6 @@ import { useLocal } from "../../context/local"
 import { useTheme, useThemes } from "../../context/theme"
 import { tint } from "../../theme/color"
 import { createAnimatable, tween } from "../../ui/animation"
-import { EmptyBorder, SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { useClipboard } from "../../context/clipboard"
 import { Spinner } from "../spinner"
@@ -57,6 +56,7 @@ import { useArgs } from "../../context/args"
 import { Keymap, type KeymapCommand } from "../../context/keymap"
 import { useInteractivity } from "../../context/interactivity"
 import { abbreviateHome } from "../../runtime"
+import { fitTitle, promptTitle } from "../../feature-plugins/rift/format"
 import { Slot } from "../../plugin/render"
 import type { SessionInbox } from "@opencode/schema/session-inbox"
 import {
@@ -69,7 +69,6 @@ import { useDirectoryRecents } from "../../prompt/directory-recents"
 import { directoryRecentValue } from "../../prompt/directory-completion"
 import { useWorkingDirectoryActions } from "../../ui/working-directory-actions"
 import { truncateFilePath } from "../../ui/file-path"
-import { PromptMetadataRow } from "./metadata"
 import { limitLabel, useUsageLimits } from "../usage"
 
 export type PromptProps = {
@@ -1596,14 +1595,6 @@ export function Prompt(props: PromptProps) {
   const animateMetadata = !revealedPromptMetadata.has(local)
   const metadataAnimationsEnabled = () => animationsEnabled() && animateMetadata
   const agentMetaAlpha = createFadeIn(() => !!agentLabel(), metadataAnimationsEnabled)
-  const modelMetaAlpha = createFadeIn(
-    () => !!promptDisplay().agentLabel && store.mode === "normal",
-    metadataAnimationsEnabled,
-  )
-  const variantMetaAlpha = createFadeIn(
-    () => !!promptDisplay().agentLabel && store.mode === "normal" && !!promptDisplay().variant,
-    metadataAnimationsEnabled,
-  )
   createEffect(() => {
     if (agentLabel()) revealedPromptMetadata.add(local)
   })
@@ -1676,23 +1667,37 @@ export function Prompt(props: PromptProps) {
   const maxHeight = createMemo(() => Math.max(6, Math.floor(dimensions().height / 3)))
 
   const promptBg = createMemo(() => theme.decrease(theme.background.raised.base))
+  const [promptWidth, setPromptWidth] = createSignal(Number.POSITIVE_INFINITY)
 
   return (
     <>
       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
         <box
           width="100%"
-          border={["left"]}
+          border
+          borderStyle="rounded"
           borderColor={borderHighlight()}
-          customBorderChars={{
-            ...SplitBorder.customBorderChars,
-            bottomLeft: "╹",
+          onSizeChange={function (this: BoxRenderable) {
+            const width = this.width
+            queueMicrotask(() => setPromptWidth(width))
           }}
+          bottomTitle={fitTitle(
+            promptTitle({
+              model: promptDisplay().modelLabel,
+              variant: promptDisplay().variant,
+              agent: agentLabel() ?? "",
+              auto: local.permission.mode === "autoaccept",
+              limit: limit()?.text,
+              shell: store.mode === "shell",
+            }),
+            promptWidth(),
+          )}
+          bottomTitleAlignment="right"
+          titleColor={limit()?.danger ? theme.text.feedback.error.base : theme.text.muted}
         >
           <box
-            paddingLeft={dimensions().width < 44 ? 1 : 2}
-            paddingRight={dimensions().width < 44 ? 1 : 2}
-            paddingTop={1}
+            paddingLeft={1}
+            paddingRight={1}
             flexShrink={0}
             backgroundColor={promptBg()}
             flexGrow={1}
@@ -1853,49 +1858,7 @@ export function Prompt(props: PromptProps) {
               cursorColor={disabled() ? theme.background.raised.base : theme.text.base}
               syntaxStyle={syntax()}
             />
-            <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
-              <PromptMetadataRow
-                mode={store.mode}
-                agent={agentLabel()}
-                auto={local.permission.mode === "autoaccept"}
-                model={promptDisplay().modelLabel}
-                provider={promptDisplay().providerLabel}
-                variant={promptDisplay().variant}
-                limit={limit()}
-                muted={!!muted()}
-                highlight={highlight()}
-                agentAlpha={agentMetaAlpha()}
-                modelAlpha={modelMetaAlpha()}
-                variantAlpha={variantMetaAlpha()}
-              />
-            </box>
           </box>
-        </box>
-        <box
-          height={1}
-          border={["left"]}
-          borderColor={borderHighlight()}
-          customBorderChars={{
-            ...EmptyBorder,
-            vertical: promptBg().a !== 0 ? "╹" : " ",
-          }}
-        >
-          <box
-            height={1}
-            border={["bottom"]}
-            borderColor={promptBg()}
-            customBorderChars={
-              promptBg().a !== 0
-                ? {
-                    ...EmptyBorder,
-                    horizontal: "▀",
-                  }
-                : {
-                    ...EmptyBorder,
-                    horizontal: " ",
-                  }
-            }
-          />
         </box>
         <box width="100%" flexDirection="row" justifyContent="space-between" gap={2}>
           <Slot path="prompt.footer" input={footerInput()}>
