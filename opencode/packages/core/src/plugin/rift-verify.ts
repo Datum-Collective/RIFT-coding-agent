@@ -6,6 +6,7 @@ import { Session } from "@opencode/schema/session"
 import { ToolFailure } from "@opencode/ai/effect"
 import { Cause, Effect, Option, Schema } from "effect"
 import { Agent } from "@opencode/schema/agent"
+import { Rift } from "@opencode/schema/rift"
 import { Permission } from "../permission.js"
 import type { PluginInternal } from "./internal.js"
 import { RiftChecks } from "./rift-verify/checks.js"
@@ -25,6 +26,7 @@ const Saved = Schema.Struct({
   proofs: Schema.Array(RiftGraph.Proof),
 })
 const decodeSaved = Schema.decodeUnknownOption(Saved)
+const decodeState = Schema.decodeUnknownOption(Rift.State)
 // Storage holds JSON. This drops the undefined fields the type checker cannot rule out.
 const plain = (value: typeof Saved.Type) => JSON.parse(JSON.stringify(value))
 
@@ -52,6 +54,23 @@ export const Plugin = define({
         nodes: saved?.nodes ?? ([] as readonly RiftGraph.Node[]),
         proofs: saved?.proofs ?? ([] as readonly RiftGraph.Proof[]),
       }
+    })
+
+    const rpc = yield* ctx.rpc
+      .register(Rift.Definition, {
+        get: (input) =>
+          ctx.storage
+            .get(`state:${input.sessionID}`)
+            .pipe(Effect.map((value) => Option.getOrNull(decodeState(value)))),
+      })
+      .pipe(Effect.orDie)
+
+    // Clients read the state through `get` and follow `changed`, so every write publishes the new value.
+    const publish = Effect.fn("RiftVerify.publish")(function* (sessionID: string, next: Rift.State) {
+      yield* ctx.storage.set(`state:${sessionID}`, JSON.parse(JSON.stringify(next)))
+      yield* rpc.events
+        .emit("changed", { sessionID, state: next })
+        .pipe(Effect.catchCause((cause) => Effect.logWarning("failed to publish verification", { sessionID, cause })))
     })
 
     yield* ctx.tool
@@ -136,6 +155,7 @@ export const Plugin = define({
         command: check.command,
         dir: check.cwd ? path.resolve(directory, check.cwd) : directory,
       }))
+      yield* publish(sessionID, { running: true, round: current.round, checks: [], graph: [] })
       const [own, evidence] = yield* Effect.all(
         [Effect.all(checks.map(gated)), Effect.all(declared.map(gated))],
         // One request at a time, so permission prompts do not stack up.
@@ -167,6 +187,15 @@ export const Plugin = define({
           ? `${RiftChecks.format(results)}\n\n${RiftGraph.format(graph.nodes, assessments)}`
           : RiftChecks.format(results)
       const metadata = { source: "rift-verify", decision: decision.type }
+      yield* publish(sessionID, {
+        running: false,
+        round: current.round + (decision.type === "fix" ? 1 : 0),
+        checks: results.map(({ command, status, reason, ms }) => ({ command, status, reason, ms })),
+        graph: assessments.map(({ node, verdict, because }) => {
+          const info = graph.nodes.find((item) => item.id === node)
+          return { id: node, parent: info?.parent_id ?? undefined, title: info?.title ?? node, verdict, because }
+        }),
+      })
       if (decision.type === "report") {
         // Anything admitted to the inbox wakes the model, so a result with no failures is stored for clients instead.
         yield* ctx.storage.set(`session:${sessionID}`, { text, time: Date.now() })
