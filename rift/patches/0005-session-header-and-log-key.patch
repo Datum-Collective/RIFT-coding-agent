@@ -35,10 +35,27 @@ index e93ac4d655..3a77255a31 100644
    "diff.down": keybind("j,down", "Move diff viewer down"),
    "diff.up": keybind("k,up", "Move diff viewer up"),
 diff --git a/opencode/packages/tui/src/routes/session/index.tsx b/opencode/packages/tui/src/routes/session/index.tsx
-index ce5d3cbc29..fdd1d12115 100644
+index ce5d3cbc29..ca2fcfe0b9 100644
 --- a/opencode/packages/tui/src/routes/session/index.tsx
 +++ b/opencode/packages/tui/src/routes/session/index.tsx
-@@ -1507,6 +1507,7 @@ export function Session(props: {
+@@ -73,6 +73,7 @@ import { DialogMessage } from "./dialog-message"
+ import { DialogFork } from "./dialog-fork"
+ import { DialogTimeline } from "./dialog-timeline"
+ import { DialogGoUpsell } from "../../component/dialog-go-upsell"
++import { shouldShowGoUpsell } from "../../feature-plugins/rift/go-upsell"
+ import { UsageLimitNotice, useLimitNotice, useUsageAlerts } from "../../component/usage"
+ import { useStorage } from "../../context/storage"
+ import { Composer } from "./composer"
+@@ -667,6 +668,8 @@ export function Session(props: {
+       if (!empty(current) || current.mode !== "normal") return
+       if (restored) current.set(restored)
+       if (type === "provider.go-limit" || dialog.stack.length > 0) return
++      // RIFT suppresses OpenCode's own Go subscription upsell by default: see feature-plugins/rift/go-upsell.ts.
++      if (!shouldShowGoUpsell(process.env)) return
+       if (goUpsell.dontShow || goUpsellMemory.dontShow) return
+       const now = Date.now()
+       const seen = Math.max(goUpsell.lastSeenAt ?? 0, goUpsellMemory.lastSeenAt ?? 0)
+@@ -1507,6 +1510,7 @@ export function Session(props: {
            paddingRight={dimensions().width < 44 ? 1 : 2}
          >
            <Show when={session()}>
