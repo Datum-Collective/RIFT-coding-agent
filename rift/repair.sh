@@ -28,7 +28,7 @@ for attempt in $(seq 1 "$attempts"); do
     exit 0
   fi
   echo "attempt $attempt: running the agent"
-  $agent "$(cat rift/repair.md)" | tail -20
+  $agent <rift/repair.md | tail -20
   broken=$(protected)
   if [ -n "$broken" ]; then
     echo "the agent changed what it may not:" >&2
