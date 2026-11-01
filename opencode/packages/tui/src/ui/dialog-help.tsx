@@ -62,7 +62,6 @@ export function DialogHelp() {
   ]
 
   const commands: Entry[] = [
-    fixed("/cad", "design a part, verified by measuring"),
     fixed("/background", "wallpapers and fish behind the text"),
     fixed("/disable fish", "turn the fish off (/enable fish)"),
     fixed("/deep-research", "cited report on a topic"),

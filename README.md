@@ -260,26 +260,6 @@ Wallpapers need a truecolor terminal and are off until you choose one. They stop
 [opencode-wallpapers](https://github.com/vaprdev/opencode-wallpapers) (MIT); see
 `opencode/packages/tui/src/background/NOTICE.md`.
 
-### CAD
-
-Type `/cad` and a description of the part:
-
-```
-/cad a 40 x 20 x 10 mm mounting plate with a 6 mm through hole 10 mm from the centre and rounded corners
-```
-
-RIFT writes the requirements as numbers, builds a parametric [build123d](https://github.com/gumyr/build123d)
-model, and then measures it instead of trusting how it looks. `check.py verify` reports BRep
-validity, single body, volume, bounding box against the requested size, watertightness, and any cut
-that removed nothing or fillet that failed. It repairs one failure at a time, at most five rounds,
-never by deleting a requested feature. It also renders four isometric views with hidden edges
-removed, and exports `.step` and `.stl`. When a picture and a measurement disagree, the measurement
-wins.
-
-Needs Python 3.10 or newer. The first time you run it, RIFT makes a private Python environment in its cache
-folder (`~/.cache/opencode/cad/venv`) and installs build123d, trimesh and numpy into it, which takes a minute or
-two and about 750 MB. Nothing else on your machine changes, and deleting that folder undoes it.
-
 ### Deep research
 
 Type `/deep-research` and a topic:
@@ -351,8 +331,7 @@ rift remotion setup               # install Remotion's skills for /remotion
 ```
 
 In a session, `/share` copies a link, `/unshare` takes it down, `/mcp` manages MCP servers,
-`/remotion` makes a video, `/deep-research` writes a cited research report, `/cad` builds a
-measured CAD model and `/background` picks the fish and wallpapers.
+`/remotion` makes a video, `/deep-research` writes a cited research report and `/background` picks the fish and wallpapers.
 
 | Key         | Action                                        |
 | ----------- | --------------------------------------------- |
