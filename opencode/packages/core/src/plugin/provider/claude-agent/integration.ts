@@ -20,7 +20,7 @@ export const register = Effect.fn("ClaudeIntegration.register")(function* (
 ) {
   yield* ctx.integration.transform((editor) => {
     editor.update(ClaudeProvider.ID, (integration) => {
-      integration.name = "Claude Agent"
+      integration.name = "Claude Agent (uses your own Claude Code login)"
     })
     editor.method.update({
       integrationID: ClaudeProvider.ID,

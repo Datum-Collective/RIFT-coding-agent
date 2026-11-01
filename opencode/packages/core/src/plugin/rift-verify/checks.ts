@@ -181,6 +181,8 @@ export const run = (check: Check, timeoutMs: number, signal?: AbortSignal) =>
     })
   })
 
+export const blocked = (check: Check, reason: string): Result => ({ ...check, status: "not_run", reason, ms: 0, output: "" })
+
 const MARK: Record<Status, string> = { passed: "ok", failed: "FAILED", timed_out: "TIMED OUT", not_run: "NOT RUN" }
 
 export const format = (results: readonly Result[]) =>
