@@ -22,6 +22,8 @@
   <a href="#credits">Credits</a>
 </p>
 
+> **v0.5.0 note.** RIFT now runs on OpenCode v2.2.5. Several v0.4 features (`/cad`, `/background`, permission modes, task memory, the browser tool, session share, Vibe Mode, Remotion, Mission Control) are not ported yet and the sections below that describe them are out of date. See the [changelog](CHANGELOG.md).
+
 ---
 
 # RIFT: an open-source AI coding agent for the terminal

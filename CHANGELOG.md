@@ -2,6 +2,23 @@
 
 Release notes for RIFT versions, newest first. Entries for v0.1.10 to v0.1.13 are only on the Releases page. Full notes and downloads: https://github.com/Datum-Collective/RIFT-coding-agent/releases
 
+## v0.5.0 (2026-11-03)
+
+Deeds will not be less valiant because they are unpraised. RIFT moves to OpenCode v2.2.5 and learns to notice when a green run was not earned. Full notes: https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v0.5.0
+
+### Added
+- **Test integrity review.** After the checks run, RIFT reads what the agent changed. A deleted test file, a skipped or `todo`-marked test, or a check forced to pass (`|| true`, `--passWithNoTests`, `continue-on-error: true`) blocks the run and the agent is told to restore it and fix the code. Weakened assertions, `.only`, loosened compiler options and suppressed errors are flagged as warnings. This reads diffs as text, so it can be wrong in both directions.
+- **Proof receipts.** Every verification run is sealed as a receipt (files hashed, checks, findings, verdict: verified, failed, unproven or tampered), each one chained to the one before. They are kept outside your project. There is no viewer yet.
+- **A clearer engineering graph** in the sidebar: tree connectors, an "N/M proven" bar, "waiting on" titles, and long proven branches folded away.
+- **The RIFT theme is the default again.** The banner and the koi take the accent colour of whichever theme you pick.
+
+### Changed
+- **Built on OpenCode v2.2.5.** The terminal app is rebuilt on OpenCode's current line. RIFT's code lives in `rift/` and the OpenCode tree is generated from it. `rift --version` prints `rift v0.5.0`.
+- **Smaller.** Packages the terminal app never used are gone (36 to 23), and the binary is about 28% smaller.
+
+### Not in this release
+`/cad`, `/background` and wallpapers, permission modes on shift+tab, task memory, the browser tool, session share, Vibe Mode, Remotion and Mission Control have not been ported to the new base. If you rely on them, stay on v0.4.1. To update, run the installer again.
+
 ## v0.4.0 (2026-10-27)
 
 The board is set, the pieces are moving. Everything merged since v0.3.0: `/cad`, `/background`, permission modes on shift+tab, a cheat sheet, fewer permission prompts, and checks that run Python test suites. Full notes: https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v0.4.0

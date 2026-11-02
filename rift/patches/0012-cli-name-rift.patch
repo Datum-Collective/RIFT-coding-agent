@@ -1,0 +1,13 @@
+diff --git a/opencode/packages/cli/script/build.ts b/opencode/packages/cli/script/build.ts
+index 7bedf0d44b..82b538a44a 100755
+--- a/opencode/packages/cli/script/build.ts
++++ b/opencode/packages/cli/script/build.ts
+@@ -195,7 +195,7 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
+     },
+     define: {
+       OPENCODE_VERSION: `'${Script.version}'`,
+-      OPENCODE_CLI_NAME: "'opencode'",
++      OPENCODE_CLI_NAME: "'rift'",
+       OPENCODE_CHANNEL: `'${Script.channel}'`,
+       OPENCODE_ARTIFACT: `'cli'`,
+       ...(highlights ? { OPENCODE_RELEASE_HIGHLIGHTS: JSON.stringify(highlights) } : {}),

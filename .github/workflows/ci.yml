@@ -34,9 +34,11 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      - name: Typecheck
-        working-directory: opencode/packages/opencode
-        run: bun typecheck
+      - name: Typecheck core, tui and cli
+        run: |
+          for package in core tui cli; do
+            (cd packages/$package && bun run typecheck)
+          done
 
   test:
     runs-on: ubuntu-latest
@@ -53,19 +55,12 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      # Never run from the repo root (see AGENTS.md). One bun process per test file: several suites
-      # leave browsers, servers and environment changes behind, and in a shared process those made
-      # unrelated tests fail at random. attention.test.ts fails on main already and is left out.
-      - name: Test
-        working-directory: opencode/packages/opencode
-        run: |
-          failed=0
-          for file in $(git ls-files test | grep -E '\.test\.tsx?$' | grep -v 'cli/cmd/tui/attention.test.ts'); do
-            bun test --timeout 30000 --max-concurrency=4 "$file" > /tmp/test.log 2>&1 && continue
-            failed=1
-            echo "::group::FAILED $file"
-            cat /tmp/test.log
-            echo "::endgroup::"
-            echo "::error file=opencode/packages/opencode/$file::tests failed"
-          done
-          exit $failed
+      # RIFT's own tests, the same set rift/check.sh runs. The full comparison against upstream's suites
+      # (rift/regress.py) is too long for a PR check and runs in rift/check.sh before an upstream update.
+      - name: RIFT core tests
+        working-directory: opencode/packages/core
+        run: bun test --timeout 60000 test/plugin/rift-contract.test.ts test/plugin/rift-checks.test.ts test/plugin/rift-integrity.test.ts test/plugin/rift-graph.test.ts test/plugin/rift-deep.test.ts test/plugin/provider/claude-agent
+
+      - name: RIFT tui tests
+        working-directory: opencode/packages/tui
+        run: bun test --timeout 30000 test/koi test/banner.test.ts test/feature-plugins/rift-sidebar.test.ts test/feature-plugins/rift-sidebar-render.test.tsx test/feature-plugins/rift-log.test.ts test/feature-plugins/rift-go-upsell.test.ts
