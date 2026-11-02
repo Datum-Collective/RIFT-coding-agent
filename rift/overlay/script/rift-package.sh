@@ -26,14 +26,15 @@ for dir in "$dist"/cli-*/; do
   esac
   cp ../LICENSE "$stage/LICENSE"
   cp ../THIRD_PARTY_NOTICES.md "$stage/THIRD_PARTY_NOTICES.md"
+  # The installers expect a tarball on Linux only; macOS and Windows get a zip.
   case $target in
-    windows-*)
-      (cd "$stage" && zip -qr "$OLDPWD/$out/rift-$target.zip" "$branded" LICENSE THIRD_PARTY_NOTICES.md)
-      assets+=("$out/rift-$target.zip") ;;
-    *)
+    linux-*)
       # macOS tar stores extended attributes as a separate ._rift entry that GNU tar extracts as a stray file.
       (cd "$stage" && COPYFILE_DISABLE=1 tar -czf "$OLDPWD/$out/rift-$target.tar.gz" "$branded" LICENSE THIRD_PARTY_NOTICES.md)
       assets+=("$out/rift-$target.tar.gz") ;;
+    *)
+      (cd "$stage" && zip -qr "$OLDPWD/$out/rift-$target.zip" "$branded" LICENSE THIRD_PARTY_NOTICES.md)
+      assets+=("$out/rift-$target.zip") ;;
   esac
   rm -rf "$stage"
 done
