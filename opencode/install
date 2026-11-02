@@ -1,7 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
-APP=opencode
-SOURCE_APP=opencode
+APP=rift
+BIN=rift          # binary name inside the archive; becomes rift.exe on Windows
+ALIAS=opencode    # second command name, so either one starts it
+# GitHub's download host answers from several addresses in rotation, and from some networks one
+# of them accepts no connections. A bare curl waits out its full default connect timeout on that
+# address, about a minute of silence before trying the next, and which address comes first is
+# random, so an install works one day and looks hung the next. Capping the connect phase makes
+# curl split that budget across the addresses, so a dead one costs seconds. Measured with the dead
+# address forced first: 60s bare, 5s with 10. A retry covers the rare case where it still fails.
+curl() {
+    command curl --connect-timeout 10 --retry 2 --retry-delay 1 "$@"
+}
+
+os=""             # stays empty on the --binary path, which skips platform detection
+reload_file=""    # shell config that now has rift on PATH, which an already-open terminal has not read
+linked_dir=""     # PATH directory rift was linked into, which makes a shell-config edit unnecessary
 
 MUTED='\033[0;2m'
 RED='\033[0;31m'
@@ -10,20 +24,24 @@ NC='\033[0m' # No Color
 
 usage() {
     cat <<EOF
-OpenCode Installer
+RIFT Installer
 
-Usage: install.sh [options]
+Usage: install [options]
 
 Options:
     -h, --help              Display this help message
-    -v, --version <version> Install a specific version (e.g., 0.0.0-beta-17236)
+    -v, --version <version> Install a specific version (e.g., 1.0.180)
     -b, --binary <path>     Install from a local binary instead of downloading
-        --no-modify-path    Don't modify shell config files (.zshrc, .bashrc, etc.)
+        --no-modify-path    Don't touch your shell config (.zshrc, .bashrc, etc.) or link into your PATH
+
+Environment:
+    RIFT_INSTALL_DIR        Where to put the binary (default: ~/.rift/bin)
+    RIFT_NO_SHELL=1         Don't open a new shell at the end; just print how to reload
 
 Examples:
-    curl -fsSL https://opencode.ai/v2/install | bash
-    curl -fsSL https://opencode.ai/v2/install | bash -s -- --version 0.0.0-beta-17236
-    ./install --binary /path/to/opencode
+    curl -fsSL https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install | bash
+    curl -fsSL https://raw.githubusercontent.com/Datum-Collective/RIFT-coding-agent/main/opencode/install | bash -s -- --version 1.0.0
+    ./install --binary /path/to/rift
 EOF
 }
 
@@ -66,7 +84,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-INSTALL_DIR=$HOME/.opencode/bin
+INSTALL_DIR=${RIFT_INSTALL_DIR:-$HOME/.rift/bin}
 mkdir -p "$INSTALL_DIR"
 
 # If --binary is provided, skip all download/detection logic
@@ -85,6 +103,10 @@ else
       MINGW*|MSYS*|CYGWIN*) os="windows" ;;
     esac
 
+    if [ "$os" = "windows" ]; then
+      BIN=rift.exe
+    fi
+
     arch=$(uname -m)
     if [[ "$arch" == "aarch64" ]]; then
       arch="arm64"
@@ -100,14 +122,6 @@ else
       fi
     fi
 
-    # Git Bash and MSYS2 run as emulated x64 on Windows ARM64, so `uname -m` reports x86_64.
-    # The host CPU still shows in the `uname -s` suffix and in PROCESSOR_IDENTIFIER.
-    if [ "$os" = "windows" ] && [ "$arch" = "x64" ]; then
-      if [[ "$raw_os" == *-ARM64 || "${PROCESSOR_IDENTIFIER:-}" == ARM* ]]; then
-        arch="arm64"
-      fi
-    fi
-
     combo="$os-$arch"
     case "$combo" in
       linux-x64|linux-arm64|darwin-x64|darwin-arm64|windows-x64|windows-arm64)
@@ -117,6 +131,11 @@ else
         exit 1
         ;;
     esac
+
+    archive_ext=".zip"
+    if [ "$os" = "linux" ]; then
+      archive_ext=".tar.gz"
+    fi
 
     is_musl=false
     if [ "$os" = "linux" ]; then
@@ -169,50 +188,42 @@ else
       target="$target-musl"
     fi
 
-    if ! command -v tar >/dev/null 2>&1; then
-        echo -e "${RED}Error: 'tar' is required but not installed.${NC}"
-        exit 1
+    filename="$APP-$target$archive_ext"
+
+
+    if [ "$os" = "linux" ]; then
+        if ! command -v tar >/dev/null 2>&1; then
+             echo -e "${RED}Error: 'tar' is required but not installed.${NC}"
+             exit 1
+        fi
+    else
+        if ! command -v unzip >/dev/null 2>&1; then
+            echo -e "${RED}Error: 'unzip' is required but not installed.${NC}"
+            exit 1
+        fi
     fi
 
-    package_scope="@opencode"
     if [ -z "$requested_version" ]; then
-        metadata=$(curl -fsSL https://opencode.ai/update/api/latest/cli/npm || true)
-        specific_version=$(echo "$metadata" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
-        package=$(echo "$metadata" | sed -n 's/.*"package":"\([^"]*\)".*/\1/p')
+        url="https://github.com/Datum-Collective/RIFT-coding-agent/releases/latest/download/$filename"
+        specific_version=$(curl -s https://api.github.com/repos/Datum-Collective/RIFT-coding-agent/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
 
-        if [ -z "$specific_version" ] || [ -z "$package" ]; then
+        if [[ $? -ne 0 || -z "$specific_version" ]]; then
             echo -e "${RED}Failed to fetch version information${NC}"
             exit 1
         fi
-        package_scope="${package%/cli}"
     else
         # Strip leading 'v' if present
         requested_version="${requested_version#v}"
+        url="https://github.com/Datum-Collective/RIFT-coding-agent/releases/download/v${requested_version}/$filename"
         specific_version=$requested_version
-    fi
 
-    package_name="$package_scope/cli-$target"
-    http_status=$(curl -s -o /dev/null -w "%{http_code}" "https://registry.npmjs.org/$package_scope%2fcli-$target/$specific_version" || true)
-    # Older clients install the minimum release before they can migrate package names.
-    if [ "$http_status" = "404" ] && [ -n "$requested_version" ]; then
-        package_name="@opencode-ai/cli-$target"
-        http_status=$(curl -s -o /dev/null -w "%{http_code}" "https://registry.npmjs.org/@opencode-ai%2fcli-$target/$specific_version" || true)
-    fi
-    if [ "$http_status" = "404" ]; then
-        echo -e "${RED}Error: Version ${specific_version} is not available for $target${NC}"
-        echo -e "${MUTED}Available versions: https://www.npmjs.com/package/$package_name?activeTab=versions${NC}"
-        exit 1
-    fi
-    if [ "$http_status" != "200" ]; then
-        echo -e "${RED}Failed to fetch package information${NC}"
-        exit 1
-    fi
-
-    filename="cli-$target-$specific_version.tgz"
-    url="https://registry.npmjs.org/$package_name/-/$filename"
-    binary_name="$SOURCE_APP"
-    if [ "$os" = "windows" ]; then
-        binary_name="$SOURCE_APP.exe"
+        # Verify the release exists before downloading
+        http_status=$(curl -sI -o /dev/null -w "%{http_code}" "https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v${requested_version}")
+        if [ "$http_status" = "404" ]; then
+            echo -e "${RED}Error: Release v${requested_version} not found${NC}"
+            echo -e "${MUTED}Available releases: https://github.com/Datum-Collective/RIFT-coding-agent/releases${NC}"
+            exit 1
+        fi
     fi
 fi
 
@@ -231,15 +242,35 @@ print_message() {
 }
 
 check_version() {
-    if command -v "$APP" >/dev/null 2>&1; then
-        opencode_path=$(which "$APP")
+    if command -v rift >/dev/null 2>&1; then
 
-        ## Check the installed version
-        installed_version=$("$APP" --version 2>/dev/null || echo "")
-        installed_version="${installed_version##* }"
-        installed_version="${installed_version#v}"
+        # The release this script installed is recorded beside the binary. Builds before 0.1.7 printed
+        # the OpenCode runtime as --version, so the file is the reliable source and --version the
+        # fallback for installs that predate it.
+        if [ -r "$INSTALL_DIR/rift.version" ]; then
+            installed_version=$(tr -d '[:space:]' <"$INSTALL_DIR/rift.version")
+        else
+            installed_version=$(rift --version 2>/dev/null || echo "")
+        fi
 
-        print_message info "${MUTED}Installed version: ${NC}$installed_version."
+        if [[ "$installed_version" != "$specific_version" ]]; then
+            print_message info "${MUTED}Installed version: ${NC}$installed_version."
+        else
+            print_message info "${MUTED}Version ${NC}$specific_version${MUTED} already installed"
+            exit 0
+        fi
+    fi
+}
+
+unbuffered_sed() {
+    if echo | sed -u -e "" >/dev/null 2>&1; then
+        sed -nu "$@"
+    elif echo | sed -l -e "" >/dev/null 2>&1; then
+        sed -nl "$@"
+    else
+        local pad
+    pad="$(printf "\n%512s" "")"
+        sed -ne "s/$/\\${pad}/" "$@"
     fi
 }
 
@@ -254,9 +285,11 @@ print_progress() {
     local on=$(( percent * width / 100 ))
     local off=$(( width - on ))
 
-    local filled=$(printf "%*s" "$on" "")
+    local filled
+    filled=$(printf "%*s" "$on" "")
     filled=${filled// /■}
-    local empty=$(printf "%*s" "$off" "")
+    local empty
+    empty=$(printf "%*s" "$off" "")
     empty=${empty// /･}
 
     printf "\r${ORANGE}%s%s %3d%%${NC}" "$filled" "$empty" "$percent" >&4
@@ -272,97 +305,161 @@ download_with_progress() {
         exec 4>/dev/null
     fi
 
-    local headers="${output}.headers"
+    local tmp_dir=${TMPDIR:-/tmp}
+    local basename="${tmp_dir}/rift_install_$$"
+    local tracefile="${basename}.trace"
+
+    rm -f "$tracefile"
+    mkfifo "$tracefile"
 
     # Hide cursor
     printf "\033[?25l" >&4
 
-    trap "trap - RETURN; rm -f \"$headers\"; printf '\033[?25h' >&4; exec 4>&-" RETURN
+    # shellcheck disable=SC2064
+    trap "trap - RETURN; rm -f \"$tracefile\"; printf '\033[?25h' >&4; exec 4>&-" RETURN
 
-    # Poll the file size on a timer so rendering cost stays fixed no matter how many bytes arrive.
-    # Read the size with ls because busybox wc -c reads the whole file.
-    curl -fsL -D "$headers" -o "$output" "$url" &
+    (
+        curl --trace-ascii "$tracefile" -f -s -L -o "$output" "$url"
+    ) &
     local curl_pid=$!
 
-    local length bytes
-    while kill -0 "$curl_pid" 2>/dev/null; do
-        if [ -f "$output" ]; then
-            length=$(grep -i '^content-length:' "$headers" 2>/dev/null | tail -n 1 | tr -dc '0-9' || true)
-            bytes=$(ls -ln "$output" | awk '{print $5}')
-            print_progress "$bytes" "${length:-0}"
-        fi
-        sleep 0.1 2>/dev/null || sleep 1
-    done
+    unbuffered_sed \
+        -e 'y/ACDEGHLNORTV/acdeghlnortv/' \
+        -e '/^0000: content-length:/p' \
+        -e '/^<= recv data/p' \
+        "$tracefile" | \
+    {
+        local length=0
+        local bytes=0
 
-    local ret=0
-    wait "$curl_pid" || ret=$?
-    if [ "$ret" -eq 0 ]; then
-        bytes=$(ls -ln "$output" | awk '{print $5}')
-        print_progress "$bytes" "$bytes"
-    fi
+        while IFS=" " read -r -a line; do
+            [ "${#line[@]}" -lt 2 ] && continue
+            local tag="${line[0]} ${line[1]}"
+
+            if [ "$tag" = "0000: content-length:" ]; then
+                length="${line[2]}"
+                length=$(echo "$length" | tr -d '\r')
+                bytes=0
+            elif [ "$tag" = "<= recv" ]; then
+                local size="${line[3]}"
+                bytes=$(( bytes + size ))
+                if [ "$length" -gt 0 ]; then
+                    print_progress "$bytes" "$length"
+                fi
+            fi
+        done
+    }
+
+    wait $curl_pid
+    local ret=$?
     echo "" >&4
     return $ret
 }
 
 download_and_install() {
-    print_message info "\n${MUTED}Installing ${NC}$APP ${MUTED}version: ${NC}$specific_version"
-    local tmp_dir="${TMPDIR:-/tmp}/opencode_install_$$"
+    print_message info "\n${MUTED}Installing ${NC}rift ${MUTED}version: ${NC}$specific_version"
+    # The progress bar cannot draw until the connection is up, so say what is happening first.
+    # Without this the terminal shows one line and then nothing, which reads as a hang.
+    print_message info "${MUTED}Downloading ${NC}${filename}${MUTED} ...${NC}"
+    local tmp_dir="${TMPDIR:-/tmp}/rift_install_$$"
     mkdir -p "$tmp_dir"
 
     if [[ "$os" == "windows" ]] || ! [ -t 2 ] || ! download_with_progress "$url" "$tmp_dir/$filename"; then
         # Fallback to standard curl on Windows, non-TTY environments, or if custom progress fails
-        local ret=0
-        curl -f -# -L -o "$tmp_dir/$filename" "$url" || ret=$?
-        # curl exits 23 when it cannot write the file, usually because the temporary directory is full.
-        if [ "$ret" -eq 23 ]; then
-            print_message error "Could not write the download to $tmp_dir. Make sure it has enough free space, or set TMPDIR to another directory, then try again." >&2
-        fi
-        if [ "$ret" -ne 0 ]; then
-            exit "$ret"
+        if ! curl -fL# -o "$tmp_dir/$filename" "$url"; then
+            rm -rf "$tmp_dir"
+            # Without -f the error page was saved as the archive and unzip failed with a message
+            # about zip directories, which said nothing about the real problem.
+            print_message error "\nError: could not download RIFT ${specific_version} for ${target}."
+            echo -e "${MUTED}Tried: ${NC}$url"
+            echo -e "${MUTED}That release may not have a build for this platform yet, or the release may still be publishing.${NC}"
+            echo -e "${MUTED}Available releases: ${NC}https://github.com/Datum-Collective/RIFT-coding-agent/releases"
+            exit 1
         fi
     fi
 
-    tar -xzf "$tmp_dir/$filename" -C "$tmp_dir"
-    local installed_binary="$APP"
-    if [ "$os" = "windows" ]; then
-        installed_binary="$APP.exe"
+    if [ "$os" = "linux" ]; then
+        tar -xzf "$tmp_dir/$filename" -C "$tmp_dir"
+    else
+        unzip -q "$tmp_dir/$filename" -d "$tmp_dir"
     fi
-    mv "$tmp_dir/package/bin/$binary_name" "$INSTALL_DIR/$installed_binary"
-    chmod 755 "$INSTALL_DIR/$installed_binary"
+
+    mv "$tmp_dir/$BIN" "$INSTALL_DIR"
+    chmod 755 "${INSTALL_DIR}/${BIN}"
     rm -rf "$tmp_dir"
+    printf '%s\n' "$specific_version" >"$INSTALL_DIR/rift.version"
+    link_alias
 }
 
 install_from_binary() {
-    print_message info "\n${MUTED}Installing ${NC}$APP ${MUTED}from: ${NC}$binary_path"
-    local installed_binary="$APP"
-    case "$(uname -s)" in
-        MINGW*|MSYS*|CYGWIN*) installed_binary="$APP.exe" ;;
-    esac
-    cp "$binary_path" "$INSTALL_DIR/$installed_binary"
-    chmod 755 "$INSTALL_DIR/$installed_binary"
+    print_message info "\n${MUTED}Installing ${NC}rift ${MUTED}from: ${NC}$binary_path"
+    cp "$binary_path" "${INSTALL_DIR}/${BIN}"
+    chmod 755 "${INSTALL_DIR}/${BIN}"
+    link_alias
 }
 
-install_legacy_shim() {
-    local shim_os="${os:-}"
-    if [[ -z "$shim_os" ]]; then
-        case "$(uname -s)" in
-            MINGW*|MSYS*|CYGWIN*) shim_os="windows" ;;
+# Both `rift` and `opencode` start the app. A relative symlink keeps the directory movable and
+# costs nothing; copying a 103MB binary twice would not be acceptable. Windows has no usable
+# symlink without admin rights, so it gets a tiny forwarding script instead.
+link_alias() {
+    if [ "$os" = "windows" ]; then
+        # Git Bash: a shell script, not a PE binary, so it keeps the bare name.
+        printf '#!/bin/sh\nexec "%s/%s" "$@"\n' "$INSTALL_DIR" "$BIN" > "${INSTALL_DIR}/${ALIAS}"
+        chmod 755 "${INSTALL_DIR}/${ALIAS}"
+    else
+        ln -sf "$BIN" "${INSTALL_DIR}/${ALIAS}"
+    fi
+}
+
+# A script cannot change the PATH of the shell that launched it. Editing a shell config therefore
+# only takes effect in terminals opened afterwards, and the terminal the installer ran in keeps
+# saying "command not found" until it is reloaded. Linking into a directory that is already on PATH
+# works at once, in every terminal, which is why it is tried first.
+#
+# Only conventional user-command directories are used, only when they are already on PATH and
+# writable (so no sudo), and nothing is ever overwritten or shadowed: a command of the same name
+# found anywhere on PATH, such as another tool's `opencode`, is left alone.
+link_into_path() {
+    local dir="" candidate name target link existing
+
+    case ":$PATH:" in
+        *":$INSTALL_DIR:"*) return 0 ;;
+    esac
+
+    for candidate in "$HOME/.local/bin" "$HOME/bin" "/opt/homebrew/bin" "/usr/local/bin"; do
+        case ":$PATH:" in
+            *":$candidate:"*) ;;
+            *) continue ;;
         esac
-    fi
-    rm -f "$INSTALL_DIR/opencode2" "$INSTALL_DIR/opencode2.exe" "$INSTALL_DIR/opencode2.cmd"
-    if [[ "$shim_os" == "windows" ]]; then
-        cat > "$INSTALL_DIR/opencode2.cmd" <<'EOF'
-@echo off
-"%~dp0opencode.exe" %*
-exit /b %errorlevel%
-EOF
-        return
-    fi
-    cat > "$INSTALL_DIR/opencode2" <<'EOF'
-#!/bin/sh
-exec "$(dirname "$0")/opencode" "$@"
-EOF
-    chmod 755 "$INSTALL_DIR/opencode2"
+        if [ -d "$candidate" ] && [ -w "$candidate" ]; then
+            dir=$candidate
+            break
+        fi
+    done
+    [ -n "$dir" ] || return 0
+
+    for name in rift opencode; do
+        target="$INSTALL_DIR/$name"
+        link="$dir/$name"
+        [ -e "$target" ] || continue
+
+        if [ -L "$link" ] && [ "$(readlink "$link")" = "$target" ]; then
+            # Already ours, from an earlier install.
+            if [ "$name" = "rift" ]; then linked_dir=$dir; fi
+            continue
+        fi
+
+        existing=$(command -v "$name" 2>/dev/null || true)
+        if [ -n "$existing" ] || [ -e "$link" ] || [ -L "$link" ]; then
+            print_message info "${MUTED}Left ${NC}${name}${MUTED} alone, ${NC}${existing:-$link}${MUTED} already exists.${NC}"
+            continue
+        fi
+
+        if ln -s "$target" "$link" 2>/dev/null; then
+            if [ "$name" = "rift" ]; then linked_dir=$dir; fi
+            print_message info "${MUTED}Linked ${NC}${name}${MUTED} into ${NC}${dir}${MUTED}, already on your PATH.${NC}"
+        fi
+    done
 }
 
 if [ -n "$binary_path" ]; then
@@ -371,21 +468,20 @@ else
     check_version
     download_and_install
 fi
-install_legacy_shim
 
 
-path_added=false
 add_to_path() {
     local config_file=$1
     local command=$2
 
     if grep -Fxq "$command" "$config_file"; then
         print_message info "Command already exists in $config_file, skipping write."
+        reload_file=$config_file
     elif [[ -w $config_file ]]; then
-        echo -e "\n# opencode" >> "$config_file"
+        echo -e "\n# rift" >> "$config_file"
         echo "$command" >> "$config_file"
-        path_added=true
-        print_message info "${MUTED}Successfully added ${NC}opencode ${MUTED}to \$PATH in ${NC}$config_file"
+        print_message info "${MUTED}Successfully added ${NC}rift ${MUTED}to \$PATH in ${NC}$config_file"
+        reload_file=$config_file
     else
         print_message warning "Manually add the directory to $config_file (or similar):"
         print_message info "  $command"
@@ -417,7 +513,11 @@ case $current_shell in
     ;;
 esac
 
-if [[ "$no_modify_path" != "true" ]]; then
+if [[ "$no_modify_path" != "true" && "$os" != "windows" ]]; then
+    link_into_path
+fi
+
+if [[ "$no_modify_path" != "true" && -z "$linked_dir" ]]; then
     config_file=""
     for file in $config_files; do
         if [[ -f $file ]]; then
@@ -425,18 +525,6 @@ if [[ "$no_modify_path" != "true" ]]; then
             break
         fi
     done
-
-    # A new Mac has no ~/.zshrc, so create the shell's main config file rather than leaving opencode off PATH.
-    if [[ -z $config_file ]]; then
-        case $current_shell in
-            zsh) new_config_file="${ZDOTDIR:-$HOME}/.zshrc" ;;
-            fish) new_config_file="$HOME/.config/fish/config.fish" ;;
-            *) new_config_file="" ;;
-        esac
-        if [[ -n $new_config_file ]] && mkdir -p "$(dirname "$new_config_file")" 2>/dev/null && touch "$new_config_file" 2>/dev/null; then
-            config_file=$new_config_file
-        fi
-    fi
 
     if [[ -z $config_file ]]; then
         print_message warning "No config file found for $current_shell. You may need to manually add to PATH:"
@@ -472,21 +560,209 @@ if [ -n "${GITHUB_ACTIONS-}" ] && [ "${GITHUB_ACTIONS}" == "true" ]; then
     print_message info "Added $INSTALL_DIR to \$GITHUB_PATH"
 fi
 
+# ---- the closing banner ---------------------------------------------------------------------------
+# "Datum Software" in the six stripes of the 1977 Apple logo, blended smoothly. The art is two words
+# with a four-column gap, kept as two blocks so it can sit side by side where there is room and stack
+# where there is not: it is 98 columns wide, and a default terminal window is 80.
+IFS= read -r -d '' datum_left <<'ART' || true
+________       _____
+___  __ \_____ __  /____  ________ ___
+__  / / /  __ `/  __/  / / /_  __ `__ \
+_  /_/ // /_/ // /_ / /_/ /_  / / / / /
+/_____/ \__,_/ \__/ \__,_/ /_/ /_/ /_/
+ART
+IFS= read -r -d '' datum_right <<'ART' || true
+             ____________
+________________  __/_  /___      _______ ____________
+__  ___/  __ \_  /_ _  __/_ | /| / /  __ `/_  ___/  _ \
+_(__  )/ /_/ /  __/ / /_ __ |/ |/ // /_/ /_  /   /  __/
+/____/ \____//_/    \__/ ____/|__/ \__,_/ /_/    \___/
+ART
+
+# Reads art on stdin and writes it with a gradient running left to right through the palette, with a
+# slight downward drift so rows are not identical. $1 is the colour mode, $2 the width of the widest
+# line, $3 the row this block starts on and $4 the rows in the whole picture, so several blocks
+# printed one after another still read as a single gradient.
+paint_gradient() {
+    awk -v mode="$1" -v width="$2" -v row0="$3" -v rows="$4" '
+    BEGIN {
+        # Apple, 1977, top to bottom: green, yellow, orange, red, purple, blue.
+        split("97 253 245 224 150 0",   R, " ")
+        split("187 184 130 58 61 157",  G, " ")
+        split("70 39 31 62 151 220",    B, " ")
+        # 1-based awk arrays: index 1..6
+    }
+    {
+        n = length($0); out = ""; last = ""
+        for (i = 1; i <= n; i++) {
+            ch = substr($0, i, 1)
+            if (ch == " ") { out = out ch; continue }
+            t = 0.85 * (i - 1) / (width > 1 ? width - 1 : 1) + 0.15 * (NR - 1 + row0) / (rows > 1 ? rows - 1 : 1)
+            if (t > 1) t = 1
+            seg = t * 5; k = int(seg); if (k > 4) k = 4; f = seg - k
+            r = R[k + 1] + (R[k + 2] - R[k + 1]) * f
+            g = G[k + 1] + (G[k + 2] - G[k + 1]) * f
+            b = B[k + 1] + (B[k + 2] - B[k + 1]) * f
+            if (mode == "truecolor") {
+                esc = sprintf("\033[38;2;%d;%d;%dm", r + 0.5, g + 0.5, b + 0.5)
+            } else {
+                # Nearest colour in the 6x6x6 cube of the 256-colour palette.
+                esc = sprintf("\033[38;5;%dm", 16 + 36 * int(r / 255 * 5 + 0.5) + 6 * int(g / 255 * 5 + 0.5) + int(b / 255 * 5 + 0.5))
+            }
+            if (esc != last) { out = out esc; last = esc }
+            out = out ch
+        }
+        print out "\033[0m"
+    }'
+}
+
+# How wide the terminal is. `cols=$(tput cols)` looks right and is wrong: inside a command substitution
+# stdout is a pipe, tput cannot measure a pipe, and it quietly answers 80, so a wide terminal would
+# always get the narrow layout. stty reads the controlling terminal directly and is not fooled.
+# RIFT_BANNER_COLS overrides all of it, which is what makes the layouts testable.
+terminal_columns() {
+    local size cols=""
+    case "${RIFT_BANNER_COLS:-}" in
+        '' | *[!0-9]*) ;;
+        *) cols=$RIFT_BANNER_COLS ;;
+    esac
+    if [ -z "$cols" ]; then
+        size=$(stty size </dev/tty 2>/dev/null || true)
+        cols=${size##* }
+    fi
+    case $cols in
+        '' | *[!0-9]*) cols=$(tput cols 2>/dev/null || true) ;;
+    esac
+    case $cols in
+        '' | *[!0-9]* | 0) cols=80 ;;
+    esac
+    printf '%s' "$cols"
+}
+
+print_banner() {
+    local cols mode
+
+    cols=$(terminal_columns)
+
+    # Colour only where it will display properly. Terminal.app, the macOS default, has no 24-bit
+    # colour and renders such sequences wrongly, so it gets the 256-colour approximation instead.
+    mode=none
+    if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != "dumb" ]; then
+        case "${COLORTERM:-}" in
+            truecolor | 24bit) mode=truecolor ;;
+            *)
+                case "${TERM:-}" in
+                    *256color* | *-direct) mode=256 ;;
+                esac
+                ;;
+        esac
+        if [ "${TERM_PROGRAM:-}" = "Apple_Terminal" ]; then mode=256; fi
+    fi
+
+    local left_rows right_rows
+    left_rows=$(printf '%s\n' "$datum_left")
+    right_rows=$(printf '%s\n' "$datum_right")
+
+    local art width rows bar_width=8
+    if [ "$cols" -ge 100 ]; then
+        # Side by side: pad the left word to its column width, then a four column gap.
+        # The right-hand block goes in through the environment, not `awk -v`: -v interprets backslash
+        # escapes, and this art is full of backslashes.
+        art=$(RIGHT_ROWS="$right_rows" awk 'BEGIN { n = split(ENVIRON["RIGHT_ROWS"], R, "\n") } { printf "%-39s    %s\n", $0, R[NR] }' <<<"$left_rows")
+        width=98
+        rows=5
+        bar_width=16
+        if [ "$mode" = "none" ]; then printf '%s\n' "$art"; else printf '%s\n' "$art" | paint_gradient "$mode" "$width" 0 "$rows"; fi
+    elif [ "$cols" -ge 58 ]; then
+        # Stacked: two words, each fits an 80 column window. One gradient runs down both.
+        rows=10
+        bar_width=9
+        if [ "$mode" = "none" ]; then
+            printf '%s\n' "$left_rows" "" "$right_rows"
+        else
+            printf '%s\n' "$left_rows" | paint_gradient "$mode" 39 0 "$rows"
+            printf '%s\n' "$right_rows" | paint_gradient "$mode" 55 5 "$rows"
+        fi
+    else
+        # Too narrow for the art at all.
+        if [ "$mode" = "none" ]; then printf '%s\n' "Datum Software"; else printf '%s\n' "Datum Software" | paint_gradient "$mode" 14 0 1; fi
+    fi
+
+    # The six stripes as a rule underneath, the way the old logo was cut.
+    if [ "$mode" != "none" ] && [ "$cols" -ge 58 ]; then
+        local stripe bar="" seg stripes
+        if [ "$mode" = "truecolor" ]; then
+            stripes="38;2;97;187;70 38;2;253;184;39 38;2;245;130;31 38;2;224;58;62 38;2;150;61;151 38;2;0;157;220"
+        else
+            stripes="38;5;77 38;5;214 38;5;208 38;5;167 38;5;133 38;5;38"
+        fi
+        for stripe in $stripes; do
+            seg=$(printf '━%.0s' $(seq 1 "$bar_width"))
+            bar="${bar}$(printf '\033[%sm%s' "$stripe" "$seg")"
+        done
+        printf '%s\033[0m\n' "$bar"
+    fi
+}
+
 echo -e ""
-echo -e "${MUTED}                    ${NC}             ▄     "
-echo -e "${MUTED}█▀▀█ █▀▀█ █▀▀█ █▀▀▄ ${NC}█▀▀▀ █▀▀█ █▀▀█ █▀▀█"
-echo -e "${MUTED}█░░█ █░░█ █▀▀▀ █░░█ ${NC}█░░░ █░░█ █░░█ █▀▀▀"
-echo -e "${MUTED}▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ${NC}▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀"
+print_banner
 echo -e ""
 echo -e ""
-echo -e "${MUTED}OpenCode includes free models, to start:${NC}"
-echo -e ""
-if [[ $path_added == "true" ]]; then
-    echo -e "exec \$SHELL   ${MUTED}# Reload PATH (or open a new terminal)${NC}"
+# Last resort, for when rift could not be linked into a directory already on PATH (typical of a
+# fresh Mac or a Linux box without ~/.local/bin on PATH). Editing the shell config cannot help the
+# terminal the installer is running in, so instead of asking people to reload it, finish by opening
+# a new shell that already has rift on PATH. The same approach oh-my-zsh takes.
+#
+# It is only done when that is clearly safe and expected: an interactive terminal, not CI, a shell
+# we know how to start, and never when the user opted out with RIFT_NO_SHELL.
+open_shell_ok() {
+    [ -n "$reload_file" ] || return 1
+    [ -z "${RIFT_NO_SHELL:-}" ] || return 1
+    [ -z "${CI:-}" ] || return 1
+    [ -t 1 ] || return 1
+    # stdin is the script itself when piped from curl, so the new shell must read the terminal.
+    { : </dev/tty; } 2>/dev/null || return 1
+    [ -x "${SHELL:-}" ] || return 1
+    case $(basename "$SHELL") in
+        zsh | bash | fish) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+open_shell=false
+if open_shell_ok; then open_shell=true; fi
+
+# A running shell only reads its config at startup, so the terminal this was run in cannot see the
+# PATH change until it is reloaded. Without saying so, a working install looks like a broken one:
+# the next thing anyone types is `rift`, and the answer is "command not found".
+if [ -n "$reload_file" ] && [ "$open_shell" = "false" ]; then
+    # Show ~/.zshrc rather than the absolute path, so the line reads the way people expect. A case
+    # statement instead of ${var/#$HOME/~}, whose tilde handling differs between bash versions and
+    # macOS still ships 3.2.
+    tilde='~'
+    reload_display=$reload_file
+    case $reload_file in
+        "$HOME"/*) reload_display="${tilde}/${reload_file#"$HOME"/}" ;;
+    esac
+    echo -e "${MUTED}First, load rift into this terminal (or just open a new one):${NC}"
+    echo -e ""
+    echo -e "source ${reload_display}"
+    echo -e ""
+    echo -e ""
 fi
+echo -e "${MUTED}RIFT includes free models, to start:${NC}"
+echo -e ""
 echo -e "cd <project>  ${MUTED}# Open directory${NC}"
-echo -e "opencode      ${MUTED}# Run command${NC}"
+echo -e "rift          ${MUTED}# Run command${NC}"
 echo -e ""
-echo -e "${MUTED}For more information visit ${NC}https://opencode.ai/v2/docs"
+echo -e "${MUTED}For more information visit ${NC}https://github.com/Datum-Collective/RIFT-coding-agent"
 echo -e ""
 echo -e ""
+
+if [ "$open_shell" = "true" ]; then
+    echo -e "${MUTED}Opening a new shell with rift ready. Type ${NC}exit${MUTED} to return to the previous one.${NC}"
+    echo -e ""
+    # PATH is set explicitly rather than relying on the shell config being read, because which
+    # startup file a given shell reads differs between login and non-login shells.
+    PATH="$INSTALL_DIR:$PATH" exec "$SHELL" </dev/tty
+fi
