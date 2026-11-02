@@ -11,10 +11,14 @@ import { Permission } from "../permission.js"
 import type { PluginInternal } from "./internal.js"
 import { RiftChecks } from "./rift-verify/checks.js"
 import { RiftGraph } from "./rift-verify/graph.js"
+import { RiftIntegrity } from "./rift-verify/integrity.js"
+import { RiftReceipt } from "./rift-verify/receipt.js"
 import DESCRIPTION from "./rift-verify/graph.txt"
 
 export const ID = "rift.verify"
 export const MAX_ROUNDS = 3
+/** Receipts kept per session; older ones are dropped from the front of the chain. */
+const MAX_RECEIPTS = 50
 const TIMEOUT_MS = 10 * 60 * 1000
 
 const GraphInput = Schema.Struct({
@@ -54,6 +58,11 @@ export const Plugin = define({
         nodes: saved?.nodes ?? ([] as readonly RiftGraph.Node[]),
         proofs: saved?.proofs ?? ([] as readonly RiftGraph.Proof[]),
       }
+    })
+
+    const readReceipts = Effect.fn("RiftVerify.readReceipts")(function* (sessionID: string) {
+      const saved = yield* ctx.storage.get(`receipts:${sessionID}`)
+      return Array.isArray(saved) ? (saved as RiftReceipt.Sealed[]) : []
     })
 
     const rpc = yield* ctx.rpc
@@ -161,6 +170,21 @@ export const Plugin = define({
         // One request at a time, so permission prompts do not stack up.
       )
       const results = [...own, ...evidence]
+      // Did the change make the checks pass by changing the checks? Read from the diff, not from what the agent says.
+      const changes = yield* Effect.promise(() => RiftChecks.diff(directory, files))
+      const findings = RiftIntegrity.review(RiftIntegrity.parse(changes))
+      const tampered = RiftIntegrity.tampered(findings)
+      const chain = yield* readReceipts(sessionID)
+      const sealed = RiftReceipt.seal({
+        session: sessionID,
+        root: directory,
+        head: tree.head,
+        files,
+        results,
+        findings,
+        prev: chain.at(-1)?.digest,
+      })
+      yield* ctx.storage.set(`receipts:${sessionID}`, JSON.parse(JSON.stringify([...chain, sealed].slice(-MAX_RECEIPTS))))
       const proofs: RiftGraph.Proof[] = evidence.map((result, index) => {
         const { node, check } = planned[index]!
         return {
@@ -181,11 +205,15 @@ export const Plugin = define({
       const assessments = RiftGraph.assess(graph.nodes, allProofs, (node) => inputs.get(node.id)!)
       // The checks can take minutes; verify the tree they actually saw, and let a later edit run them again.
       current.verified = tree.fingerprint
-      const decision = RiftChecks.decide(results, current.round, MAX_ROUNDS)
-      const text =
-        graph.nodes.length > 0
-          ? `${RiftChecks.format(results)}\n\n${RiftGraph.format(graph.nodes, assessments)}`
-          : RiftChecks.format(results)
+      const decision = RiftChecks.decide(results, current.round, MAX_ROUNDS, tampered)
+      const text = [
+        RiftChecks.format(results),
+        graph.nodes.length > 0 ? RiftGraph.format(graph.nodes, assessments) : "",
+        RiftIntegrity.format(findings),
+        RiftReceipt.format(sealed),
+      ]
+        .filter(Boolean)
+        .join("\n\n")
       const metadata = { source: "rift-verify", decision: decision.type }
       yield* publish(sessionID, {
         running: false,
@@ -208,7 +236,9 @@ export const Plugin = define({
         sessionID,
         text:
           decision.type === "fix"
-            ? `${text}\n\nThese checks failed on your changes. Fix the code, not the checks.`
+            ? tampered
+              ? `${text}\n\nYour changes weakened the tests or the checks. Restore them and fix the code instead.`
+              : `${text}\n\nThese checks failed on your changes. Fix the code, not the checks.`
             : `${text}\n\nStopped after ${MAX_ROUNDS} fix rounds. Tell the user this work is not proven. Change nothing else.`,
         metadata,
       })

@@ -6,7 +6,7 @@
  * Adapted from koi-screensaver by Erik Johansson (MIT licence), whose intro reads Omarchy's
  * wordmark the same way. See THIRD_PARTY_NOTICES.md.
  */
-import { BANNER_FILL, BANNER_INK, banner, type BannerRun } from "../banner"
+import { BANNER_FILL, BANNER_INK, banner, type BannerColours, type BannerRun } from "../banner"
 import { lum, mix, type Rgb } from "./colour"
 
 export type Logo = {
@@ -62,11 +62,15 @@ function halves(char: string, fg: Rgb, bg: Rgb): [Rgb, Rgb] {
  * otherwise): the shades are the ink partway over it, and a pixel that is the page itself is
  * nothing. A half block to the side is approximated, as an even mix across the whole cell.
  */
-export function logoFromBanner(rows: BannerRun[][], page: Rgb = BLACK): Logo {
+export function logoFromBanner(
+  rows: BannerRun[][],
+  page: Rgb = BLACK,
+  colours: BannerColours = { ink: BANNER_INK, fill: BANNER_FILL },
+): Logo {
   const cells = rows.map((row) =>
     row.flatMap((run) => {
-      const fg = hex(BANNER_INK[run.fg])
-      const bg = run.bg ? hex(BANNER_FILL[run.bg]) : page
+      const fg = hex(colours.ink[run.fg])
+      const bg = run.bg ? hex(colours.fill[run.bg]) : page
       return [...run.text].map((char) => ({ char, top: halves(char, fg, bg)[0], bottom: halves(char, fg, bg)[1] }))
     }),
   )

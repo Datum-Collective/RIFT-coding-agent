@@ -101,7 +101,7 @@ async function mountSelect<T>(
 ) {
   const state = path.join(root, "state")
   await mkdir(state, { recursive: true })
-  const config = createTuiResolvedConfig()
+  const config = createTuiResolvedConfig({ theme: { name: "opencode" } })
   const [
     { ConfigProvider },
     { ThemeProvider },
@@ -387,7 +387,7 @@ test("matches the search cursor to the highlighted row until text is typed under
     () => {},
     () => {},
     undefined,
-    { experimental: { "new-designs": true } },
+    { experimental: { "new-designs": true }, theme: { name: "opencode", mode: "dark" } },
   )
 
   try {

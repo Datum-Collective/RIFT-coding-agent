@@ -1,2 +1,0 @@
-[test]
-preload = ["../ui/test/solid-jsx.ts"]

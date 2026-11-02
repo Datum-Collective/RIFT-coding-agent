@@ -25,6 +25,43 @@ export const BANNER_FILL = {
 export type BannerInk = keyof typeof BANNER_INK
 export type BannerFill = keyof typeof BANNER_FILL
 
+export type BannerColours = {
+  ink: Record<BannerInk, string>
+  fill: Record<BannerFill, string>
+}
+
+/**
+ * The banner in a theme's accent. Only the hue comes from the theme: the banner keeps its own saturation
+ * and brightness (navy is full saturation at two thirds brightness, azure is two thirds saturation at full
+ * brightness), so a pure blue accent gives exactly the original blues and any other hue is just as vivid.
+ * An accent that is nearly grey has no hue to take, and leaves the banner as drawn.
+ */
+export function bannerColours(accent?: { r: number; g: number; b: number }): BannerColours {
+  const base = { ink: BANNER_INK, fill: BANNER_FILL }
+  if (!accent) return base
+  const max = Math.max(accent.r, accent.g, accent.b)
+  const min = Math.min(accent.r, accent.g, accent.b)
+  if (max === 0 || (max - min) / max < 0.25) return base
+  const delta = max - min
+  const hue =
+    max === accent.r
+      ? ((accent.g - accent.b) / delta + 6) % 6
+      : max === accent.g
+        ? (accent.b - accent.r) / delta + 2
+        : (accent.r - accent.g) / delta + 4
+  const rgb = (s: number, v: number) => {
+    const channel = (n: number) => {
+      const k = (n + hue) % 6
+      return hexByte(v * (1 - s * Math.max(0, Math.min(k, 4 - k, 1))))
+    }
+    return "#" + channel(5) + channel(3) + channel(1)
+  }
+  const navy = rgb(1, 2 / 3)
+  return { ink: { ...BANNER_INK, navy, azure: rgb(2 / 3, 1) }, fill: { ...BANNER_FILL, navy } }
+}
+
+const hexByte = (value: number) => Math.max(0, Math.min(255, Math.round(value * 255))).toString(16).padStart(2, "0").toUpperCase()
+
 export type BannerRun = {
   text: string
   fg: BannerInk

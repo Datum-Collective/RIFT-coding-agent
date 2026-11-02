@@ -6,7 +6,7 @@
  * Adapted from koi-screensaver by Erik Johansson (MIT licence), whose palette is built from the
  * desktop theme's red, yellow, green and magenta. See THIRD_PARTY_NOTICES.md.
  */
-import { mix, lum, type Rgb } from "./colour"
+import { dist2, mix, lum, type Rgb } from "./colour"
 
 export const Tag = {
   water: 0,
@@ -50,8 +50,22 @@ export type Palette = {
 
 const BLACK: Rgb = { r: 0, g: 0, b: 0 }
 
-export function riftPalette(input: { background: Rgb; text: Rgb; muted: Rgb; primary: Rgb }): Palette {
-  const { background: bg, text: fg, muted, primary } = input
+/**
+ * The koi's blue, RIFT's own rather than a theme token: v2 themes alias their action text to the
+ * body text, which turned every blue scale white.
+ */
+export const AZURE: Rgb = { r: 47, g: 129, b: 247 }
+
+/**
+ * The koi's blue for a theme: its accent, unless that is close to the body text (a theme whose
+ * accent is white), when the scales would go white, so RIFT's own azure.
+ */
+export function koiAccent(accent: Rgb, text: Rgb): Rgb {
+  return Math.sqrt(dist2(accent, text)) < 70 ? AZURE : accent
+}
+
+export function riftPalette(input: { background: Rgb; text: Rgb; muted: Rgb; primary?: Rgb }): Palette {
+  const { background: bg, text: fg, muted, primary = AZURE } = input
   const dark = lum(bg) < 0.5
   const lightest = dark ? fg : bg
   const darkest = dark ? BLACK : fg

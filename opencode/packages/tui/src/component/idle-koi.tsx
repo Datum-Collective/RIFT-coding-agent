@@ -20,8 +20,9 @@ import { useTheme } from "../context/theme"
 import { createIdle, isTyping, type Clock } from "../util/idle"
 import { logoAnchor } from "./banner-anchor"
 import { logoFromBanner } from "../koi/logo"
+import { bannerColours } from "../banner"
 import { banner } from "../banner"
-import { riftPalette } from "../koi/palette"
+import { koiAccent, riftPalette } from "../koi/palette"
 import { createPond, sceneFor, type Pond, type Scene } from "../koi/pond"
 import { paintCells } from "../koi/paint"
 
@@ -114,7 +115,7 @@ export function IdleKoi(props: {
     const logoAt = (intro: boolean) => {
       const at = logoAnchor.read()
       // Drawn over the page it is on, so the shades blend as the terminal blends them.
-      return at ? { logo: logoFromBanner(banner, channels(theme.background.base)), col: at.col, row: at.row, intro } : undefined
+      return at ? { logo: logoFromBanner(banner, channels(theme.background.base), bannerColours(channels(theme.hue.accent[400]))), col: at.col, row: at.row, intro } : undefined
     }
 
     const build = (width: number, height: number, intro: boolean) => {
@@ -122,7 +123,7 @@ export function IdleKoi(props: {
         background: channels(theme.background.base),
         text: channels(theme.text.base),
         muted: channels(theme.text.muted),
-        primary: channels(theme.text.action.primary.base),
+        primary: koiAccent(channels(theme.hue.accent[400]), channels(theme.text.base)),
       })
       return createPond({ cols: width, rows: height, aspect: ASPECT, palette, seed, scene: props.scene ?? sceneFor(seed), logo: logoAt(intro) })
     }
@@ -263,7 +264,7 @@ export function IdleKoi(props: {
 
   // The pond's colours come from the theme when it is made, so a theme that changes while it is out
   // (the terminal went from light to dark) needs a new one.
-  const colours = () => [theme.background.base, theme.text.base, theme.text.muted, theme.text.action.primary.base].map((c) => `${c.r},${c.g},${c.b}`).join("|")
+  const colours = () => [theme.background.base, theme.text.base, theme.text.muted, theme.hue.accent[400]].map((c) => `${c.r},${c.g},${c.b}`).join("|")
   createEffect(on(colours, () => refresh?.(), { defer: true }))
 
   return null

@@ -53,5 +53,7 @@ test("shows each check and the graph's verdicts, nested", async () => {
   expect(text).toContain("○ bun run lint (permission denied)")
   expect(text).toContain("Engineering graph")
   expect(text).toContain("⚠ Product · at risk")
-  expect(text).toContain("  ⟳ Value · stale")
+  expect(text).toContain("0/2 proven")
+  expect(text).toContain("└─ ⟳ Value · stale")
+  expect(text).toContain("↳ waiting on Value")
 })

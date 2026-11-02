@@ -1991,7 +1991,7 @@ async function renderDiffViewer(
   const turnDiffRequests: URL[] = []
   const branchesRequests: URL[] = []
   const mutationRequests: URL[] = []
-  const config = createTuiResolvedConfig(stored.info)
+  const config = createTuiResolvedConfig({ ...stored.info, theme: { name: "opencode" } })
   const transport = createFetch(async (url, request) => {
     if (request.method !== "GET") mutationRequests.push(url)
     if (url.pathname.startsWith("/api/fs/read/")) {
