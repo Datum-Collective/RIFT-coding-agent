@@ -83,7 +83,7 @@ test("custom commands commit the captured agent, model and variant before execut
     setup.mockInput.pressEnter()
     await setup.waitForFrame(
       (frame) =>
-        frame.includes("Plan · second model Demo · low") &&
+        frame.includes("Plan · second model · low") &&
         setup.renderer.currentFocusedRenderable instanceof TextareaRenderable,
     )
     await setup.mockInput.typeText("/review selected input")
@@ -93,7 +93,7 @@ test("custom commands commit the captured agent, model and variant before execut
     expect(mutations).toEqual([{ type: "agent", body: { agent: "plan" } }])
 
     // A later local edit must not change the in-flight command's selection.
-    await waitForFrame(setup, (frame) => frame.includes("Plan · second model Demo · low"))
+    await waitForFrame(setup, (frame) => frame.includes("Plan · second model · low"))
     setup.mockInput.pressKey("F7")
     await waitForFrame(setup, (frame) => frame.includes("high"))
     agent.resolve(new Response(null, { status: 204 }))

@@ -106,16 +106,6 @@ export function PromptFooter(props: {
               </Show>
             </box>
           </Match>
-          <Match when={props.showDetails && layout().shortcuts}>
-            <text
-              fg={interactive() ? props.context.theme.text.base : props.context.theme.text.action.primary.disabled}
-              attributes={interactive() ? 0 : TextAttributes.DIM}
-              flexShrink={0}
-            >
-              {shortcut("agent.cycle")}{" "}
-              <span style={interactive() ? { fg: props.context.theme.text.muted } : {}}>agents</span>
-            </text>
-          </Match>
         </Switch>
         <Show when={props.showDetails && layout().shortcuts}>
           <text

@@ -584,7 +584,7 @@ test("automatic rename refreshes the displayed title before settling, even witho
   })
 
   try {
-    await setup.waitForFrame((frame) => frame.includes(session.title) && frame.includes("Build · Model Provider"))
+    await setup.waitForFrame((frame) => frame.includes(session.title) && frame.includes("Build · Model"))
     await setup.mockInput.typeText("/rename")
     setup.mockInput.pressEscape()
     setup.mockInput.pressEnter()
@@ -1024,7 +1024,7 @@ test.each([false, true])("uses the resolved launch directory for new prompts (fa
   })
 
   await setup.ready
-  await setup.waitForFrame((frame) => frame.includes("Build · Remote Model Provider"))
+  await setup.waitForFrame((frame) => frame.includes("Build · Remote Model"))
   setup.mockInput.pressKey("F6")
   await setup.renderOnce()
   await setup.mockInput.typeText("REMOTE_READY")
@@ -1309,7 +1309,7 @@ test("keeps the prompt display stable while a new location catalog loads", async
 
   try {
     await setup.ready
-    await setup.waitForFrame((frame) => frame.includes("Build · Source Model Provider"))
+    await setup.waitForFrame((frame) => frame.includes("Build · Source Model"))
     const agentSpan = () =>
       setup
         .captureSpans()
@@ -1340,15 +1340,15 @@ test("keeps the prompt display stable while a new location catalog loads", async
     ])
     await setup.renderOnce()
 
-    expect(setup.captureCharFrame()).toContain("Build · Source Model Provider")
+    expect(setup.captureCharFrame()).toContain("Build · Source Model")
     expect(agentSpan()?.fg.toInts()).toEqual(sourceAgentColor)
 
     catalog.resolve()
-    const resolved = await setup.waitForFrame((frame) => frame.includes("Build · Target Model provider"))
+    const resolved = await setup.waitForFrame((frame) => frame.includes("Build · Target Model"))
     expect(resolved).not.toContain("Source Model")
 
     providerCatalog.resolve()
-    await setup.waitForFrame((frame) => frame.includes("Build · Target Model Provider"))
+    await setup.waitForFrame((frame) => frame.includes("Build · Target Model"))
   } finally {
     locationCatalog.resolve()
     catalog.resolve()
