@@ -16,7 +16,6 @@ import { useLocal } from "../../context/local"
 import { useTheme, useThemes } from "../../context/theme"
 import { tint } from "../../theme/color"
 import { createAnimatable, tween } from "../../ui/animation"
-import { EmptyBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { useClipboard } from "../../context/clipboard"
 import { Spinner } from "../spinner"
@@ -1680,15 +1679,8 @@ export function Prompt(props: PromptProps) {
   return (
     <>
       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
-        {/* RIFT: half-height caps above and below keep the input block to a single visual row. */}
-        <box height={1}>
-          <box
-            height={1}
-            border={["top"]}
-            borderColor={promptBg()}
-            customBorderChars={{ ...EmptyBorder, horizontal: promptBg().a !== 0 ? "▄" : " " }}
-          />
-        </box>
+        {/* RIFT: one tinted row above and below the text, Codex's padding. */}
+        <box height={1} width="100%" backgroundColor={promptBg()} />
         <box width="100%">
           <box
             paddingLeft={dimensions().width < 44 ? 1 : 2}
@@ -1863,24 +1855,7 @@ export function Prompt(props: PromptProps) {
             </box>
           </box>
         </box>
-        <box height={1}>
-          <box
-            height={1}
-            border={["bottom"]}
-            borderColor={promptBg()}
-            customBorderChars={
-              promptBg().a !== 0
-                ? {
-                    ...EmptyBorder,
-                    horizontal: "▀",
-                  }
-                : {
-                    ...EmptyBorder,
-                    horizontal: " ",
-                  }
-            }
-          />
-        </box>
+        <box height={1} width="100%" backgroundColor={promptBg()} />
         <box
           width="100%"
           flexDirection="row"
