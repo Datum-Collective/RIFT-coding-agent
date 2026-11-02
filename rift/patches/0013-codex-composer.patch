@@ -1,5 +1,5 @@
 diff --git a/opencode/packages/tui/src/component/prompt/index.tsx b/opencode/packages/tui/src/component/prompt/index.tsx
-index 075f037dcc..320b7c1bf6 100644
+index 075f037dcc..77af5b2a3b 100644
 --- a/opencode/packages/tui/src/component/prompt/index.tsx
 +++ b/opencode/packages/tui/src/component/prompt/index.tsx
 @@ -7,6 +7,7 @@ import {
@@ -10,16 +10,15 @@ index 075f037dcc..320b7c1bf6 100644
    type KeyEvent,
  } from "@opentui/core"
  import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match, For } from "solid-js"
-@@ -15,7 +16,7 @@ import { useLocal } from "../../context/local"
+@@ -15,7 +16,6 @@ import { useLocal } from "../../context/local"
  import { useTheme, useThemes } from "../../context/theme"
  import { tint } from "../../theme/color"
  import { createAnimatable, tween } from "../../ui/animation"
 -import { EmptyBorder, SplitBorder } from "../../ui/border"
-+import { EmptyBorder } from "../../ui/border"
  import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
  import { useClipboard } from "../../context/clipboard"
  import { Spinner } from "../spinner"
-@@ -1607,7 +1608,6 @@ export function Prompt(props: PromptProps) {
+@@ -1607,7 +1607,6 @@ export function Prompt(props: PromptProps) {
    createEffect(() => {
      if (agentLabel()) revealedPromptMetadata.add(local)
    })
@@ -27,7 +26,7 @@ index 075f037dcc..320b7c1bf6 100644
    const footerInput = () => ({
      sessionID: props.sessionID,
      mode: store.mode,
-@@ -1621,7 +1621,7 @@ export function Prompt(props: PromptProps) {
+@@ -1621,7 +1620,7 @@ export function Prompt(props: PromptProps) {
          return `Run a command… "${shell()[store.placeholder % shell().length]}"`
        }
        if (!list().length) return undefined
@@ -36,7 +35,7 @@ index 075f037dcc..320b7c1bf6 100644
      })()
      if (!value) return undefined
      const width = dimensions().width < 44 ? dimensions().width - 5 : Math.min(75, dimensions().width - 4) - 5
-@@ -1680,19 +1680,19 @@ export function Prompt(props: PromptProps) {
+@@ -1680,19 +1679,12 @@ export function Prompt(props: PromptProps) {
    return (
      <>
        <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
@@ -49,15 +48,8 @@ index 075f037dcc..320b7c1bf6 100644
 -            bottomLeft: "╹",
 -          }}
 -        >
-+        {/* RIFT: half-height caps above and below keep the input block to a single visual row. */}
-+        <box height={1}>
-+          <box
-+            height={1}
-+            border={["top"]}
-+            borderColor={promptBg()}
-+            customBorderChars={{ ...EmptyBorder, horizontal: promptBg().a !== 0 ? "▄" : " " }}
-+          />
-+        </box>
++        {/* RIFT: one tinted row above and below the text, Codex's padding. */}
++        <box height={1} width="100%" backgroundColor={promptBg()} />
 +        <box width="100%">
            <box
              paddingLeft={dimensions().width < 44 ? 1 : 2}
@@ -66,7 +58,7 @@ index 075f037dcc..320b7c1bf6 100644
              flexShrink={0}
              backgroundColor={promptBg()}
              flexGrow={1}
-@@ -1766,120 +1766,104 @@ export function Prompt(props: PromptProps) {
+@@ -1766,138 +1758,112 @@ export function Prompt(props: PromptProps) {
                  </Show>
                </box>
              </Show>
@@ -269,7 +261,8 @@ index 075f037dcc..320b7c1bf6 100644
              </box>
            </box>
          </box>
--        <box
++        <box height={1} width="100%" backgroundColor={promptBg()} />
+         <box
 -          height={1}
 -          border={["left"]}
 -          borderColor={borderHighlight()}
@@ -277,28 +270,35 @@ index 075f037dcc..320b7c1bf6 100644
 -            ...EmptyBorder,
 -            vertical: promptBg().a !== 0 ? "╹" : " ",
 -          }}
--        >
-+        <box height={1}>
-           <box
-             height={1}
-             border={["bottom"]}
-@@ -1897,7 +1881,14 @@ export function Prompt(props: PromptProps) {
-             }
-           />
-         </box>
--        <box width="100%" flexDirection="row" justifyContent="space-between" gap={2}>
-+        <box
 +          width="100%"
 +          flexDirection="row"
 +          justifyContent="space-between"
 +          gap={2}
 +          paddingLeft={dimensions().width < 44 ? 1 : 2}
 +          paddingRight={dimensions().width < 44 ? 1 : 2}
-+        >
+         >
+-          <box
+-            height={1}
+-            border={["bottom"]}
+-            borderColor={promptBg()}
+-            customBorderChars={
+-              promptBg().a !== 0
+-                ? {
+-                    ...EmptyBorder,
+-                    horizontal: "▀",
+-                  }
+-                : {
+-                    ...EmptyBorder,
+-                    horizontal: " ",
+-                  }
+-            }
+-          />
+-        </box>
+-        <box width="100%" flexDirection="row" justifyContent="space-between" gap={2}>
            <Slot path="prompt.footer" input={footerInput()}>
              <Slot path="prompt.footer.status" input={footerInput()}>
                <box
-@@ -1945,23 +1936,42 @@ export function Prompt(props: PromptProps) {
+@@ -1945,23 +1911,42 @@ export function Prompt(props: PromptProps) {
                      </box>
                    </Match>
                    <Match when={true}>
