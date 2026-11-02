@@ -1,0 +1,20 @@
+diff --git a/opencode/packages/core/src/plugin/internal.ts b/opencode/packages/core/src/plugin/internal.ts
+index 7db8143c24..5b11f59bff 100644
+--- a/opencode/packages/core/src/plugin/internal.ts
++++ b/opencode/packages/core/src/plugin/internal.ts
+@@ -98,6 +98,7 @@ import { CommandPlugin } from "./command.js"
+ import { IdentityPlugin } from "./identity.js"
+ import { PlanPlugin } from "./plan.js"
+ import { GoalPlugin } from "./goal.js"
++import { RiftVerifyPlugin } from "./rift-verify.js"
+ import { ModelsDevPlugin } from "./models-dev.js"
+ import { McpCodeModeDefaultsPlugin } from "./mcp-codemode-defaults.js"
+ import { ProviderPlugins } from "./provider.js"
+@@ -236,6 +237,7 @@ const pre = [
+   PlanPlugin.Plugin,
+   CommandPlugin.Plugin,
+   GoalPlugin.Plugin,
++  RiftVerifyPlugin.Plugin,
+   SkillPlugin.Plugin,
+   VcsHgPlugin.Plugin,
+   ModelsDevPlugin,

@@ -42,7 +42,7 @@ export const Basic = {
     <div style={{ display: "grid", gap: "8px" }}>
       <mod.Font />
       <div style={{ "font-family": "var(--font-family-sans)" }}>OpenCode Sans Sample</div>
-      <div style={{ "font-family": "var(--font-family-mono)" }}>RIFT Mono Sample</div>
+      <div style={{ "font-family": "var(--font-family-mono)" }}>OpenCode Mono Sample</div>
     </div>
   ),
 }

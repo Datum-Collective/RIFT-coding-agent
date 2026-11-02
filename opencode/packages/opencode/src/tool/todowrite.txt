@@ -1,1 +1,0 @@
-Keep a task list for work with 3 or more steps; skip it for simple tasks. Statuses: pending, in_progress (exactly one), completed, cancelled. Update as you go; mark completed only after the work is verified.

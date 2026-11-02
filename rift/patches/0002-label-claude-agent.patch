@@ -1,0 +1,13 @@
+diff --git a/opencode/packages/core/src/plugin/provider/claude-agent/integration.ts b/opencode/packages/core/src/plugin/provider/claude-agent/integration.ts
+index 3e6f09490a..7dfbc3516a 100644
+--- a/opencode/packages/core/src/plugin/provider/claude-agent/integration.ts
++++ b/opencode/packages/core/src/plugin/provider/claude-agent/integration.ts
+@@ -20,7 +20,7 @@ export const register = Effect.fn("ClaudeIntegration.register")(function* (
+ ) {
+   yield* ctx.integration.transform((editor) => {
+     editor.update(ClaudeProvider.ID, (integration) => {
+-      integration.name = "Claude Agent"
++      integration.name = "Claude Agent (uses your own Claude Code login)"
+     })
+     editor.method.update({
+       integrationID: ClaudeProvider.ID,

@@ -109,8 +109,11 @@ jobs:
                  --title "$TAG" --generate-notes --draft
 
       - name: Build every target and upload the archives
-        run: ./packages/opencode/script/build.ts
+        run: |
+          (cd packages/cli && bun run script/build.ts --skip-web-ui)
+          ./script/rift-package.sh --upload "$TAG"
         env:
+          TAG: ${{ steps.version.outputs.tag }}
           # Setting this makes packages/script use the tag verbatim instead of asking npm for
           # the latest opencode-ai version, which is not this fork.
           OPENCODE_VERSION: ${{ steps.version.outputs.version }}
@@ -182,20 +185,14 @@ jobs:
           for cmd in rift opencode; do
             got=$(bash -ic "$cmd --version" 2>/dev/null | tail -1)
             echo "$cmd --version -> '$got'"
-            [ "$got" = "$VERSION" ] || { echo "::error::$cmd reported '$got', expected RIFT '$VERSION'"; exit 1; }
+            [ "$got" = "rift v$VERSION" ] || { echo "::error::$cmd reported '$got', expected 'rift v$VERSION'"; exit 1; }
           done
 
-      - name: The binary knows which RIFT release it is
+      - name: The installer recorded the release
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          # The update check compares the embedded release with GitHub, and a build that embedded the
-          # wrong one would offer an update to itself on every launch. `--version` is checked above;
-          # this asks the same question of `debug info`, which also names the OpenCode runtime.
-          got=$(bash -ic "rift debug info" 2>/dev/null | sed -n 's/^rift version: //p' | tail -1)
-          echo "rift version (embedded) -> '$got'"
-          [ "$got" = "$VERSION" ] || { echo "::error::binary reports RIFT '$got', expected '$VERSION'"; exit 1; }
-          # And the installer recorded the same release, which is what it checks before reinstalling.
+          # The installer compares this file with GitHub before reinstalling.
           recorded=$(tr -d '[:space:]' < "$HOME/.rift/bin/rift.version")
           echo "rift.version (recorded) -> '$recorded'"
           [ "$recorded" = "$VERSION" ] || { echo "::error::installer recorded '$recorded', expected '$VERSION'"; exit 1; }
@@ -217,13 +214,8 @@ jobs:
           foreach ($cmd in @("$bin\rift.exe", "$bin\opencode.cmd")) {
             $got = (& $cmd --version | Select-Object -Last 1)
             Write-Host "$cmd --version -> '$got'"
-            if ($got -ne $env:VERSION) { throw "$cmd reported '$got', expected RIFT '$env:VERSION'" }
+            if ($got -ne "rift v$env:VERSION") { throw "$cmd reported '$got', expected 'rift v$env:VERSION'" }
           }
-          # The update check compares the embedded release with GitHub, and the wrong one would offer
-          # an update on every launch; `debug info` states it next to the OpenCode runtime.
-          $line = (& "$bin\rift.exe" debug info | Where-Object { $_ -like 'rift version: *' } | Select-Object -Last 1)
-          Write-Host "rift version (embedded) -> '$line'"
-          if ($line -ne "rift version: $env:VERSION") { throw "binary reports '$line', expected 'rift version: $env:VERSION'" }
           $recorded = (Get-Content (Join-Path $bin 'rift.version') -Raw).Trim()
           if ($recorded -ne $env:VERSION) { throw "installer recorded '$recorded', expected '$env:VERSION'" }
 

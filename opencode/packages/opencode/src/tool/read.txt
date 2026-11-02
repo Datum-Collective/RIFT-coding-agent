@@ -1,1 +1,0 @@
-Read a file or directory (absolute path): up to 2000 lines from `offset`, each as `<line>: <content>`; long lines are truncated. Reads images and PDFs as attachments. Read bigger windows and several files in parallel; use grep and glob to locate things.

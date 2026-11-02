@@ -1,1 +1,0 @@
-Write a file, overwriting any existing one. Read an existing file first. Prefer editing over creating files, and do not create documentation files unless asked.

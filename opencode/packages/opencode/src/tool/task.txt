@@ -1,1 +1,0 @@
-Delegate a multi-step task to a subagent (`subagent_type`); it returns one final message. Not for reading a known file or searching a few files. Launch independent agents in one message and do not duplicate their work. The result is not shown to the user, so summarise it. Make the prompt self-contained and say what to return. `task_id` resumes a session.

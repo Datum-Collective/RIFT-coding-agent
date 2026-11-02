@@ -41,19 +41,19 @@ const eligible: Placed[] = []
  */
 export function paintCells(buffer: OptimizedBuffer, cells: readonly Placed[], page?: { r: number; g: number; b: number }) {
   const { width, height } = buffer
-  const { char, bg } = buffer.buffers
+  buffer.withBuffers(({ char, bg }) => {
+    const [r, g, b, a] = page ? [Math.round(page.r), Math.round(page.g), Math.round(page.b), 255] : [bg[0]!, bg[1]!, bg[2]!, bg[3]!]
 
-  const [r, g, b, a] = page ? [Math.round(page.r), Math.round(page.g), Math.round(page.b), 255] : [bg[0]!, bg[1]!, bg[2]!, bg[3]!]
-
-  eligible.length = 0
-  for (const cell of cells) {
-    if (cell.col < 0 || cell.col >= width || cell.row < 0 || cell.row >= height) continue
-    const at = cell.row * width + cell.col
-    if (filled(char[at])) continue
-    const own = at * 4
-    if (bg[own] !== r || bg[own + 1] !== g || bg[own + 2] !== b || bg[own + 3] !== a) continue
-    eligible.push(cell)
-  }
+    eligible.length = 0
+    for (const cell of cells) {
+      if (cell.col < 0 || cell.col >= width || cell.row < 0 || cell.row >= height) continue
+      const at = cell.row * width + cell.col
+      if (filled(char[at])) continue
+      const own = at * 4
+      if (bg[own] !== r || bg[own + 1] !== g || bg[own + 2] !== b || bg[own + 3] !== a) continue
+      eligible.push(cell)
+    }
+  })
   for (const cell of eligible) buffer.setCell(cell.col, cell.row, quadrant(cell.mask), colour(cell.fg), colour(cell.bg))
   const drawn = eligible.length
   eligible.length = 0

@@ -1,3 +1,0 @@
-<system-reminder>
-Plan mode is active. You are read-only: do not edit files, run commands that change anything, or use the shell to write. Think, read, search and use explore agents to build a plan; ask the user when tradeoffs are unclear.
-</system-reminder>

@@ -1,32 +1,26 @@
 import { TextAttributes } from "@opentui/core"
-import { useTheme } from "../context/theme"
+import type { ResolvedTheme } from "@opencode/theme/tui"
+import { todoMarker, type Todo } from "../util/todo"
 
-export interface TodoItemProps {
-  status: string
-  content: string
-}
-
-/** One plan step: ✓ done, ▸ in progress, · pending, ⊘ cancelled. */
-export function TodoItem(props: TodoItemProps) {
-  const { theme } = useTheme()
-  const glyph = () =>
-    props.status === "completed" ? "✓" : props.status === "in_progress" ? "▸" : props.status === "cancelled" ? "⊘" : "·"
-  const glyphColor = () =>
-    props.status === "completed" ? theme.success : props.status === "in_progress" ? theme.primary : theme.border
-  const textColor = () => (props.status === "in_progress" ? theme.text : theme.textMuted)
+export function TodoItem(props: { theme: ResolvedTheme; todo: Todo }) {
+  const fg = () => {
+    if (props.todo.status === "in_progress") return props.theme.text.feedback.warning.base
+    if (props.todo.status === "cancelled") return props.theme.text.faint
+    return props.theme.text.muted
+  }
 
   return (
-    <box flexDirection="row">
-      <text flexShrink={0} width={2} fg={glyphColor()}>
-        {glyph()}
+    <box flexDirection="row" gap={0}>
+      <text flexShrink={0} fg={fg()}>
+        {todoMarker(props.todo.status)}{" "}
       </text>
       <text
         flexGrow={1}
         wrapMode="word"
-        fg={textColor()}
-        attributes={props.status === "cancelled" ? TextAttributes.STRIKETHROUGH : undefined}
+        fg={fg()}
+        attributes={props.todo.status === "cancelled" ? TextAttributes.STRIKETHROUGH : undefined}
       >
-        {props.content}
+        {props.todo.content}
       </text>
     </box>
   )

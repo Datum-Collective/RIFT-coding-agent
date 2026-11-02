@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { OptimizedBuffer, RGBA } from "@opentui/core"
+import { OptimizedBuffer, RGBA, ResourceContext } from "@opentui/core"
 import { paintCells } from "../../src/koi/paint"
 import type { Placed } from "../../src/koi/pond"
 
@@ -8,7 +8,7 @@ const PANEL = RGBA.fromInts(32, 36, 44, 255)
 const WHITE = RGBA.fromValues(1, 1, 1, 1)
 
 function screen() {
-  const buffer = OptimizedBuffer.create(10, 4, "wcwidth", { respectAlpha: true } as never)
+  const buffer = OptimizedBuffer.create(10, 4, "wcwidth", { respectAlpha: true, owner: new ResourceContext({ objectCapacity: 8, renderCellsMax: 100_000 }) })
   buffer.clear(PAGE)
   return buffer
 }
@@ -33,8 +33,8 @@ describe("paintCells", () => {
     const buffer = screen()
     expect(paintCells(buffer, [cell(3, 1, 5, [47, 129, 247], [10, 20, 30])])).toBe(1)
     expect(charAt(buffer, 3, 1)).toBe("▌")
-    expect(word(buffer.buffers.fg, buffer, 3, 1)).toEqual([47, 129, 247])
-    expect(word(buffer.buffers.bg, buffer, 3, 1)).toEqual([10, 20, 30])
+    expect(word(buffer.withBuffers((cells) => cells.fg.slice()), buffer, 3, 1)).toEqual([47, 129, 247])
+    expect(word(buffer.withBuffers((cells) => cells.bg.slice()), buffer, 3, 1)).toEqual([10, 20, 30])
     expect(charAt(buffer, 4, 1)).toBe(" ")
   })
 
@@ -50,7 +50,7 @@ describe("paintCells", () => {
     buffer.setCell(3, 1, " ", WHITE, PANEL)
     expect(paintCells(buffer, [cell(3, 1)])).toBe(0)
     expect(charAt(buffer, 3, 1)).toBe(" ")
-    expect(word(buffer.buffers.bg, buffer, 3, 1)).toEqual([32, 36, 44])
+    expect(word(buffer.withBuffers((cells) => cells.bg.slice()), buffer, 3, 1)).toEqual([32, 36, 44])
   })
 
   test("a koi's cell can sit right beside text, since a body is not a speck that splits a word", () => {
@@ -68,7 +68,7 @@ describe("paintCells", () => {
     backward.drawText("hi", 2, 1, WHITE)
     const cells = [cell(0, 1), cell(1, 1), cell(2, 1), cell(3, 1), cell(4, 1), cell(5, 1)]
     expect(paintCells(forward, cells)).toBe(paintCells(backward, [...cells].reverse()))
-    expect(Array.from(forward.buffers.char)).toEqual(Array.from(backward.buffers.char))
+    expect(Array.from(forward.withBuffers((cells) => cells.char.slice()))).toEqual(Array.from(backward.withBuffers((cells) => cells.char.slice())))
   })
 
   test("cells off the buffer are ignored rather than crashing", () => {
@@ -81,7 +81,7 @@ describe("paintCells", () => {
     const buffer = screen()
     paintCells(buffer, [cell(2, 2, 0, [20, 30, 40], [20, 30, 40])])
     expect(charAt(buffer, 2, 2)).toBe(" ")
-    expect(word(buffer.buffers.bg, buffer, 2, 2)).toEqual([20, 30, 40])
+    expect(word(buffer.withBuffers((cells) => cells.bg.slice()), buffer, 2, 2)).toEqual([20, 30, 40])
   })
 
   test("it goes on working through many thousands of different colours, as a long fade-in makes", () => {
@@ -89,7 +89,7 @@ describe("paintCells", () => {
       const buffer = screen()
       const cells = Array.from({ length: 40 }, (_, index) => cell(index % 10, Math.floor(index / 10), 5, [(round * 4 + index) % 256, index * 6 % 256, round], [0, round, index]))
       expect(paintCells(buffer, cells)).toBe(40)
-      expect(word(buffer.buffers.fg, buffer, 0, 0)).toEqual([(round * 4) % 256, 0, round])
+      expect(word(buffer.withBuffers((cells) => cells.fg.slice()), buffer, 0, 0)).toEqual([(round * 4) % 256, 0, round])
     }
   })
 
@@ -102,7 +102,7 @@ describe("paintCells", () => {
   })
 
   test("a dimming scrim over everything is not the page: nothing is painted through it", () => {
-    const buffer = OptimizedBuffer.create(10, 4, "wcwidth", { respectAlpha: true } as never)
+    const buffer = OptimizedBuffer.create(10, 4, "wcwidth", { respectAlpha: true, owner: new ResourceContext({ objectCapacity: 8, renderCellsMax: 100_000 }) })
     buffer.clear(PANEL)
     expect(paintCells(buffer, [cell(3, 1), cell(0, 0)], { r: 0, g: 0, b: 0 })).toBe(0)
     // Without being told the page's colour it takes the top left cell for it, as before.

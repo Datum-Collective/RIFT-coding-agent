@@ -1,5 +1,0 @@
-Maintain the live engineering graph the user watches. You declare how each node is proven; RIFT runs the checks and records the evidence. You cannot mark a node proven.
-- One root node (no parent_id), features beneath it, provable requirements beneath those. Each call replaces the whole graph: pass every node.
-- Node status: not_started, in_progress, blocked, testing, done, failed.
-- Check kinds with a `command` (pass on exit 0; set cwd outside the working directory): typecheck, unit, integration, static, security, load. With a `url`: browser (fails on console errors), screenshot, http and production (fail on 4xx/5xx); file:// works.
-- Prefer narrow checks over the whole suite. Create the tree early on multi-step builds and keep it current.

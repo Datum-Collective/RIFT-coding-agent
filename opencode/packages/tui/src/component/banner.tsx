@@ -1,22 +1,17 @@
 import { RGBA } from "@opentui/core"
-import { For, onCleanup, Show } from "solid-js"
+import { createMemo, For, onCleanup, Show } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
-import { banner, BANNER_FILL, BANNER_INK, BANNER_WIDTH, type BannerFill, type BannerInk } from "../banner"
+import { banner, bannerColours, BANNER_WIDTH } from "../banner"
+import { useTheme } from "../context/theme"
 import { Logo } from "./logo"
 import { logoAnchor } from "./banner-anchor"
 
-// The banner is a fixed-palette drawing, so its colours are reproduced exactly rather than
-// mapped onto the theme: two of its five inks are greys that differ only in value, and
-// collapsing them onto theme tokens turns the artwork into noise.
-const INK = Object.fromEntries(Object.entries(BANNER_INK).map(([name, hex]) => [name, RGBA.fromHex(hex)])) as Record<
-  BannerInk,
-  RGBA
->
-
-const FILL = Object.fromEntries(Object.entries(BANNER_FILL).map(([name, hex]) => [name, RGBA.fromHex(hex)])) as Record<
-  BannerFill,
-  RGBA
->
+// The banner is a fixed drawing, so its colours are reproduced exactly rather than mapped onto
+// theme tokens (two of its inks are greys that differ only in value). Only its two blues follow
+// the theme: they become the theme's accent.
+const rgba = (c: RGBA) => ({ r: c.r * 255, g: c.g * 255, b: c.b * 255 })
+const toRgba = <K extends string>(colours: Record<K, string>) =>
+  Object.fromEntries(Object.entries<string>(colours).map(([name, hex]) => [name, RGBA.fromHex(hex)])) as Record<K, RGBA>
 
 /** Whether the full banner fits, leaving room for the screen's side padding. */
 export function bannerFits(terminalWidth: number) {
@@ -26,6 +21,10 @@ export function bannerFits(terminalWidth: number) {
 export function Banner() {
   const dimensions = useTerminalDimensions()
   const fits = () => bannerFits(dimensions().width)
+  const theme = useTheme()
+  const colours = createMemo(() => bannerColours(rgba(theme.hue.accent[400])))
+  const INK = createMemo(() => toRgba(colours().ink))
+  const FILL = createMemo(() => toRgba(colours().fill))
 
   return (
     <Show when={fits()} fallback={<Logo />}>
@@ -45,7 +44,7 @@ export function Banner() {
             {(row) => (
               <text selectable={false}>
                 <For each={row}>
-                  {(run) => <span style={{ fg: INK[run.fg], bg: run.bg ? FILL[run.bg] : undefined }}>{run.text}</span>}
+                  {(run) => <span style={{ fg: INK()[run.fg], bg: run.bg ? FILL()[run.bg] : undefined }}>{run.text}</span>}
                 </For>
               </text>
             )}

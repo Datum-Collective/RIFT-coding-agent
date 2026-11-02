@@ -1,1 +1,0 @@
-Load a skill by name (listed in the system prompt) to get its instructions and resources.

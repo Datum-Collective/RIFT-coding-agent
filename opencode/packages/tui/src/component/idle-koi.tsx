@@ -10,19 +10,19 @@
  * all while the terminal is in the background; the rest of the time this costs one timer.
  *
  * Mount it and it is on; unmount it and it is gone. It is also off for anyone who turned
- * animations off (the `animations_enabled` setting) or set RIFT_NO_ANIMATION.
+ * animations off (the /background toggle or the project's `animations` config) or set RIFT_NO_ANIMATION.
  */
 import { createEffect, on, onCleanup, untrack } from "solid-js"
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import type { OptimizedBuffer, RGBA } from "@opentui/core"
-import { Journey } from "@opencode-ai/core/installation/journey"
-import { useKV } from "../context/kv"
+import { useKoiEnabled } from "./koi-enabled"
 import { useTheme } from "../context/theme"
 import { createIdle, isTyping, type Clock } from "../util/idle"
 import { logoAnchor } from "./banner-anchor"
 import { logoFromBanner } from "../koi/logo"
+import { bannerColours } from "../banner"
 import { banner } from "../banner"
-import { riftPalette } from "../koi/palette"
+import { koiAccent, riftPalette } from "../koi/palette"
 import { createPond, sceneFor, type Pond, type Scene } from "../koi/pond"
 import { paintCells } from "../koi/paint"
 
@@ -34,6 +34,9 @@ const FADE_IN_MS = 3000
 
 /** A frame that took longer than this (a stall, a suspended laptop) does not make the koi jump. */
 const LONGEST_STEP_MS = 100
+
+/** Frames per second while the pond is out. Rendering at the app's 60 is what made an idle RIFT use a quarter of a core. */
+const POND_FPS = 20
 
 /** A terminal smaller than this has no room for a pond. */
 const MIN_COLS = 60
@@ -60,10 +63,8 @@ export function IdleKoi(props: {
 }) {
   const renderer = useRenderer()
   const dimensions = useTerminalDimensions()
-  const kv = useKV()
-  const { theme } = useTheme()
-  const enabled = () =>
-    kv.get("animations_enabled", true) !== false && kv.get("koi_enabled", true) !== false && !Journey.animationOff(process.env)
+  const theme = useTheme()
+  const enabled = useKoiEnabled()
 
   let pond: Pond | undefined
   /** Set while the watcher is running: fits the pond to a new terminal size. */
@@ -86,17 +87,26 @@ export function IdleKoi(props: {
     let blurred = false
     /** Whether this holds the renderer in continuous mode. Kept apart from the pond so it is released exactly once. */
     let live = false
+    let fps: { target: number; max: number } | undefined
     let settling: unknown
 
     const hold = () => {
       if (live) return
       live = true
+      // The pond runs for as long as the user is away, so it gets a calm frame rate.
+      fps = { target: renderer.targetFps, max: renderer.maxFps }
+      renderer.targetFps = POND_FPS
+      renderer.maxFps = POND_FPS
       renderer.requestLive()
     }
     const release = () => {
       if (!live) return
       live = false
       renderer.dropLive()
+      if (fps) {
+        renderer.targetFps = fps.target
+        renderer.maxFps = fps.max
+      }
     }
 
     const roomFor = (width: number, height: number) => width >= MIN_COLS && height >= MIN_ROWS
@@ -105,21 +115,21 @@ export function IdleKoi(props: {
     const logoAt = (intro: boolean) => {
       const at = logoAnchor.read()
       // Drawn over the page it is on, so the shades blend as the terminal blends them.
-      return at ? { logo: logoFromBanner(banner, channels(theme.background)), col: at.col, row: at.row, intro } : undefined
+      return at ? { logo: logoFromBanner(banner, channels(theme.background.base), bannerColours(channels(theme.hue.accent[400]))), col: at.col, row: at.row, intro } : undefined
     }
 
     const build = (width: number, height: number, intro: boolean) => {
       const palette = riftPalette({
-        background: channels(theme.background),
-        text: channels(theme.text),
-        muted: channels(theme.textMuted),
-        primary: channels(theme.primary),
+        background: channels(theme.background.base),
+        text: channels(theme.text.base),
+        muted: channels(theme.text.muted),
+        primary: koiAccent(channels(theme.hue.accent[400]), channels(theme.text.base)),
       })
       return createPond({ cols: width, rows: height, aspect: ASPECT, palette, seed, scene: props.scene ?? sceneFor(seed), logo: logoAt(intro) })
     }
 
     /** A theme with a see-through background has no colour to name, so the painter reads the page off the screen instead. */
-    const page = () => (theme.background.a === 1 ? channels(theme.background) : undefined)
+    const page = () => (theme.background.base.a === 1 ? channels(theme.background.base) : undefined)
 
     // This runs inside the renderer's frame loop, where an error is not shown: the frame is never
     // presented, and every frame after it fails the same way, so the interface would look frozen
@@ -254,7 +264,7 @@ export function IdleKoi(props: {
 
   // The pond's colours come from the theme when it is made, so a theme that changes while it is out
   // (the terminal went from light to dark) needs a new one.
-  const colours = () => [theme.background, theme.text, theme.textMuted, theme.primary].map((c) => `${c.r},${c.g},${c.b}`).join("|")
+  const colours = () => [theme.background.base, theme.text.base, theme.text.muted, theme.hue.accent[400]].map((c) => `${c.r},${c.g},${c.b}`).join("|")
   createEffect(on(colours, () => refresh?.(), { defer: true }))
 
   return null

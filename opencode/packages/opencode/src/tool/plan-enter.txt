@@ -1,1 +1,0 @@
-Suggest switching to the plan agent when the request is complex and needs research or design before changes. The user is asked to confirm. Not for simple tasks or when the user wants immediate implementation.

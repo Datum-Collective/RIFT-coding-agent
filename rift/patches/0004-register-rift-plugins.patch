@@ -1,0 +1,22 @@
+diff --git a/opencode/packages/tui/src/plugin/builtins.ts b/opencode/packages/tui/src/plugin/builtins.ts
+index 3f6a5728ef..610939b359 100644
+--- a/opencode/packages/tui/src/plugin/builtins.ts
++++ b/opencode/packages/tui/src/plugin/builtins.ts
+@@ -5,6 +5,8 @@ import SidebarContext from "../feature-plugins/sidebar/context"
+ import SidebarFooter from "../feature-plugins/sidebar/footer"
+ import SidebarLimit from "../feature-plugins/sidebar/limit"
+ import SidebarMcp from "../feature-plugins/sidebar/mcp"
++import RiftLog from "../feature-plugins/rift/log"
++import SidebarRift from "../feature-plugins/sidebar/rift"
+ import SidebarTodo from "../feature-plugins/sidebar/todo"
+ import DiffViewer from "../feature-plugins/system/diff-viewer"
+ import Notifications from "../feature-plugins/system/notifications"
+@@ -21,6 +23,8 @@ export const builtins = [
+   SidebarContext,
+   SidebarLimit,
+   SidebarMcp,
++  SidebarRift,
++  RiftLog,
+   SidebarTodo,
+   SidebarFooter,
+   Notifications,

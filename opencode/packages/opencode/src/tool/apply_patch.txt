@@ -1,1 +1,0 @@
-Edit files with a patch. Format: `*** Begin Patch`, one or more file sections, `*** End Patch`. Section headers: `*** Add File: <path>` (every following line starts with `+`), `*** Delete File: <path>`, `*** Update File: <path>` (optionally followed by `*** Move to: <new path>`, then `@@` hunks with `-`/`+` lines).

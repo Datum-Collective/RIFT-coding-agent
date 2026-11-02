@@ -1,1 +1,0 @@
-Query a language server: goToDefinition, findReferences, hover, documentSymbol, workspaceSymbol (use `query`), goToImplementation, prepareCallHierarchy, incomingCalls, outgoingCalls. Requires `filePath`, 1-based `line` and `character`. Errors if no server is configured for the file type.

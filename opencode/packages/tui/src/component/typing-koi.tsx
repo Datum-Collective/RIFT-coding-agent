@@ -15,11 +15,10 @@
 import { createEffect, onCleanup, untrack } from "solid-js"
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import type { BoxRenderable, KeyEvent, OptimizedBuffer, RGBA } from "@opentui/core"
-import { Journey } from "@opencode-ai/core/installation/journey"
-import { useKV } from "../context/kv"
+import { useKoiEnabled } from "./koi-enabled"
 import { useTheme } from "../context/theme"
 import type { Clock } from "../util/idle"
-import { riftPalette } from "../koi/palette"
+import { koiAccent, riftPalette } from "../koi/palette"
 import { createPond, type Pond } from "../koi/pond"
 import { stirStream } from "../koi/stream"
 import { paintCells } from "../koi/paint"
@@ -59,10 +58,8 @@ export function TypingKoi(props: {
 }) {
   const renderer = useRenderer()
   const dimensions = useTerminalDimensions()
-  const kv = useKV()
-  const { theme } = useTheme()
-  const enabled = () =>
-    kv.get("animations_enabled", true) !== false && kv.get("koi_enabled", true) !== false && !Journey.animationOff(process.env)
+  const theme = useTheme()
+  const enabled = useKoiEnabled()
 
   createEffect(() => {
     if (!enabled()) return
@@ -84,7 +81,7 @@ export function TypingKoi(props: {
       return rows < MIN_BAND ? undefined : { top: bottom - rows + 1, rows }
     }
 
-    const page = () => (theme.background.a === 1 ? channels(theme.background) : undefined)
+    const page = () => (theme.background.base.a === 1 ? channels(theme.background.base) : undefined)
 
     const draw = (buffer: OptimizedBuffer) => {
       if (!pond) return
@@ -120,10 +117,10 @@ export function TypingKoi(props: {
         rows: place.rows,
         aspect: ASPECT,
         palette: riftPalette({
-          background: channels(theme.background),
-          text: channels(theme.text),
-          muted: channels(theme.textMuted),
-          primary: channels(theme.primary),
+          background: channels(theme.background.base),
+          text: channels(theme.text.base),
+          muted: channels(theme.text.muted),
+          primary: koiAccent(channels(theme.hue.accent[400]), channels(theme.text.base)),
         }),
         seed: props.seed ?? Date.now() % 1_000_000,
         scene: "stream",

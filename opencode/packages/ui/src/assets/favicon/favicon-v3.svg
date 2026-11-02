@@ -1,1 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 0 36 42"><rect x="-6" y="0" width="36" height="42" rx="8" fill="#121216"/><path d="M6 12H18V18H6Z" fill="#5a5aff"/><path d="M0 6H6V36H0ZM6 6H24V12H6ZM18 12H24V24H18ZM6 18H18V24H6ZM12 24H18V30H12ZM18 30H24V36H18Z" fill="#fff"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="512" height="512"><svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="512" height="512" fill="#131010"></rect>
+<path d="M320 224V352H192V224H320Z" fill="#5A5858"></path>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M384 416H128V96H384V416ZM320 160H192V352H320V160Z" fill="white"></path>
+</svg><style>@media (prefers-color-scheme: light) { :root { filter: none; } }
+@media (prefers-color-scheme: dark) { :root { filter: none; } }
+</style></svg>

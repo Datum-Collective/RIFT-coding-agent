@@ -2,7 +2,6 @@ import { createMemo } from "solid-js"
 import { useLocal } from "../context/local"
 import { DialogSelect } from "../ui/dialog-select"
 import { useDialog } from "../ui/dialog"
-import { DialogVibeModels } from "./dialog-vibe-models"
 
 export function DialogAgent() {
   const local = useLocal()
@@ -11,9 +10,9 @@ export function DialogAgent() {
   const options = createMemo(() =>
     local.agent.list().map((item) => {
       return {
-        value: item.name,
-        title: item.name,
-        description: item.native ? "native" : item.description,
+        value: item.id,
+        title: item.id,
+        description: item.description,
       }
     }),
   )
@@ -21,12 +20,13 @@ export function DialogAgent() {
   return (
     <DialogSelect
       title="Select agent"
-      current={local.agent.current()?.name}
+      searchInTitle
+      titlePlaceholder="Search agents"
+      current={local.agent.current()?.id}
       options={options()}
       onSelect={(option) => {
         local.agent.set(option.value)
-        if (option.value === "vibe" && !local.agent.vibe.configured()) dialog.replace(() => <DialogVibeModels />)
-        else dialog.clear()
+        dialog.clear()
       }}
     />
   )

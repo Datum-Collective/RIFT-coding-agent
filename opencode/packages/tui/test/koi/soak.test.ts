@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { OptimizedBuffer, RGBA } from "@opentui/core"
+import { OptimizedBuffer, RGBA, ResourceContext } from "@opentui/core"
 import { createPond, type Scene } from "../../src/koi/pond"
 import { paintCells } from "../../src/koi/paint"
 import { riftPalette } from "../../src/koi/palette"
@@ -26,7 +26,7 @@ describe("a long idle", () => {
   for (const scene of ["pond", "chase"] as Scene[]) {
     test(`the ${scene} at 60 fps: a frame is cheap and the heap does not grow`, () => {
       const pond = createPond({ cols: 140, rows: 40, aspect: 2, palette, seed: 3, scene })
-      const buffer = OptimizedBuffer.create(140, 40, "wcwidth", { respectAlpha: true } as never)
+      const buffer = OptimizedBuffer.create(140, 40, "wcwidth", { respectAlpha: true, owner: new ResourceContext({ objectCapacity: 8, renderCellsMax: 100_000 }) })
       const frame = () => {
         buffer.clear(RGBA.fromInts(0, 0, 0, 255))
         pond.step(1 / 60)
@@ -61,7 +61,7 @@ describe("a long idle", () => {
     const col = 34
     const row = 8
     const pond = createPond({ cols: 140, rows: 40, aspect: 2, palette, seed: 4, scene: "pond", logo: { logo: riftLogo, col, row } })
-    const buffer = OptimizedBuffer.create(140, 40, "wcwidth", { respectAlpha: true } as never)
+    const buffer = OptimizedBuffer.create(140, 40, "wcwidth", { respectAlpha: true, owner: new ResourceContext({ objectCapacity: 8, renderCellsMax: 100_000 }) })
     const white = RGBA.fromValues(1, 1, 1, 1)
     let frames = 0
     const started = cpu()

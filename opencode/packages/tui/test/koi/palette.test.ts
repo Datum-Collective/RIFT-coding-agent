@@ -91,3 +91,10 @@ describe("RIFT palette", () => {
     for (const colour of dark.tags) expect(Number.isFinite(colour.r + colour.g + colour.b)).toBe(true)
   })
 })
+
+test("the scales stay blue when a theme's action text is its body text", () => {
+  const white = { r: 238, g: 238, b: 238 }
+  const pal = riftPalette({ background: { r: 20, g: 20, b: 20 }, text: white, muted: { r: 138, g: 138, b: 138 } })
+  expect(pal.tags[Tag.red]).toEqual(AZURE)
+  expect(pal.tags[Tag.red]).not.toEqual(pal.tags[Tag.ink])
+})

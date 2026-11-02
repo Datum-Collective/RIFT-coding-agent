@@ -1,1 +1,0 @@
-Replace exact text in a file. Read it first. `oldString` must match exactly and be unique, or the edit fails; add context or set `replaceAll`. Prefer editing over creating files.

@@ -1,0 +1,5 @@
+Maintain the live engineering graph. You declare how each node is proven; RIFT runs the checks, records the evidence and decides what is proven. You cannot mark a node proven.
+- One root node (no parent_id), features beneath it, provable requirements beneath those. Each call replaces the whole graph: pass every node.
+- `files` lists what a node's behaviour depends on. When one of those files changes, its proofs and those of anything depending on it stop counting until RIFT runs them again, so list them completely.
+- `checks` are shell commands that exit 0 when the requirement holds. Prefer narrow checks over the whole suite.
+- Create the tree early on multi-step builds and keep it current.
