@@ -19,6 +19,9 @@ rm -rf opencode
 mkdir opencode
 git archive "$ref" | tar -x -C opencode
 
+# RIFT is a terminal program: drop what the terminal binary does not build or ship (see rift/prune.txt).
+grep -vE '^\s*(#|$)' rift/prune.txt | while read -r path; do rm -rf "opencode/$path"; done
+
 # A file both sides own would silently lose upstream's version, so it has to be a patch instead.
 collisions=$(cd rift/overlay && find . -type f | sed 's#^\./##' | while read -r file; do
   [ ! -e "$root/opencode/$file" ] || echo "$file"

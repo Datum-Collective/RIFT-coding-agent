@@ -52,6 +52,8 @@ export interface Tree {
   readonly fingerprint: string
   /** Files that differ from HEAD, relative to the directory. */
   readonly files: readonly string[]
+  /** The commit the tree is based on, when there is one. */
+  readonly head?: string
 }
 
 /** Reads the working tree from git, so an edit counts whichever tool or process made it. Undefined outside git. */
@@ -67,7 +69,7 @@ export const tree = async (dir: string): Promise<Tree | undefined> => {
     const stat = statSync(path.join(dir, file), { throwIfNoEntry: false })
     hash.update(`${file}:${stat?.size}:${stat?.mtimeMs}`)
   }
-  return { fingerprint: hash.digest("hex"), files }
+  return { fingerprint: hash.digest("hex"), files, head: head?.trim() || undefined }
 }
 
 /** A file that differs from `before` by name is an edit; so is any change when the fingerprints differ. */
@@ -76,6 +78,27 @@ export const edited = (before: Tree | undefined, after: Tree) => {
   const known = new Set(before?.files)
   const added = after.files.filter((file) => !known.has(file))
   return added.length > 0 ? added : after.files
+}
+
+/**
+ * What changed in `files` since HEAD, as a zero-context unified diff for the integrity review. A file that is new and
+ * untracked has no diff against HEAD, so it is shown as an addition of its whole content.
+ */
+export const diff = async (dir: string, files: readonly string[]): Promise<string> => {
+  if (files.length === 0) return ""
+  const tracked = (await git(dir, ["diff", "HEAD", "--unified=0", "--no-color", "--no-ext-diff", "--", ...files])) ?? ""
+  const untracked = (await git(dir, ["ls-files", "--others", "--exclude-standard", "-z", "--", ...files])) ?? ""
+  const added = untracked
+    .split("\0")
+    .filter(Boolean)
+    .map((file) => {
+      let text = ""
+      try {
+        text = readFileSync(path.join(dir, file), "utf8")
+      } catch {}
+      return [`diff --git a/${file} b/${file}`, "new file mode 100644", ...text.split("\n").map((line) => `+${line}`)].join("\n")
+    })
+  return [tracked, ...added].join("\n")
 }
 
 export const docsOnly = (files: readonly string[]) => files.length > 0 && files.every((file) => DOCS.test(file))
@@ -201,7 +224,8 @@ export type Decision =
   /** The rounds ran out: tell the user the work is not proven and stop. */
   | { readonly type: "give_up" }
 
-export const decide = (results: readonly Result[], round: number, maxRounds: number): Decision => {
-  if (!results.some((result) => result.status === "failed" || result.status === "timed_out")) return { type: "report" }
+/** `tampered`: the integrity review found the tests or checks were changed to get a pass. It is handled like a failure. */
+export const decide = (results: readonly Result[], round: number, maxRounds: number, tampered = false): Decision => {
+  if (!tampered && !results.some((result) => result.status === "failed" || result.status === "timed_out")) return { type: "report" }
   return round < maxRounds ? { type: "fix" } : { type: "give_up" }
 }

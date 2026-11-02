@@ -53,3 +53,29 @@ test("uses only half-block and shade glyphs, so it renders in any monospace font
   const used = new Set(banner.flatMap((row) => row.flatMap((run) => [...run.text])))
   expect([...used].filter((glyph) => !allowed.has(glyph))).toEqual([])
 })
+
+test("a theme accent changes only the two blues, and keeps their saturation and brightness", async () => {
+  const { bannerColours, BANNER_INK, BANNER_FILL } = await import("../src/banner")
+  expect(bannerColours()).toEqual({ ink: BANNER_INK, fill: BANNER_FILL })
+  // The banner's own blue gives the banner back exactly.
+  expect(bannerColours({ r: 0, g: 0, b: 255 })).toEqual({ ink: BANNER_INK, fill: BANNER_FILL })
+  // RIFT's indigo (#7C83FF) is still a vivid blue, not a dull navy.
+  const indigo = bannerColours({ r: 0x7c, g: 0x83, b: 0xff })
+  const byte = (hex: string, at: number) => parseInt(hex.slice(1 + at * 2, 3 + at * 2), 16)
+  expect(Math.max(byte(indigo.ink.navy, 0), byte(indigo.ink.navy, 1), byte(indigo.ink.navy, 2))).toBe(0xaa)
+  expect(Math.max(byte(indigo.ink.azure, 0), byte(indigo.ink.azure, 1), byte(indigo.ink.azure, 2))).toBe(0xff)
+  expect(byte(indigo.ink.azure, 2)).toBeGreaterThan(byte(indigo.ink.azure, 0))
+  expect(indigo.ink.navy).toBe(indigo.fill.navy)
+  // Greens stay green; greys and white are never touched.
+  const green = bannerColours({ r: 80, g: 200, b: 120 })
+  expect(byte(green.ink.azure, 1)).toBe(0xff)
+  expect([green.ink.silver, green.ink.shadow, green.ink.white]).toEqual([BANNER_INK.silver, BANNER_INK.shadow, BANNER_INK.white])
+  // A nearly grey accent has no hue to take.
+  expect(bannerColours({ r: 200, g: 200, b: 205 })).toEqual({ ink: BANNER_INK, fill: BANNER_FILL })
+})
+
+test("koi keep RIFT's azure when a theme's accent is nearly the body text", async () => {
+  const { koiAccent, AZURE } = await import("../src/koi/palette")
+  expect(koiAccent({ r: 250, g: 250, b: 250 }, { r: 238, g: 238, b: 238 })).toEqual(AZURE)
+  expect(koiAccent({ r: 80, g: 200, b: 120 }, { r: 238, g: 238, b: 238 })).toEqual({ r: 80, g: 200, b: 120 })
+  })

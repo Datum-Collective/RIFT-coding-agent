@@ -1,0 +1,35 @@
+diff --git a/opencode/packages/tui/test/cli/tui/dialog-select.test.tsx b/opencode/packages/tui/test/cli/tui/dialog-select.test.tsx
+index bda8e67a7c..3f59c22574 100644
+--- a/opencode/packages/tui/test/cli/tui/dialog-select.test.tsx
++++ b/opencode/packages/tui/test/cli/tui/dialog-select.test.tsx
+@@ -101,7 +101,7 @@ async function mountSelect<T>(
+ ) {
+   const state = path.join(root, "state")
+   await mkdir(state, { recursive: true })
+-  const config = createTuiResolvedConfig()
++  const config = createTuiResolvedConfig({ theme: { name: "opencode" } })
+   const [
+     { ConfigProvider },
+     { ThemeProvider },
+@@ -387,7 +387,7 @@ test("matches the search cursor to the highlighted row until text is typed under
+     () => {},
+     () => {},
+     undefined,
+-    { experimental: { "new-designs": true } },
++    { experimental: { "new-designs": true }, theme: { name: "opencode", mode: "dark" } },
+   )
+ 
+   try {
+diff --git a/opencode/packages/tui/test/cli/tui/diff-viewer.test.tsx b/opencode/packages/tui/test/cli/tui/diff-viewer.test.tsx
+index 5f22820dbe..cb10641d09 100644
+--- a/opencode/packages/tui/test/cli/tui/diff-viewer.test.tsx
++++ b/opencode/packages/tui/test/cli/tui/diff-viewer.test.tsx
+@@ -1991,7 +1991,7 @@ async function renderDiffViewer(
+   const turnDiffRequests: URL[] = []
+   const branchesRequests: URL[] = []
+   const mutationRequests: URL[] = []
+-  const config = createTuiResolvedConfig(stored.info)
++  const config = createTuiResolvedConfig({ ...stored.info, theme: { name: "opencode" } })
+   const transport = createFetch(async (url, request) => {
+     if (request.method !== "GET") mutationRequests.push(url)
+     if (url.pathname.startsWith("/api/fs/read/")) {

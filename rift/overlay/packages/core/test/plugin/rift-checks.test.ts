@@ -60,13 +60,15 @@ describe("RiftChecks", () => {
 
   test("run reports real exit codes, timeouts and cancellation", async () => {
     const check = (command: string) => ({ name: command, command, dir: dir() })
-    expect((await RiftChecks.run(check("exit 0"), 5_000)).status).toBe("passed")
-    const failed = await RiftChecks.run(check("echo boom; exit 3"), 5_000)
-    expect([failed.status, failed.output]).toEqual(["failed", "boom"])
+    expect((await RiftChecks.run(check("exit 0"), 30_000)).status).toBe("passed")
+    const failed = await RiftChecks.run(check("echo boom; exit 3"), 30_000)
+    // A login shell may print its own startup noise first, so only the end is ours.
+    expect(failed.status).toBe("failed")
+    expect(failed.output.endsWith("boom")).toBe(true)
     expect((await RiftChecks.run(check("sleep 10"), 50)).status).toBe("timed_out")
     const cancelled = new AbortController()
     cancelled.abort()
-    const stopped = await RiftChecks.run(check("exit 0"), 5_000, cancelled.signal)
+    const stopped = await RiftChecks.run(check("exit 0"), 30_000, cancelled.signal)
     expect([stopped.status, stopped.reason]).toEqual(["not_run", "cancelled"])
   })
 

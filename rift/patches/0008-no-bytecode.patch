@@ -1,0 +1,14 @@
+diff --git a/opencode/packages/cli/script/build.ts b/opencode/packages/cli/script/build.ts
+index 80a67fe755..7bedf0d44b 100755
+--- a/opencode/packages/cli/script/build.ts
++++ b/opencode/packages/cli/script/build.ts
+@@ -172,7 +172,8 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
+     external: ["node-gyp"],
+     format: "esm",
+     minify: true,
+-    bytecode: true,
++    // Precompiled bytecode added about 56 MB to the binary and no measurable start-up time (rift/debloat.md).
++    bytecode: false,
+     sourcemap: Script.channel === "dev" || Script.channel === "local" ? "inline" : "none",
+     splitting: true,
+     compile: {

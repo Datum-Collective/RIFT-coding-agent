@@ -20,6 +20,7 @@ import { LocationServiceMap } from "@opencode/core/location-service-map"
 import { Model } from "@opencode/core/model"
 import { PluginHost } from "@opencode/core/plugin/host"
 import { RiftVerifyPlugin } from "@opencode/core/plugin/rift-verify"
+import { RiftReceipt } from "@opencode/core/plugin/rift-verify/receipt"
 import { Provider } from "@opencode/core/provider"
 import { AbsolutePath } from "@opencode/core/schema"
 import { Session } from "@opencode/core/session"
@@ -220,4 +221,57 @@ describe("rift contract", () => {
       expect(JSON.stringify(stored)).toContain('"status":"passed"')
     }),
   )
+  const commitTest = (dir: string, name: string, text: string) => {
+    writeFileSync(path.join(dir, name), text)
+    execFileSync("git", ["add", "-A"], { cwd: dir })
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "add test"], { cwd: dir })
+  }
+
+  it.live("skipping a test to get a pass is caught, sent back, and written to a receipt chain that audits", () =>
+    Effect.gen(function* () {
+      const { session, sessions, dir, write } = yield* project("true")
+      const original = "it('works', () => { expect(1).toBe(1) })\n"
+      commitTest(dir, "a.test.ts", original)
+      yield* serve((_, turn) => {
+        if (turn === 1) {
+          write("a.ts", "export const a = 2\n")
+          write("a.test.ts", "it.skip('works', () => { expect(1).toBe(1) })\n")
+        }
+        if (turn === 2) write("a.test.ts", original)
+        return TestLLM.text("Done", `done-${turn}`)
+      })
+      yield* prompt(sessions, session.id, "Change a")
+      const messages = yield* sessions.messages({ sessionID: session.id, order: "asc" })
+      const found = reports(messages)
+      // The checks themselves passed ("true"), and it was still sent back.
+      expect(found.map((report) => report.decision)).toEqual(["fix"])
+      expect(found[0]?.text).toContain("ok: bun run test")
+      expect(found[0]?.text).toContain("BLOCKED: a.test.ts")
+      expect(found[0]?.text).toContain("[skipped-test]")
+      expect(found[0]?.text).toContain("Restore them")
+      const chain = (yield* storage.pipe(Effect.flatMap((store) => store.get(`receipts:${session.id}`)))) as unknown as RiftReceipt.Sealed[]
+      expect(chain.map((receipt) => receipt.verdict)).toEqual(["tampered", "verified"])
+      expect(RiftReceipt.audit(chain)).toBeUndefined()
+      expect(chain[1]?.prev).toBe(chain[0]?.digest)
+    }),
+  )
+
+  it.live("an honest edit to a test is not flagged, and still gets a verified receipt", () =>
+    Effect.gen(function* () {
+      const { session, sessions, dir, write } = yield* project("true")
+      commitTest(dir, "a.test.ts", "it('works', () => { expect(1).toBe(1) })\n")
+      yield* serve((_, turn) => {
+        write("a.test.ts", "it('works', () => { expect(2).toBe(2) })\n")
+        return TestLLM.text("Done", `done-${turn}`)
+      })
+      yield* prompt(sessions, session.id, "Update the test")
+      expect(reports(yield* sessions.messages({ sessionID: session.id, order: "asc" }))).toEqual([])
+      const stored = JSON.stringify(yield* storage.pipe(Effect.flatMap((store) => store.get(`session:${session.id}`))))
+      expect(stored).not.toContain("Test integrity")
+      const chain = (yield* storage.pipe(Effect.flatMap((store) => store.get(`receipts:${session.id}`)))) as unknown as RiftReceipt.Sealed[]
+      expect(chain.map((receipt) => receipt.verdict)).toEqual(["verified"])
+      expect(chain[0]?.files.map((file) => file.path)).toEqual(["a.test.ts"])
+    }),
+  )
+
 })

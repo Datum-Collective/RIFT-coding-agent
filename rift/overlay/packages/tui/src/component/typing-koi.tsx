@@ -18,7 +18,7 @@ import type { BoxRenderable, KeyEvent, OptimizedBuffer, RGBA } from "@opentui/co
 import { useKoiEnabled } from "./koi-enabled"
 import { useTheme } from "../context/theme"
 import type { Clock } from "../util/idle"
-import { riftPalette } from "../koi/palette"
+import { koiAccent, riftPalette } from "../koi/palette"
 import { createPond, type Pond } from "../koi/pond"
 import { stirStream } from "../koi/stream"
 import { paintCells } from "../koi/paint"
@@ -120,7 +120,7 @@ export function TypingKoi(props: {
           background: channels(theme.background.base),
           text: channels(theme.text.base),
           muted: channels(theme.text.muted),
-          primary: channels(theme.text.action.primary.base),
+          primary: koiAccent(channels(theme.hue.accent[400]), channels(theme.text.base)),
         }),
         seed: props.seed ?? Date.now() % 1_000_000,
         scene: "stream",
