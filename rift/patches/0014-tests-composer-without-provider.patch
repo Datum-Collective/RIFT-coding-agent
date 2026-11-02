@@ -1,0 +1,110 @@
+diff --git a/opencode/packages/tui/test/app-lifecycle.test.tsx b/opencode/packages/tui/test/app-lifecycle.test.tsx
+index 959bdfa8fb..9ca10e7c57 100644
+--- a/opencode/packages/tui/test/app-lifecycle.test.tsx
++++ b/opencode/packages/tui/test/app-lifecycle.test.tsx
+@@ -584,7 +584,7 @@ test("automatic rename refreshes the displayed title before settling, even witho
+   })
+ 
+   try {
+-    await setup.waitForFrame((frame) => frame.includes(session.title) && frame.includes("Build · Model Provider"))
++    await setup.waitForFrame((frame) => frame.includes(session.title) && frame.includes("Build · Model"))
+     await setup.mockInput.typeText("/rename")
+     setup.mockInput.pressEscape()
+     setup.mockInput.pressEnter()
+@@ -1024,7 +1024,7 @@ test.each([false, true])("uses the resolved launch directory for new prompts (fa
+   })
+ 
+   await setup.ready
+-  await setup.waitForFrame((frame) => frame.includes("Build · Remote Model Provider"))
++  await setup.waitForFrame((frame) => frame.includes("Build · Remote Model"))
+   setup.mockInput.pressKey("F6")
+   await setup.renderOnce()
+   await setup.mockInput.typeText("REMOTE_READY")
+@@ -1309,7 +1309,7 @@ test("keeps the prompt display stable while a new location catalog loads", async
+ 
+   try {
+     await setup.ready
+-    await setup.waitForFrame((frame) => frame.includes("Build · Source Model Provider"))
++    await setup.waitForFrame((frame) => frame.includes("Build · Source Model"))
+     const agentSpan = () =>
+       setup
+         .captureSpans()
+@@ -1340,15 +1340,15 @@ test("keeps the prompt display stable while a new location catalog loads", async
+     ])
+     await setup.renderOnce()
+ 
+-    expect(setup.captureCharFrame()).toContain("Build · Source Model Provider")
++    expect(setup.captureCharFrame()).toContain("Build · Source Model")
+     expect(agentSpan()?.fg.toInts()).toEqual(sourceAgentColor)
+ 
+     catalog.resolve()
+-    const resolved = await setup.waitForFrame((frame) => frame.includes("Build · Target Model provider"))
++    const resolved = await setup.waitForFrame((frame) => frame.includes("Build · Target Model"))
+     expect(resolved).not.toContain("Source Model")
+ 
+     providerCatalog.resolve()
+-    await setup.waitForFrame((frame) => frame.includes("Build · Target Model Provider"))
++    await setup.waitForFrame((frame) => frame.includes("Build · Target Model"))
+   } finally {
+     locationCatalog.resolve()
+     catalog.resolve()
+diff --git a/opencode/packages/tui/test/command-selection.test.tsx b/opencode/packages/tui/test/command-selection.test.tsx
+index 3bfa2e6d62..ac8bffe409 100644
+--- a/opencode/packages/tui/test/command-selection.test.tsx
++++ b/opencode/packages/tui/test/command-selection.test.tsx
+@@ -83,7 +83,7 @@ test("custom commands commit the captured agent, model and variant before execut
+     setup.mockInput.pressEnter()
+     await setup.waitForFrame(
+       (frame) =>
+-        frame.includes("Plan · second model Demo · low") &&
++        frame.includes("Plan · second model · low") &&
+         setup.renderer.currentFocusedRenderable instanceof TextareaRenderable,
+     )
+     await setup.mockInput.typeText("/review selected input")
+@@ -93,7 +93,7 @@ test("custom commands commit the captured agent, model and variant before execut
+     expect(mutations).toEqual([{ type: "agent", body: { agent: "plan" } }])
+ 
+     // A later local edit must not change the in-flight command's selection.
+-    await waitForFrame(setup, (frame) => frame.includes("Plan · second model Demo · low"))
++    await waitForFrame(setup, (frame) => frame.includes("Plan · second model · low"))
+     setup.mockInput.pressKey("F7")
+     await waitForFrame(setup, (frame) => frame.includes("high"))
+     agent.resolve(new Response(null, { status: 204 }))
+diff --git a/opencode/packages/tui/test/session-panel.test.tsx b/opencode/packages/tui/test/session-panel.test.tsx
+index 635651f77b..4503dee96c 100644
+--- a/opencode/packages/tui/test/session-panel.test.tsx
++++ b/opencode/packages/tui/test/session-panel.test.tsx
+@@ -667,7 +667,7 @@ type AppFixture = Awaited<ReturnType<typeof createAppFixture>>
+ 
+ async function ready(setup: AppFixture) {
+   await setup.ready
+-  await setup.waitForFrame((frame) => frame.includes("Transcript item 11") && frame.includes("Build · Model Fixture"), {
++  await setup.waitForFrame((frame) => frame.includes("Transcript item 11") && frame.includes("Build · Model"), {
+     maxPasses: 120,
+   })
+   await setup.waitFor(() => setup.renderer.currentFocusedEditor instanceof TextareaRenderable)
+diff --git a/opencode/packages/tui/test/usage-limits.test.tsx b/opencode/packages/tui/test/usage-limits.test.tsx
+index 781ca6d4c8..6662384fd2 100644
+--- a/opencode/packages/tui/test/usage-limits.test.tsx
++++ b/opencode/packages/tui/test/usage-limits.test.tsx
+@@ -127,7 +127,7 @@ test("shows what the workspace's limits leave and why a refused turn stopped", a
+     (frame) =>
+       frame.includes("GPT 5.6 Sol usage limit reached") &&
+       frame.includes("Switch model with") &&
+-      /GPT 5\.6 Sol OpenCode +\$6 left/.test(frame) &&
++      /GPT 5\.6 Sol +\$6 left/.test(frame) &&
+       frame.includes("Running low on GPT 5.6 Sol"),
+   )
+ 
+@@ -138,7 +138,10 @@ test("shows what the workspace's limits leave and why a refused turn stopped", a
+     (frame) =>
+       frame.includes("Workspace: Acme") &&
+       /Claude Opus 5 +\$6 left/.test(frame) &&
+-      !/GPT 5\.6 Sol +\$6 left/.test(frame),
++      // RIFT: the composer's own "GPT 5.6 Sol  $6 left" line is not a dialog row.
++      !frame
++        .split("\n")
++        .some((line) => !line.includes("Build ·") && /GPT 5\.6 Sol +\$6 left/.test(line)),
+   )
+ 
+   setup.mockInput.pressEnter()
