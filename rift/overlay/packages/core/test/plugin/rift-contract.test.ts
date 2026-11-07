@@ -2,7 +2,7 @@
  * RIFT's contract with upstream. Each test drives a real session, on upstream's own runner and a scripted model, through
  * a real project and real commands. An upstream release that changes what RIFT relies on fails here, before it ships.
  */
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
@@ -16,8 +16,10 @@ import { LayerNodePlatform } from "@opencode/core/effect/app-node-platform"
 import { Watcher } from "@opencode/core/filesystem/watcher"
 import { Job } from "@opencode/core/job"
 import { KV } from "@opencode/core/kv"
+import { Location } from "@opencode/core/location"
 import { LocationServiceMap } from "@opencode/core/location-service-map"
 import { Model } from "@opencode/core/model"
+import { Permission } from "@opencode/core/permission"
 import { PluginHost } from "@opencode/core/plugin/host"
 import { RiftVerifyPlugin } from "@opencode/core/plugin/rift-verify"
 import { RiftReceipt } from "@opencode/core/plugin/rift-verify/receipt"
@@ -59,8 +61,9 @@ const it = testEffect(
 
 const model = Model.Ref.make({ id: Model.ID.make("rift"), providerID: Provider.ID.make("test") })
 const allow = [{ action: "shell", resource: "*", effect: "allow" as const }]
+const ask = [{ action: "shell", resource: "*", effect: "ask" as const }]
 
-function project(testScript: string, permission: readonly { action: string; resource: string; effect: "allow" | "deny" }[] = allow) {
+function project(testScript: string, permission: readonly { action: string; resource: string; effect: "allow" | "deny" | "ask" }[] = allow) {
   return Effect.gen(function* () {
     const tmp = yield* tmpdirScoped()
     const write = (name: string, text: string) => writeFileSync(path.join(tmp.path, name), text)
@@ -323,4 +326,130 @@ describe("rift contract", () => {
     }),
   )
 
+  const status = (dir: string) => execFileSync("git", ["status", "--porcelain=v1"], { cwd: dir, encoding: "utf8" })
+  // The plugin asks the permission service of its project's location, so the test answers through the same one.
+  const permissions = <A, E>(dir: string, use: (permission: Permission.Interface) => Effect.Effect<A, E>) =>
+    Permission.Service.use(use).pipe(
+      Effect.scoped,
+      Effect.provide(LocationServiceMap.Service.get(Location.Ref.make({ directory: AbsolutePath.make(dir) }))),
+    )
+  const asked = (dir: string, sessionID: Session.ID) =>
+    until(
+      () => permissions(dir, (permission) => permission.forSession(sessionID)),
+      (requests) => requests.length > 0,
+    )
+  const reply = (dir: string, requestID: Permission.Request["id"], answer: "once" | "reject") =>
+    permissions(dir, (permission) => permission.reply({ requestID, reply: answer }))
+  const finished = (sessionID: Session.ID) =>
+    until(
+      () => stored(`run:${sessionID}:project`),
+      (run) => (run as { phase?: string } | undefined)?.phase === "done" || (run as { phase?: string } | undefined)?.phase === "cancelled",
+    )
+  const cart = (dir: string) => {
+    commitTest(dir, "cart.ts", "export const total = (a: number, b: number) => a + b\n")
+    commitTest(
+      dir,
+      "cart.test.ts",
+      'import { expect, test } from "bun:test"\nimport { total } from "./cart"\ntest("cart", () => expect(total(1, 2)).toBe(3))\ntest("old", () => expect(1).toBe(2))\n',
+    )
+  }
+
+  it.live("/verify separates what the change broke from what HEAD already broke, with no model call and git untouched", () =>
+    Effect.gen(function* () {
+      const { session, sessions, dir, write } = yield* project("bun test", ask)
+      cart(dir)
+      write("cart.ts", "export const total = (a: number, b: number) => a - b\n")
+      const before = status(dir)
+      let calls = 0
+      yield* serve((_, turn) => {
+        calls = turn
+        return TestLLM.text("Done", `done-${turn}`)
+      })
+      yield* sessions.command({ sessionID: session.id, command: "verify", text: "" })
+      const requests = yield* asked(dir, session.id)
+      expect(requests.map((request) => request.resources)).toEqual([["bun run test"]])
+      yield* reply(dir, requests[0]!.id, "once")
+      expect(yield* finished(session.id)).toMatchObject({
+        phase: "done",
+        verdict: "regressed",
+        stages: [{ command: "bun run test", status: "failed", introduced: 1, preexisting: 1 }],
+      })
+      const notice = yield* until(() => parked(sessions, session.id), (items) => items.length > 0)
+      expect(notice[0]?.description).toContain("Verify: regressed")
+      expect(notice[0]?.description).toContain("1 new failure, 1 already failing at HEAD")
+      expect(notice[0]?.text).toContain("new, not failing at HEAD: cart")
+      expect(calls).toBe(0)
+      expect(status(dir)).toBe(before)
+      expect((yield* receipts(session.id)).map((receipt) => receipt.verdict)).toEqual(["regressed"])
+    }),
+  )
+
+  it.live("a declined /verify runs nothing and ends unproven, not stuck running", () =>
+    Effect.gen(function* () {
+      const marker = outside((yield* tmpdirScoped()).path, "ran")
+      const { session, sessions, dir } = yield* project(`touch ${marker}`, ask)
+      yield* sessions.command({ sessionID: session.id, command: "verify", text: "" })
+      yield* reply(dir, (yield* asked(dir, session.id))[0]!.id, "reject")
+      expect(yield* finished(session.id)).toMatchObject({ phase: "done", verdict: "unproven", stages: [{ status: "not_run", reason: "declined" }] })
+      expect(existsSync(marker)).toBe(false)
+    }),
+  )
+
+  it.live("/verify stop cancels the run and its commands", () =>
+    Effect.gen(function* () {
+      const marker = outside((yield* tmpdirScoped()).path, "finished")
+      const { session, sessions } = yield* project(`sleep 3 && touch ${marker}`)
+      yield* sessions.command({ sessionID: session.id, command: "verify", text: "" })
+      yield* until(
+        () => stored(`run:${session.id}:project`),
+        (run) => JSON.stringify(run ?? "").includes('"status":"running"'),
+      )
+      yield* sessions.command({ sessionID: session.id, command: "verify", text: "stop" })
+      expect(yield* finished(session.id)).toMatchObject({ phase: "cancelled", stages: [{ status: "not_run", reason: "cancelled" }] })
+      yield* Effect.sleep("3500 millis")
+      expect(existsSync(marker)).toBe(false)
+    }),
+  )
+
+  it.live("/verify fix hands the report to the agent, and its fix is checked like any turn", () =>
+    Effect.gen(function* () {
+      const { session, sessions, dir, write } = yield* project("bun test")
+      cart(dir)
+      write("cart.ts", "export const total = (a: number, b: number) => a - b\n")
+      const seen: string[] = []
+      yield* serve((request, turn) => {
+        seen.push(JSON.stringify(request.messages))
+        write("cart.ts", "export const total = (a: number, b: number) => a + b\n")
+        return TestLLM.text("Done", `done-${turn}`)
+      })
+      yield* sessions.command({ sessionID: session.id, command: "verify", text: "fix quick" })
+      yield* finished(session.id)
+      yield* until(() => Effect.succeed(seen.length), (count) => count > 0)
+      yield* sessions.wait(session.id)
+      expect(seen[0]).toContain("The user ran /verify fix")
+      expect(seen[0]).toContain("new, not failing at HEAD: cart")
+      // The fix leaves only the test HEAD already failed, which goes back once more, framed as not the agent's doing.
+      expect(seen).toHaveLength(2)
+      expect(seen[1]).toContain("already failing before your change")
+    }),
+  )
+})
+
+describe("/verify arguments", () => {
+  test("stop alone stops; quick, fix and paths combine in any order", () => {
+    expect(RiftVerifyPlugin.parseArgs("")).toEqual({ kind: "run", quick: false, fix: false, paths: [] })
+    expect(RiftVerifyPlugin.parseArgs(" stop ")).toEqual({ kind: "stop" })
+    expect(RiftVerifyPlugin.parseArgs("packages/api/ fix quick ./quick")).toEqual({
+      kind: "run",
+      quick: true,
+      fix: true,
+      paths: ["packages/api", "quick"],
+    })
+  })
+
+  test("a path outside the project, or stop with anything else, is a usage error", () => {
+    expect(RiftVerifyPlugin.parseArgs("../elsewhere").kind).toBe("usage")
+    expect(RiftVerifyPlugin.parseArgs("/etc").kind).toBe("usage")
+    expect(RiftVerifyPlugin.parseArgs("stop quick").kind).toBe("usage")
+  })
 })

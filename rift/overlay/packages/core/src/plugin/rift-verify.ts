@@ -1,9 +1,11 @@
 export * as RiftVerifyPlugin from "./rift-verify.js"
 
+import { existsSync } from "node:fs"
+import path from "node:path"
 import { define } from "@opencode/plugin/effect/plugin"
 import { Session } from "@opencode/schema/session"
 import { ToolFailure } from "@opencode/ai/effect"
-import { Cause, Effect, Option, Schema } from "effect"
+import { Cause, Effect, FiberMap, Option, Schema } from "effect"
 import { Agent } from "@opencode/schema/agent"
 import { Rift } from "@opencode/schema/rift"
 import { Permission } from "../permission.js"
@@ -38,6 +40,31 @@ interface Loop {
   /** The rounds ran out for this prompt, so nothing runs again until the next one. */
   finished: boolean
 }
+
+const USAGE = "Usage: /verify [quick] [fix] [path...] | stop"
+
+export type Args =
+  | { readonly kind: "run"; readonly quick: boolean; readonly fix: boolean; readonly paths: readonly string[] }
+  | { readonly kind: "stop" }
+  | { readonly kind: "usage"; readonly message: string }
+
+/** `stop` alone, or `quick`, `fix` and paths in any order. A directory literally named `quick` is written `./quick`. */
+export const parseArgs = (text: string): Args => {
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  if (words.length === 1 && words[0] === "stop") return { kind: "stop" }
+  if (words.includes("stop")) return { kind: "usage", message: USAGE }
+  const paths: string[] = []
+  for (const word of words.filter((item) => item !== "quick" && item !== "fix")) {
+    const normal = path.posix.normalize(word.replaceAll("\\", "/")).replace(/(.)\/+$/, "$1")
+    if (path.posix.isAbsolute(normal) || normal === ".." || normal.startsWith("../"))
+      return { kind: "usage", message: `${USAGE}\nA path must be inside the project: ${word}` }
+    paths.push(normal)
+  }
+  return { kind: "run", quick: words.includes("quick"), fix: words.includes("fix"), paths }
+}
+
+const FIX =
+  "The user ran /verify fix. Fix the failures this report marks as new first, then the ones that were already failing. Fix the code, never the checks or what the tests expect."
 
 /** What the agent is told to do with a report it is sent back. */
 const INSTRUCTION: Record<"tampered" | "regressed" | "failing", string> = {
@@ -132,6 +159,89 @@ export const Plugin = define({
         })
       })
       .pipe(Effect.orDie)
+
+    // At most one /verify per session. A command returns at once; the TUI follows the run through `changed`.
+    const runs = yield* FiberMap.make<string>()
+
+    // The user sees one notice row. The model reads the report on its next turn, or now with `fix`.
+    const deliver = Effect.fn("RiftVerify.deliver")(function* (
+      sessionID: Session.ID,
+      snapshot: RiftWorkspace.Snapshot,
+      result: RiftPipeline.Result,
+      fix: boolean,
+    ) {
+      if (result.kind === "empty") {
+        yield* ctx.session.synthetic({
+          sessionID,
+          text: RiftVerdict.nothing(result.looked),
+          description: "Verify: no checks found",
+          metadata: { source: "rift-verify", tier: "project", verdict: "unproven" },
+          resume: false,
+        })
+        return
+      }
+      const { report } = result
+      const wake = fix && RiftVerdict.fixable(report.verdict)
+      if (wake) {
+        // The agent's fixes are checked each turn against the tree this run verified.
+        const current = loop(sessionID)
+        current.baseline = snapshot.tree
+        current.verified = snapshot.tree
+        current.round = 0
+        current.finished = false
+      }
+      yield* ctx.session.synthetic({
+        sessionID,
+        text: wake ? `${report.text}\n\n${FIX}` : report.text,
+        description: report.headline,
+        metadata: { source: "rift-verify", tier: "project", verdict: report.verdict, ...(wake ? { decision: "fix" } : {}) },
+        resume: wake,
+      })
+    })
+
+    yield* ctx.command.transform((editor) => {
+      editor.add({
+        name: "verify",
+        description: "verify the whole project from a clean checkout, like CI [quick] [fix] [path...] | stop",
+        execute: (input) =>
+          Effect.gen(function* () {
+            const args = parseArgs(input.prompt.text)
+            if (args.kind === "usage") return yield* Effect.fail(new Error(args.message))
+            const running = yield* FiberMap.has(runs, input.sessionID)
+            if (args.kind === "stop") {
+              if (!running) return yield* Effect.fail(new Error("No /verify is running."))
+              return yield* FiberMap.remove(runs, input.sessionID)
+            }
+            if (running) return yield* Effect.fail(new Error("/verify is already running. /verify stop cancels it."))
+            const missing = args.paths.filter((item) => !existsSync(path.join(root, item)))
+            if (missing.length > 0) return yield* Effect.fail(new Error(`No such path in the project: ${missing.join(", ")}`))
+            const snapshot = yield* RiftWorkspace.snapshot(root)
+            if (!snapshot) return yield* Effect.fail(new Error("/verify needs a git repository to make a clean copy of the project."))
+            const session = yield* ctx.session.get({ sessionID: input.sessionID })
+            yield* FiberMap.run(
+              runs,
+              input.sessionID,
+              pipeline
+                .run({
+                  sessionID: input.sessionID,
+                  agent: session.agent ?? Agent.ID.make("build"),
+                  tier: "project",
+                  candidate: snapshot,
+                  baseline: snapshot.headTree,
+                  scope: args.paths.length > 0 && !args.paths.includes(".") ? { kind: "paths", paths: args.paths } : { kind: "all" },
+                  mutate: !args.quick,
+                })
+                .pipe(
+                  Effect.flatMap((result) => deliver(input.sessionID, snapshot, result, args.fix)),
+                  Effect.catchCause((cause) =>
+                    Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.logWarning("/verify failed", { sessionID: input.sessionID, cause }),
+                  ),
+                ),
+              { onlyIfMissing: true },
+            )
+          }),
+      })
+    })
 
     yield* ctx.session.hook("prompt", (event) =>
       RiftWorkspace.snapshot(root).pipe(
