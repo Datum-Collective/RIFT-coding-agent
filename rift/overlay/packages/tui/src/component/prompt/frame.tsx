@@ -6,7 +6,8 @@
  * with half a cell of air inside it. The corners stay empty, which gives it its chamfer.
  *
  * The top edge is the waterline the typing koi swim down to. While the session works, a crest runs
- * along it in place of a spinner; it only runs while busy, and not at all with animations off.
+ * along it in place of a spinner; it only runs while busy, and not at all with animations off. The
+ * slash and file list stands on the same edge with the same sides, so it grows out of the field.
  */
 import { BoxRenderable, RGBA, TextAttributes } from "@opentui/core"
 import { createEffect, createMemo, createSignal, onCleanup, Show, type JSX } from "solid-js"
@@ -16,6 +17,11 @@ import { animationOff } from "../koi-enabled"
 
 /** The home field's width: the banner's 72 columns and four either side, so the draft starts on the banner's left edge. */
 export const FIELD_WIDTH = 80
+
+const ABOVE = "▁"
+const BELOW = "▔"
+const LEFT = "▕"
+const RIGHT = "▏"
 
 const CREST = "▂▃▄▃▂"
 const CREST_STEP_MS = 45
@@ -27,29 +33,43 @@ export function crestAllowed(animations: boolean) {
   return animations && !animationOff(process.env)
 }
 
-/** The ring's colour for what the composer is doing: quiet when it cannot take input, brighter once there is a draft. */
-export function ringColour(input: { accent: RGBA; border: RGBA; quiet: boolean; draft: boolean }) {
-  if (input.quiet) return input.border
-  return input.draft ? input.accent : tint(input.border, input.accent, 0.55)
+/** What the ring says: input is elsewhere, waiting for a draft, holding one, or running shell commands. */
+export type FieldTone = "quiet" | "empty" | "draft" | "shell"
+
+export function fieldTone(state: { quiet: boolean; shell: boolean; draft: boolean }): FieldTone {
+  if (state.quiet) return "quiet"
+  if (state.shell) return "shell"
+  return state.draft ? "draft" : "empty"
+}
+
+/** `accent` is whoever answers: the agent's colour, or the shell's. `page` is what the field sits on. */
+export type RingColours = { accent: RGBA; border: RGBA; page: RGBA }
+
+const RING: Record<FieldTone, (colours: RingColours) => RGBA> = {
+  quiet: (c) => tint(c.border, c.page, 0.5),
+  empty: (c) => tint(c.border, c.accent, 0.55),
+  draft: (c) => c.accent,
+  shell: (c) => c.accent,
+}
+
+export function ringColour(tone: FieldTone, colours: RingColours) {
+  return RING[tone](colours)
 }
 
 export function ComposerFrame(props: {
+  /** From `ringColour`; the list standing on the field takes the same one. */
+  ring: RGBA
+  /** The crest's colour while the session works. */
   accent: RGBA
-  /** The theme's border colour: the ring when the composer cannot take input. */
-  border: RGBA
   fill: RGBA
-  /** It cannot take input: a dialog, a side panel or the leader key has it. */
-  quiet: boolean
-  draft: boolean
   busy: boolean
   animations: boolean
+  /** The list stands on the top edge: the sides run on through its corners and its fill comes down to the line. */
+  joined?: RGBA
   /** Drawn in the gutter before the draft: the shell's `$`. Blank otherwise. */
   glyph?: string
   children: JSX.Element
 }) {
-  const ring = createMemo(() =>
-    ringColour({ accent: props.accent, border: props.border, quiet: props.quiet, draft: props.draft }),
-  )
   const [edge, setEdge] = createSignal<BoxRenderable>()
   const [crest, setCrest] = createSignal<number>()
 
@@ -74,43 +94,99 @@ export function ComposerFrame(props: {
 
   return (
     <box width="100%" flexShrink={0}>
-      <box ref={setEdge} height={1} marginLeft={1} marginRight={1} flexShrink={0}>
-        <box
-          height={1}
-          width="100%"
-          border={["bottom"]}
-          borderColor={ring()}
-          customBorderChars={{ ...EmptyBorder, horizontal: "▁" }}
-        />
-        <Show when={visibleCrest()}>
-          {(wave) => (
-            <text position="absolute" top={0} left={wave().left} fg={props.accent} wrapMode="none" selectable={false}>
-              {wave().text}
-            </text>
-          )}
-        </Show>
+      <box height={1} flexShrink={0} flexDirection="row">
+        <Corner glyph={props.joined ? LEFT : " "} color={props.ring} />
+        <box ref={setEdge} height={1} flexGrow={1}>
+          <Line glyph={ABOVE} color={props.ring} fill={props.joined} />
+          <Show when={visibleCrest()}>
+            {(wave) => (
+              <text position="absolute" top={0} left={wave().left} fg={props.accent} wrapMode="none" selectable={false}>
+                {wave().text}
+              </text>
+            )}
+          </Show>
+        </box>
+        <Corner glyph={props.joined ? RIGHT : " "} color={props.ring} />
       </box>
-      <box width="100%" border={["left"]} borderColor={ring()} customBorderChars={{ ...EmptyBorder, vertical: "▕" }}>
-        <box width="100%" border={["right"]} borderColor={ring()} customBorderChars={{ ...EmptyBorder, vertical: "▏" }}>
-          <box width="100%" backgroundColor={props.fill} paddingLeft={1} paddingRight={1} flexDirection="row" gap={1}>
-            <text width={1} flexShrink={0} fg={props.accent} attributes={TextAttributes.BOLD} selectable={false}>
-              {props.glyph ?? " "}
-            </text>
-            <box flexGrow={1} flexShrink={1} minWidth={0}>
-              {props.children}
-            </box>
+      <Sides color={props.ring} left={true}>
+        <box width="100%" backgroundColor={props.fill} paddingLeft={1} paddingRight={1} flexDirection="row" gap={1}>
+          <text width={1} flexShrink={0} fg={props.ring} attributes={TextAttributes.BOLD} selectable={false}>
+            {props.glyph ?? " "}
+          </text>
+          <box flexGrow={1} flexShrink={1} minWidth={0}>
+            {props.children}
           </box>
         </box>
+      </Sides>
+      <box height={1} flexShrink={0} flexDirection="row">
+        <Corner glyph=" " color={props.ring} />
+        <Line glyph={BELOW} color={props.ring} />
+        <Corner glyph=" " color={props.ring} />
       </box>
-      <box
-        height={1}
-        marginLeft={1}
-        marginRight={1}
-        flexShrink={0}
-        border={["bottom"]}
-        borderColor={ring()}
-        customBorderChars={{ ...EmptyBorder, horizontal: "▔" }}
-      />
     </box>
+  )
+}
+
+/**
+ * The slash and file list, standing on the field: its own top line over the rows and the field's sides, so
+ * the field's top edge becomes the line between them. `top` is where its first row goes.
+ */
+export function FieldList(props: {
+  visible: boolean
+  top: number
+  left: number
+  width: number
+  ring: RGBA
+  /** Its rows draw their own left side (upstream's new designs, where the selected row's side is the selection bar). */
+  rowSides: boolean
+  children: JSX.Element
+}) {
+  return (
+    <box visible={props.visible} position="absolute" top={props.top - 1} left={props.left} width={props.width} zIndex={100}>
+      <box height={1} flexShrink={0} flexDirection="row">
+        <Corner glyph=" " color={props.ring} />
+        <Line glyph={ABOVE} color={props.ring} />
+        <Corner glyph=" " color={props.ring} />
+      </box>
+      <Sides color={props.ring} left={!props.rowSides}>
+        {props.children}
+      </Sides>
+    </box>
+  )
+}
+
+function Sides(props: { color: RGBA; left: boolean; children: JSX.Element }) {
+  return (
+    <box
+      width="100%"
+      border={props.left ? ["left"] : []}
+      borderColor={props.color}
+      customBorderChars={{ ...EmptyBorder, vertical: LEFT }}
+    >
+      <box width="100%" border={["right"]} borderColor={props.color} customBorderChars={{ ...EmptyBorder, vertical: RIGHT }}>
+        {props.children}
+      </box>
+    </box>
+  )
+}
+
+function Line(props: { glyph: string; color: RGBA; fill?: RGBA }) {
+  return (
+    <box
+      height={1}
+      flexGrow={1}
+      border={["bottom"]}
+      borderColor={props.color}
+      backgroundColor={props.fill}
+      customBorderChars={{ ...EmptyBorder, horizontal: props.glyph }}
+    />
+  )
+}
+
+function Corner(props: { glyph: string; color: RGBA }) {
+  return (
+    <text width={1} flexShrink={0} fg={props.color} selectable={false}>
+      {props.glyph}
+    </text>
   )
 }
