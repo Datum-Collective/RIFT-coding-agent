@@ -1,6 +1,12 @@
 export * as RiftMutation from "./mutation.js"
 
+import { readFileSync, writeFileSync } from "node:fs"
+import path from "node:path"
+import { Effect } from "effect"
 import { RiftIntegrity } from "./integrity.js"
+import type { RiftStages } from "./stages.js"
+import type { RiftVerdict } from "./verdict.js"
+import { RiftWorkspace } from "./workspace.js"
 
 /** Languages the operator table understands. */
 const SOURCE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|go|rs)$/
@@ -98,3 +104,45 @@ export const mutants = (diff: string, read: (file: string) => string | undefined
     for (const list of perFile) if (list[round] && chosen.length < limit) chosen.push(list[round]!)
   return { mutants: chosen, unsupported: unsupported.sort() }
 }
+
+/** One mutant and the green test stage that owns its file. */
+export interface Job {
+  readonly mutant: Mutant
+  readonly stage: RiftStages.Stage
+  readonly env: Readonly<Record<string, string>>
+  /** The passing attempt, whose time bounds a mutant's run. */
+  readonly green: RiftVerdict.Attempt
+}
+
+/**
+ * Runs each job's test once in the candidate workspace, restoring the file after each. A mutant is caught by a
+ * failure or by a timeout of twice the green run. Stops at the wall budget and counts what it reached. Advisory:
+ * it never changes the verdict.
+ */
+export const run = (
+  workspace: RiftWorkspace.Workspace,
+  jobs: readonly Job[],
+  budgetMs: number,
+  progress: (done: number) => Effect.Effect<void>,
+) =>
+  Effect.gen(function* () {
+    const deadline = Date.now() + budgetMs
+    const survivors: Mutant[] = []
+    let total = 0
+    for (const job of jobs) {
+      if (Date.now() >= deadline) break
+      const file = path.join(workspace.dir, job.mutant.file)
+      const original = readFileSync(file, "utf8")
+      const lines = original.split("\n")
+      lines[job.mutant.line - 1] = job.mutant.to
+      writeFileSync(file, lines.join("\n"))
+      const attempt = yield* RiftWorkspace.exec(workspace, job.stage.cwd, job.stage.command, job.env, Math.max(2 * job.green.ms, 10_000)).pipe(
+        Effect.ensuring(Effect.sync(() => writeFileSync(file, original))),
+      )
+      if (attempt.status === "not_run") continue
+      total++
+      if (attempt.status === "passed") survivors.push(job.mutant)
+      yield* progress(total)
+    }
+    return { total, killed: total - survivors.length, survivors }
+  })

@@ -262,7 +262,7 @@ const findingsText = (findings: readonly RiftIntegrity.Finding[]) =>
 const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`
 
 /** Failing tests per side: a stage that names none counts as one. */
-const counts = (attribution: Attribution, tests: readonly string[]) => {
+export const counts = (attribution: Attribution, tests: readonly string[]) => {
   const one = (names: readonly string[]) => Math.max(1, names.length)
   switch (attribution.kind) {
     case "introduced":

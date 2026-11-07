@@ -128,10 +128,12 @@ export interface Ecosystem {
   readonly env?: (cache: string) => Readonly<Record<string, string>>
 }
 
-const join = (dir: string, name: string) => (dir === "." ? name : `${dir}/${name}`)
+export const join = (dir: string, name: string) => (dir === "." ? name : `${dir}/${name}`)
 const parent = (dir: string) => (dir === "." ? undefined : path.posix.dirname(dir))
-const inside = (dir: string, root: string) => root === "." || dir === root || dir.startsWith(`${root}/`)
-const ancestors = (dir: string) => {
+/** Whether a project path is `root` or lies under it. */
+export const inside = (dir: string, root: string) => root === "." || dir === root || dir.startsWith(`${root}/`)
+/** `dir` and every directory above it, up to ".". */
+export const ancestors = (dir: string) => {
   const dirs: string[] = []
   for (let current: string | undefined = dir; current !== undefined; current = parent(current)) dirs.push(current)
   return dirs

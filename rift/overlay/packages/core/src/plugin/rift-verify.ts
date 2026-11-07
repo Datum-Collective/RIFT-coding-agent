@@ -175,7 +175,7 @@ export const Plugin = define({
       const findings = RiftIntegrity.review(RiftIntegrity.parse(changes))
       const tampered = RiftIntegrity.tampered(findings)
       const chain = yield* readReceipts(sessionID)
-      const sealed = RiftReceipt.seal({
+      const sealed = RiftReceipt.sealChecks({
         session: sessionID,
         root: directory,
         head: tree.head,

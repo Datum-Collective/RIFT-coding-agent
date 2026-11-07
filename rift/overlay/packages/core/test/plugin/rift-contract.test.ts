@@ -268,7 +268,7 @@ describe("rift contract", () => {
       expect(reports(yield* sessions.messages({ sessionID: session.id, order: "asc" }))).toEqual([])
       const stored = JSON.stringify(yield* storage.pipe(Effect.flatMap((store) => store.get(`session:${session.id}`))))
       expect(stored).not.toContain("Test integrity")
-      const chain = (yield* storage.pipe(Effect.flatMap((store) => store.get(`receipts:${session.id}`)))) as unknown as RiftReceipt.Sealed[]
+      const chain = (yield* storage.pipe(Effect.flatMap((store) => store.get(`receipts:${session.id}`)))) as unknown as (RiftReceipt.ReceiptV1 & { digest: string })[]
       expect(chain.map((receipt) => receipt.verdict)).toEqual(["verified"])
       expect(chain[0]?.files.map((file) => file.path)).toEqual(["a.test.ts"])
     }),

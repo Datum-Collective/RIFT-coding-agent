@@ -83,7 +83,7 @@ const result = (status: RiftChecks.Status): RiftChecks.Result => ({ name: "t", c
 
 describe("RiftReceipt", () => {
   const seal = (status: RiftChecks.Status, prev?: string, findings: RiftIntegrity.Finding[] = []) =>
-    RiftReceipt.seal({ session: "s", root: "/nonexistent", files: ["b.ts", "a.ts"], results: [result(status)], findings, prev, now: new Date(0) })
+    RiftReceipt.sealChecks({ session: "s", root: "/nonexistent", files: ["b.ts", "a.ts"], results: [result(status)], findings, prev, now: new Date(0) })
 
   test("the verdict is never better than the evidence", () => {
     const block: RiftIntegrity.Finding = { severity: "block", rule: "skipped-test", file: "a.test.ts", detail: "x" }
@@ -112,8 +112,8 @@ describe("RiftReceipt", () => {
     expect(RiftReceipt.audit([two, one, three])).toContain("does not")
   })
   test("a changed check output changes the receipt", () => {
-    const a = RiftReceipt.seal({ session: "s", root: "/x", files: [], results: [{ ...result("passed"), output: "one" }], findings: [], now: new Date(0) })
-    const b = RiftReceipt.seal({ session: "s", root: "/x", files: [], results: [{ ...result("passed"), output: "two" }], findings: [], now: new Date(0) })
+    const a = RiftReceipt.sealChecks({ session: "s", root: "/x", files: [], results: [{ ...result("passed"), output: "one" }], findings: [], now: new Date(0) })
+    const b = RiftReceipt.sealChecks({ session: "s", root: "/x", files: [], results: [{ ...result("passed"), output: "two" }], findings: [], now: new Date(0) })
     expect(a.digest).not.toBe(b.digest)
   })
 })
