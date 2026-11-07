@@ -70,7 +70,7 @@ export default Runtime.handler(
 )
 
 export const remoteWarning = [
-  "This will expose your OpenCode server to the internet.",
+  "This will expose your RIFT server to the internet.",
   "Traffic is end-to-end encrypted, and access requires your server password.",
   "To pair locally instead, run `opencode pair` without the --remote flag.",
 ].join(EOL)
