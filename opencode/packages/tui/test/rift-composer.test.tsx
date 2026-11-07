@@ -2,43 +2,54 @@
 import { afterEach, expect, test } from "bun:test"
 import { RGBA } from "@opentui/core"
 import { testRender } from "@opentui/solid"
-import { ComposerFrame, ringColour } from "../src/component/prompt/frame"
+import type { JSX } from "solid-js"
+import { ComposerFrame, FieldList, fieldTone, ringColour } from "../src/component/prompt/frame"
 import { landingDetail } from "../src/component/landing"
 
 const accent = RGBA.fromInts(169, 174, 255)
 const border = RGBA.fromInts(38, 38, 38)
+const page = RGBA.fromInts(10, 10, 10)
 const fill = RGBA.fromInts(18, 18, 18)
+const listFill = RGBA.fromInts(30, 30, 30)
+const rgb = (colour: RGBA) => colour.toInts().slice(0, 3)
 
 afterEach(() => {
   delete process.env.RIFT_NO_ANIMATION
 })
 
-async function render(props: { busy?: boolean; glyph?: string; lines?: string[] }, wait = 0) {
-  const app = await testRender(
-    () => (
-      <ComposerFrame
-        accent={accent}
-        border={border}
-        fill={fill}
-        quiet={false}
-        draft={false}
-        busy={props.busy ?? false}
-        animations={true}
-        glyph={props.glyph}
-      >
-        <text>{(props.lines ?? ["fix the flaky test"]).join("\n")}</text>
-      </ComposerFrame>
-    ),
-    { width: 40, height: 8 },
-  )
+async function draw(view: () => JSX.Element, wait = 0) {
+  const app = await testRender(view, { width: 40, height: 10 })
   try {
     await app.renderOnce()
     if (wait) await new Promise((resolve) => setTimeout(resolve, wait))
     await app.renderOnce()
-    return app.captureCharFrame().split("\n")
+    return { rows: app.captureCharFrame().split("\n"), spans: app.captureSpans() }
   } finally {
     app.renderer.destroy()
   }
+}
+
+function field(props: { busy?: boolean; glyph?: string; lines?: string[]; ring?: RGBA; joined?: RGBA }) {
+  return (
+    <ComposerFrame
+      ring={props.ring ?? accent}
+      accent={accent}
+      fill={fill}
+      busy={props.busy ?? false}
+      animations={true}
+      joined={props.joined}
+      glyph={props.glyph}
+    >
+      <text>{(props.lines ?? ["fix the flaky test"]).join("\n")}</text>
+    </ComposerFrame>
+  )
+}
+
+const render = async (props: Parameters<typeof field>[0], wait = 0) => (await draw(() => field(props), wait)).rows
+
+/** The colours of the cells in `row` that hold one of `glyphs`. */
+function inks(spans: { lines: { spans: { text: string; fg: RGBA }[] }[] }, row: number, glyphs: RegExp) {
+  return spans.lines[row]!.spans.filter((span) => glyphs.test(span.text)).map((span) => rgb(span.fg))
 }
 
 test("the field is the draft's rows inside a hairline ring with open corners", async () => {
@@ -73,12 +84,63 @@ test("RIFT_NO_ANIMATION keeps the waterline still while busy", async () => {
   expect(rows[0]).toBe(" " + "▁".repeat(38) + " ")
 })
 
-test("the ring is quiet without input, the agent's colour once there is a draft, and between when empty", () => {
-  expect(ringColour({ accent, border, quiet: true, draft: true })).toBe(border)
-  expect(ringColour({ accent, border, quiet: false, draft: true })).toBe(accent)
-  const empty = ringColour({ accent, border, quiet: false, draft: false })
-  expect(empty.r).toBeGreaterThan(border.r)
-  expect(empty.r).toBeLessThan(accent.r)
+test("each state of the composer gives the ring one colour", () => {
+  const colours = { accent, border, page }
+  const ring = (state: { quiet?: boolean; shell?: boolean; draft?: boolean }) =>
+    rgb(ringColour(fieldTone({ quiet: false, shell: false, draft: false, ...state }), colours))
+  const between = (a: RGBA, b: RGBA, at: number) => rgb(a).map((v, i) => Math.round(v + (rgb(b)[i]! - v) * at))
+
+  expect(ring({})).toEqual(between(border, accent, 0.55))
+  expect(ring({ draft: true })).toEqual(rgb(accent))
+  expect(ring({ shell: true })).toEqual(rgb(accent))
+  expect(ring({ shell: true, draft: true })).toEqual(rgb(accent))
+  for (const state of [{}, { draft: true }, { shell: true }])
+    expect(ring({ quiet: true, ...state })).toEqual(between(border, page, 0.5))
+})
+
+test("the ring's colour is drawn on all four edges, and the crest keeps the agent's", async () => {
+  const ring = ringColour("empty", { accent, border, page })
+  const { spans } = await draw(() => field({ ring, glyph: "$", busy: true }), 300)
+  for (const [row, glyphs] of [[0, /▁/], [1, /[▕▏$]/], [2, /▔/]] as const)
+    for (const ink of inks(spans, row, glyphs)) expect(ink).toEqual(rgb(ring))
+  expect(inks(spans, 0, /[▂▃▄]/)).toContainEqual(rgb(accent))
+})
+
+test("the slash list grows out of the field: its own top line, the field's sides, the field's top edge between", async () => {
+  const ring = ringColour("draft", { accent, border, page })
+  const { rows, spans } = await draw(() => (
+    <box width={40} height={10}>
+      <box height={4} flexShrink={0} />
+      {field({ ring, joined: listFill, lines: ["/re"] })}
+      <FieldList visible={true} top={2} left={0} width={40} ring={ring} rowSides={false}>
+        <box backgroundColor={listFill}>
+          <text>/review</text>
+          <text>/rename</text>
+        </box>
+      </FieldList>
+    </box>
+  ))
+  expect(rows.slice(1, 7)).toEqual([
+    " " + "▁".repeat(38) + " ",
+    "▕/review".padEnd(39) + "▏",
+    "▕/rename".padEnd(39) + "▏",
+    "▕" + "▁".repeat(38) + "▏",
+    "▕   /re".padEnd(39) + "▏",
+    " " + "▔".repeat(38) + " ",
+  ])
+  for (const row of [1, 2, 3, 4]) for (const ink of inks(spans, row, /[▁▕▏]/)) expect(ink).toEqual(rgb(ring))
+})
+
+test("a list whose rows draw their own left side gets only the right one", async () => {
+  const { rows } = await draw(() => (
+    <box width={40} height={10}>
+      <box height={4} flexShrink={0} />
+      <FieldList visible={true} top={2} left={0} width={40} ring={accent} rowSides={true}>
+        <text>x/review</text>
+      </FieldList>
+    </box>
+  ))
+  expect(rows[2]).toBe("x/review".padEnd(39) + "▏")
 })
 
 test("the landing gives up detail as its rows run out, and the banner needs its width", () => {

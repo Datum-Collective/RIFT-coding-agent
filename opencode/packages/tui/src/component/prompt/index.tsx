@@ -68,7 +68,7 @@ import { directoryRecentValue } from "../../prompt/directory-completion"
 import { useWorkingDirectoryActions } from "../../ui/working-directory-actions"
 import { truncateFilePath } from "../../ui/file-path"
 import { PromptMetadataRow } from "./metadata"
-import { ComposerFrame, crestAllowed, FIELD_WIDTH } from "./frame"
+import { ComposerFrame, crestAllowed, FIELD_WIDTH, fieldTone, ringColour } from "./frame"
 import { limitLabel, useUsageLimits } from "../usage"
 
 export type PromptProps = {
@@ -1655,17 +1655,27 @@ export function Prompt(props: PromptProps) {
   const maxHeight = createMemo(() => Math.max(6, Math.floor(dimensions().height / 3)))
 
   const promptBg = createMemo(() => theme.decrease(theme.background.raised.base))
+  // RIFT: the field's ring, which the slash and file list growing out of it takes too.
+  const ring = createMemo(() =>
+    ringColour(
+      fieldTone({
+        quiet: disabled() || !!muted() || dialog.stack.length > 0,
+        shell: store.mode === "shell",
+        draft: !!store.prompt.text,
+      }),
+      { accent: highlight(), border: theme.border.base, page: theme.background.base },
+    ),
+  )
 
   return (
     <>
       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
         {/* RIFT: a hairline field; its top edge is the waterline the typing koi swim down to. */}
         <ComposerFrame
+          ring={ring()}
           accent={highlight()}
-          border={theme.border.base}
           fill={promptBg()}
-          quiet={disabled() || !!muted()}
-          draft={store.prompt.text.length > 0}
+          joined={auto()?.visible ? theme.background.raised.high : undefined}
           busy={status() === "running"}
           animations={animationsEnabled()}
           glyph={store.mode === "shell" ? "$" : undefined}
@@ -1962,6 +1972,7 @@ export function Prompt(props: PromptProps) {
           setAuto(() => r)
         }}
         anchor={() => anchor}
+        ring={ring()}
         input={() => input}
         setPrompt={(cb) => {
           setStore("prompt", produce(cb))
