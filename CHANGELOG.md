@@ -4,7 +4,7 @@ Release notes for RIFT versions, newest first. Entries for v0.1.10 to v0.1.13 ar
 
 ## v0.6.0 (2026-11-07)
 
-All that is gold does not glitter, and not every green run is proven. RIFT now checks your project the way CI does. `/verify` tests the whole thing from a clean checkout and tells you what your changes broke and what was already broken. Built on OpenCode v2.2.6. Full notes: https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v0.6.0
+Even the very wise cannot see all ends. RIFT now checks your project the way CI does, instead of trusting that it works. `/verify` tests the whole thing from a clean checkout and tells you what your changes broke and what was already broken. Built on OpenCode v2.2.6. Full notes: https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v0.6.0
 
 ### Added
 - **`/verify`, the whole project from scratch.** RIFT copies what git would commit into a private folder, with no `node_modules`, build output or `.env`, so nothing left over on your machine can fake a pass. It installs from the lockfile with the lockfile frozen. Then it runs your project's own checks in CI order: format, lint, typecheck, build, tests, then end-to-end tests and the agent's graph checks. If the build fails, the tests are marked skipped and never reported as passing, but lint and typecheck still report. Supports bun, npm, pnpm, yarn, Go, Rust, Python (uv or poetry) and Makefile targets. Parts of the project RIFT can't check are listed by name.
@@ -12,7 +12,7 @@ All that is gold does not glitter, and not every green run is proven. RIFT now c
 - **Flaky tests are named.** A failing test is rerun. If it fails and then passes on the same code, it is reported as flaky. It never counts as a pass or as a regression.
 - **Mutation testing on your changes.** RIFT makes small deliberate breaks in the lines you changed and lists the ones no test notices. This is advice and never changes the verdict. `/verify quick` skips it.
 - `/verify fix` hands the failures to the agent, newest first. `/verify <path>` checks only the packages that contain that path. `/verify stop` cancels a run.
-- When a check needs approval, you get one prompt that lists every command. "Always" saves the whole list. The report lands as one line in the transcript and does not wake the model. The sidebar shows the run as it goes.
+- When a check needs approval, you get one approval request that lists every command. "Always" saves the whole list. The report lands as one line in the transcript and does not wake the model. The sidebar shows the run as it goes.
 
 ### Changed
 - **The check after each agent turn runs on the same engine.** It now runs on a snapshot of your files rather than the files themselves, so a `lint --fix` script no longer edits your work. The agent is told whether a failure is new or was already failing before its change.
