@@ -1,0 +1,304 @@
+diff --git a/opencode/packages/tui/src/component/prompt/index.tsx b/opencode/packages/tui/src/component/prompt/index.tsx
+index 075f037..ad00791 100644
+--- a/opencode/packages/tui/src/component/prompt/index.tsx
++++ b/opencode/packages/tui/src/component/prompt/index.tsx
+@@ -15,7 +15,6 @@ import { useLocal } from "../../context/local"
+ import { useTheme, useThemes } from "../../context/theme"
+ import { tint } from "../../theme/color"
+ import { createAnimatable, tween } from "../../ui/animation"
+-import { EmptyBorder, SplitBorder } from "../../ui/border"
+ import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
+ import { useClipboard } from "../../context/clipboard"
+ import { Spinner } from "../spinner"
+@@ -41,7 +40,6 @@ import { type AutocompleteOption, type AutocompleteRef, Autocomplete } from "./a
+ import { useRenderer, useTerminalDimensions } from "@opentui/solid"
+ import { Locale } from "../../util/locale"
+ import { errorMessage } from "../../util/error"
+-import { createColors, createFrames } from "../../ui/spinner"
+ import { useDialog } from "../../ui/dialog"
+ import { DialogIntegration } from "../dialog-integration"
+ import { useConnected } from "../use-connected"
+@@ -70,6 +68,7 @@ import { directoryRecentValue } from "../../prompt/directory-completion"
+ import { useWorkingDirectoryActions } from "../../ui/working-directory-actions"
+ import { truncateFilePath } from "../../ui/file-path"
+ import { PromptMetadataRow } from "./metadata"
++import { ComposerFrame, crestAllowed, FIELD_WIDTH } from "./frame"
+ import { limitLabel, useUsageLimits } from "../usage"
+ 
+ export type PromptProps = {
+@@ -1589,7 +1588,7 @@ export function Prompt(props: PromptProps) {
+   })
+   const highlight = createMemo(() => {
+     if (muted()) return theme.border.base
+-    if (store.mode === "shell") return theme.text.action.primary.selected
++    if (store.mode === "shell") return theme.text.feedback.warning.base
+     return promptDisplay().agentColor ?? theme.border.base
+   })
+   const agentLabel = createMemo(() => (store.mode === "shell" ? "Shell" : promptDisplay().agentLabel))
+@@ -1607,7 +1606,6 @@ export function Prompt(props: PromptProps) {
+   createEffect(() => {
+     if (agentLabel()) revealedPromptMetadata.add(local)
+   })
+-  const borderHighlight = createMemo(() => tint(theme.border.base, highlight(), agentMetaAlpha()))
+   const footerInput = () => ({
+     sessionID: props.sessionID,
+     mode: store.mode,
+@@ -1621,10 +1619,10 @@ export function Prompt(props: PromptProps) {
+         return `Run a command… "${shell()[store.placeholder % shell().length]}"`
+       }
+       if (!list().length) return undefined
+-      return `Ask anything… "${list()[store.placeholder % list().length]}"`
++      return `Try "${list()[store.placeholder % list().length]}"`
+     })()
+     if (!value) return undefined
+-    const width = dimensions().width < 44 ? dimensions().width - 5 : Math.min(75, dimensions().width - 4) - 5
++    const width = dimensions().width < 44 ? dimensions().width - 5 : Math.min(FIELD_WIDTH, dimensions().width) - 7
+     return Locale.takeWidth(value, Math.max(1, width)).trimEnd()
+   })
+   const footerLocation = createMemo(() => {
+@@ -1654,25 +1652,6 @@ export function Prompt(props: PromptProps) {
+     onMove: () => void move.open(),
+   })
+ 
+-  const spinnerDef = createMemo(() => {
+-    const color = promptDisplay().agentColor ?? theme.border.base
+-    return {
+-      frames: createFrames({
+-        color,
+-        style: "blocks",
+-        inactiveFactor: 0.6,
+-        // enableFading: false,
+-        minAlpha: 0.3,
+-      }),
+-      color: createColors({
+-        color,
+-        style: "blocks",
+-        inactiveFactor: 0.6,
+-        // enableFading: false,
+-        minAlpha: 0.3,
+-      }),
+-    }
+-  })
+   const maxHeight = createMemo(() => Math.max(6, Math.floor(dimensions().height / 3)))
+ 
+   const promptBg = createMemo(() => theme.decrease(theme.background.raised.base))
+@@ -1680,24 +1659,18 @@ export function Prompt(props: PromptProps) {
+   return (
+     <>
+       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
+-        <box
+-          width="100%"
+-          border={["left"]}
+-          borderColor={borderHighlight()}
+-          customBorderChars={{
+-            ...SplitBorder.customBorderChars,
+-            bottomLeft: "╹",
+-          }}
++        {/* RIFT: a hairline field; its top edge is the waterline the typing koi swim down to. */}
++        <ComposerFrame
++          accent={highlight()}
++          border={theme.border.base}
++          fill={promptBg()}
++          quiet={disabled() || !!muted()}
++          draft={store.prompt.text.length > 0}
++          busy={status() === "running"}
++          animations={animationsEnabled()}
++          glyph={store.mode === "shell" ? "$" : undefined}
+         >
+-          <box
+-            paddingLeft={dimensions().width < 44 ? 1 : 2}
+-            paddingRight={dimensions().width < 44 ? 1 : 2}
+-            paddingTop={1}
+-            flexShrink={0}
+-            backgroundColor={promptBg()}
+-            flexGrow={1}
+-            width="100%"
+-          >
++          <box flexShrink={0} flexGrow={1} width="100%">
+             <Show when={config.prompt?.image_preview && visibleImageAttachments().length > 0}>
+               <box
+                 width="100%"
+@@ -1853,51 +1826,10 @@ export function Prompt(props: PromptProps) {
+               cursorColor={disabled() ? theme.background.raised.base : theme.text.base}
+               syntaxStyle={syntax()}
+             />
+-            <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
+-              <PromptMetadataRow
+-                mode={store.mode}
+-                agent={agentLabel()}
+-                auto={local.permission.mode === "autoaccept"}
+-                model={promptDisplay().modelLabel}
+-                provider={promptDisplay().providerLabel}
+-                variant={promptDisplay().variant}
+-                limit={limit()}
+-                muted={!!muted()}
+-                highlight={highlight()}
+-                agentAlpha={agentMetaAlpha()}
+-                modelAlpha={modelMetaAlpha()}
+-                variantAlpha={variantMetaAlpha()}
+-              />
+-            </box>
+           </box>
+-        </box>
+-        <box
+-          height={1}
+-          border={["left"]}
+-          borderColor={borderHighlight()}
+-          customBorderChars={{
+-            ...EmptyBorder,
+-            vertical: promptBg().a !== 0 ? "╹" : " ",
+-          }}
+-        >
+-          <box
+-            height={1}
+-            border={["bottom"]}
+-            borderColor={promptBg()}
+-            customBorderChars={
+-              promptBg().a !== 0
+-                ? {
+-                    ...EmptyBorder,
+-                    horizontal: "▀",
+-                  }
+-                : {
+-                    ...EmptyBorder,
+-                    horizontal: " ",
+-                  }
+-            }
+-          />
+-        </box>
+-        <box width="100%" flexDirection="row" justifyContent="space-between" gap={2}>
++        </ComposerFrame>
++        {/* RIFT: under the field, on the draft's column: who answers, where, and one hint. */}
++        <box width="100%" flexDirection="row" justifyContent="space-between" gap={2} paddingLeft={4} paddingRight={2}>
+           <Slot path="prompt.footer" input={footerInput()}>
+             <Slot path="prompt.footer.status" input={footerInput()}>
+               <box
+@@ -1912,11 +1844,10 @@ export function Prompt(props: PromptProps) {
+                 <Switch>
+                   <Match when={status() === "running"}>
+                     <box flexDirection="row" gap={1} flexGrow={1} justifyContent="flex-start">
+-                      <box marginLeft={1}>
+-                        <Show when={config.animations ?? true} fallback={<text fg={theme.text.muted}>[⋯]</text>}>
+-                          <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
+-                        </Show>
+-                      </box>
++                      {/* RIFT: the crest on the waterline is the spinner; this is for when it cannot move. */}
++                      <Show when={!crestAllowed(animationsEnabled())}>
++                        <text fg={theme.text.muted}>[⋯]</text>
++                      </Show>
+                       <PromptInterruptStatus
+                         armed={store.interrupt > 0}
+                         animations={animationsEnabled()}
+@@ -1945,23 +1876,41 @@ export function Prompt(props: PromptProps) {
+                     </box>
+                   </Match>
+                   <Match when={true}>
+-                    <Show when={locationLabelDisplay()} fallback={<text />}>
+-                      {(location) => (
+-                        <text
+-                          id="prompt.footer.location"
+-                          fg={locationActions.hovered() ? theme.text.base : theme.text.muted}
+-                          wrapMode="none"
+-                          truncate
+-                          flexGrow={1}
+-                          flexShrink={1}
+-                          onMouseOver={locationActions.onMouseOver}
+-                          onMouseOut={locationActions.onMouseOut}
+-                          onMouseUp={locationActions.onMouseUp}
+-                        >
+-                          {location()}
+-                        </text>
+-                      )}
+-                    </Show>
++                    <box flexDirection="row" gap={2} flexGrow={1} flexShrink={1} minWidth={0}>
++                      <box flexDirection="row" flexShrink={0} gap={1}>
++                        <PromptMetadataRow
++                          mode={store.mode}
++                          agent={agentLabel()}
++                          auto={local.permission.mode === "autoaccept"}
++                          model={promptDisplay().modelLabel}
++                          provider=""
++                          variant={promptDisplay().variant}
++                          limit={limit()}
++                          muted={!!muted()}
++                          highlight={highlight()}
++                          agentAlpha={agentMetaAlpha()}
++                          modelAlpha={modelMetaAlpha()}
++                          variantAlpha={variantMetaAlpha()}
++                        />
++                      </box>
++                      <Show when={locationLabelDisplay()} fallback={<text />}>
++                        {(location) => (
++                          <text
++                            id="prompt.footer.location"
++                            fg={locationActions.hovered() ? theme.text.base : theme.text.muted}
++                            wrapMode="none"
++                            truncate
++                            flexGrow={1}
++                            flexShrink={1}
++                            onMouseOver={locationActions.onMouseOver}
++                            onMouseOut={locationActions.onMouseOut}
++                            onMouseUp={locationActions.onMouseUp}
++                          >
++                            {location()}
++                          </text>
++                        )}
++                      </Show>
++                    </box>
+                   </Match>
+                 </Switch>
+               </box>
+diff --git a/opencode/packages/tui/src/component/prompt/metadata.tsx b/opencode/packages/tui/src/component/prompt/metadata.tsx
+index 9f7fea8..7908dd1 100644
+--- a/opencode/packages/tui/src/component/prompt/metadata.tsx
++++ b/opencode/packages/tui/src/component/prompt/metadata.tsx
+@@ -1,4 +1,4 @@
+-import { RGBA, TextAttributes } from "@opentui/core"
++import { RGBA } from "@opentui/core"
+ import { useTerminalDimensions } from "@opentui/solid"
+ import { createMemo, Show } from "solid-js"
+ import { useTheme } from "../../context/theme"
+@@ -58,7 +58,7 @@ export function PromptMetadataRow(props: {
+               minWidth={0}
+               wrapMode="none"
+               truncate
+-              fg={fade(props.muted ? theme.text.muted : theme.text.base, props.modelAlpha)}
++              fg={fade(theme.text.muted, props.modelAlpha)}
+             >
+               {layout().model}
+             </text>
+@@ -73,12 +73,7 @@ export function PromptMetadataRow(props: {
+               {(variant) => (
+                 <>
+                   <text fg={fade(theme.text.muted, props.variantAlpha)}>·</text>
+-                  <text
+-                    fg={fade(theme.text.feedback.warning.base, props.variantAlpha)}
+-                    attributes={TextAttributes.BOLD}
+-                  >
+-                    {variant()}
+-                  </text>
++                  <text fg={fade(theme.text.muted, props.variantAlpha)}>{variant()}</text>
+                 </>
+               )}
+             </Show>
+diff --git a/opencode/packages/tui/src/feature-plugins/prompt/footer.tsx b/opencode/packages/tui/src/feature-plugins/prompt/footer.tsx
+index a997d9a..534267d 100644
+--- a/opencode/packages/tui/src/feature-plugins/prompt/footer.tsx
++++ b/opencode/packages/tui/src/feature-plugins/prompt/footer.tsx
+@@ -106,16 +106,6 @@ export function PromptFooter(props: {
+               </Show>
+             </box>
+           </Match>
+-          <Match when={props.showDetails && layout().shortcuts}>
+-            <text
+-              fg={interactive() ? props.context.theme.text.base : props.context.theme.text.action.primary.disabled}
+-              attributes={interactive() ? 0 : TextAttributes.DIM}
+-              flexShrink={0}
+-            >
+-              {shortcut("agent.cycle")}{" "}
+-              <span style={interactive() ? { fg: props.context.theme.text.muted } : {}}>agents</span>
+-            </text>
+-          </Match>
+         </Switch>
+         <Show when={props.showDetails && layout().shortcuts}>
+           <text
