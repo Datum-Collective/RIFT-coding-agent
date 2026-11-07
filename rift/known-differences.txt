@@ -7,3 +7,17 @@ core: test/location-layer.test.ts::LocationServiceMap::isolates provider state b
 # when isolated via `-t` (verified 2026-11-02). session.ts's module-level `session`/`takeDraft` state depends
 # on file execution order; isolating one of the two `for (const queued of [false, true])` cases breaks it.
 tui: test/session-media-refs.test.tsx::::an /undo that finishes after leaving and returning joins what was typed since
+
+# Waits for upstream's terminal titles "OpenCode" and "OC | <session>". RIFT titles the terminal "RIFT" (rift/rebrand.txt).
+tui: test/app-lifecycle.test.tsx::::SIGHUP clears title and disposes scoped resources once
+tui: test/app-lifecycle.test.tsx::::session lifecycle updates the terminal title and prints the epilogue after cleanup
+tui: test/app-lifecycle.test.tsx::::session title generated while an untitled session is loading remains visible
+
+# Waits for "Updating OpenCode". RIFT's update dialog says "Updating RIFT" (rift/rebrand.txt).
+tui: test/component/dialog-update.test.tsx::::installation progress replaces checking while the update job is still pending
+
+# Asserts "OpenCode includes free models". RIFT's sidebar says "RIFT includes free models" (rift/rebrand.txt).
+tui: test/feature-plugins/sidebar-footer.test.tsx::::sidebar shows onboarding without a connected integration
+
+# Asserts "Tell OpenCode what to do differently". RIFT says "Tell RIFT what to do differently" (rift/rebrand.txt).
+tui: test/mini/blocker.responsive.test.tsx::::roomy rejection keeps the editor and confirmation hints inline
