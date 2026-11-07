@@ -1,4 +1,4 @@
-import { RGBA, TextAttributes } from "@opentui/core"
+import { RGBA } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { createMemo, Show } from "solid-js"
 import { useTheme } from "../../context/theme"
@@ -73,12 +73,7 @@ export function PromptMetadataRow(props: {
               {(variant) => (
                 <>
                   <text fg={fade(theme.text.muted, props.variantAlpha)}>·</text>
-                  <text
-                    fg={fade(theme.text.feedback.warning.base, props.variantAlpha)}
-                    attributes={TextAttributes.BOLD}
-                  >
-                    {variant()}
-                  </text>
+                  <text fg={fade(theme.text.muted, props.variantAlpha)}>{variant()}</text>
                 </>
               )}
             </Show>

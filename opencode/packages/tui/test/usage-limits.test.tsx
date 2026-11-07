@@ -127,7 +127,7 @@ test("shows what the workspace's limits leave and why a refused turn stopped", a
     (frame) =>
       frame.includes("GPT 5.6 Sol usage limit reached") &&
       frame.includes("Switch model with") &&
-      /GPT 5\.6 Sol OpenCode +\$6 left/.test(frame) &&
+      /GPT 5\.6 Sol +\$6 left/.test(frame) &&
       frame.includes("Running low on GPT 5.6 Sol"),
   )
 
@@ -138,7 +138,10 @@ test("shows what the workspace's limits leave and why a refused turn stopped", a
     (frame) =>
       frame.includes("Workspace: Acme") &&
       /Claude Opus 5 +\$6 left/.test(frame) &&
-      !/GPT 5\.6 Sol +\$6 left/.test(frame),
+      // RIFT: the composer's own "GPT 5.6 Sol  $6 left" line is not a dialog row.
+      !frame
+        .split("\n")
+        .some((line) => !line.includes("Build ·") && /GPT 5\.6 Sol +\$6 left/.test(line)),
   )
 
   setup.mockInput.pressEnter()
