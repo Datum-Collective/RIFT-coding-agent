@@ -1,6 +1,7 @@
 import { Prompt, type PromptRef } from "../component/prompt"
 import { createEffect, createMemo, createSignal, onMount, Show, untrack } from "solid-js"
-import { Banner } from "../component/banner"
+import { Landing } from "../component/landing"
+import { FIELD_WIDTH } from "../component/prompt/frame"
 import { IdleKoi } from "../component/idle-koi"
 import { TypingKoi } from "../component/typing-koi"
 import type { BoxRenderable } from "@opentui/core"
@@ -13,7 +14,6 @@ import { useData } from "../context/data"
 import { useLocation } from "../context/location"
 import { FormPrompt } from "./session/form"
 import { Slot } from "../plugin/render"
-import { useTerminalDimensions } from "@opentui/solid"
 import { useTheme } from "../context/theme"
 import { useUpdateNotification } from "../context/update-notification"
 import { useExit } from "../context/exit"
@@ -34,7 +34,6 @@ export function Home() {
   const editor = useEditorContext()
   const data = useData()
   const location = useLocation()
-  const dimensions = useTerminalDimensions()
   const [logoWidth, setLogoWidth] = createSignal(0)
   const [composer, setComposer] = createSignal<BoxRenderable>()
   // Global MCP elicitations can arrive without a session route, so keep them reachable from Home.
@@ -86,28 +85,13 @@ export function Home() {
     <>
       <IdleKoi />
       <TypingKoi composer={composer} />
-      <box
-        flexGrow={1}
-        alignItems="center"
-        paddingLeft={dimensions().width < 44 ? 1 : 2}
-        paddingRight={dimensions().width < 44 ? 1 : 2}
-      >
-        <box flexGrow={1} minHeight={0} />
-        <box height={3} minHeight={0} flexShrink={1} />
-        <box
-          flexShrink={0}
-          onSizeChange={function () {
-            setLogoWidth(this.width)
-          }}
-        >
-          <Banner />
-        </box>
-        <box height={1} flexShrink={0} />
-        <UpdateNotification width={logoWidth()} />
-        <box ref={setComposer} width="100%" maxWidth={75} zIndex={1000} paddingTop={1} flexShrink={0} position="relative">
+      <box flexGrow={1} alignItems="center">
+        <Landing onWidth={setLogoWidth}>
+          <UpdateNotification width={logoWidth()} />
+        </Landing>
+        <box ref={setComposer} width="100%" maxWidth={FIELD_WIDTH} zIndex={1000} paddingTop={1} flexShrink={0} position="relative">
           <Prompt ref={bind} placeholders={placeholder} disabled={forms().length > 0} />
         </box>
-        <box flexGrow={1} minHeight={0} />
       </box>
       <box width="100%" flexShrink={0}>
         <Slot path="home.footer" />

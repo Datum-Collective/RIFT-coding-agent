@@ -7,7 +7,6 @@ import {
   decodePasteBytes,
   measureEditText,
   stripAnsiSequences,
-  TextAttributes,
   type KeyEvent,
 } from "@opentui/core"
 import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match, For } from "solid-js"
@@ -41,7 +40,6 @@ import { type AutocompleteOption, type AutocompleteRef, Autocomplete } from "./a
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { Locale } from "../../util/locale"
 import { errorMessage } from "../../util/error"
-import { createColors, createFrames } from "../../ui/spinner"
 import { useDialog } from "../../ui/dialog"
 import { DialogIntegration } from "../dialog-integration"
 import { useConnected } from "../use-connected"
@@ -70,6 +68,7 @@ import { directoryRecentValue } from "../../prompt/directory-completion"
 import { useWorkingDirectoryActions } from "../../ui/working-directory-actions"
 import { truncateFilePath } from "../../ui/file-path"
 import { PromptMetadataRow } from "./metadata"
+import { ComposerFrame, crestAllowed, FIELD_WIDTH } from "./frame"
 import { limitLabel, useUsageLimits } from "../usage"
 
 export type PromptProps = {
@@ -1589,7 +1588,7 @@ export function Prompt(props: PromptProps) {
   })
   const highlight = createMemo(() => {
     if (muted()) return theme.border.base
-    if (store.mode === "shell") return theme.text.action.primary.selected
+    if (store.mode === "shell") return theme.text.feedback.warning.base
     return promptDisplay().agentColor ?? theme.border.base
   })
   const agentLabel = createMemo(() => (store.mode === "shell" ? "Shell" : promptDisplay().agentLabel))
@@ -1620,10 +1619,10 @@ export function Prompt(props: PromptProps) {
         return `Run a command… "${shell()[store.placeholder % shell().length]}"`
       }
       if (!list().length) return undefined
-      return "Ask RIFT to do anything"
+      return `Try "${list()[store.placeholder % list().length]}"`
     })()
     if (!value) return undefined
-    const width = dimensions().width < 44 ? dimensions().width - 5 : Math.min(75, dimensions().width - 4) - 5
+    const width = dimensions().width < 44 ? dimensions().width - 5 : Math.min(FIELD_WIDTH, dimensions().width) - 7
     return Locale.takeWidth(value, Math.max(1, width)).trimEnd()
   })
   const footerLocation = createMemo(() => {
@@ -1653,25 +1652,6 @@ export function Prompt(props: PromptProps) {
     onMove: () => void move.open(),
   })
 
-  const spinnerDef = createMemo(() => {
-    const color = promptDisplay().agentColor ?? theme.border.base
-    return {
-      frames: createFrames({
-        color,
-        style: "blocks",
-        inactiveFactor: 0.6,
-        // enableFading: false,
-        minAlpha: 0.3,
-      }),
-      color: createColors({
-        color,
-        style: "blocks",
-        inactiveFactor: 0.6,
-        // enableFading: false,
-        minAlpha: 0.3,
-      }),
-    }
-  })
   const maxHeight = createMemo(() => Math.max(6, Math.floor(dimensions().height / 3)))
 
   const promptBg = createMemo(() => theme.decrease(theme.background.raised.base))
@@ -1679,17 +1659,18 @@ export function Prompt(props: PromptProps) {
   return (
     <>
       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
-        {/* RIFT: one tinted row above and below the text, Codex's padding. */}
-        <box height={1} width="100%" backgroundColor={promptBg()} />
-        <box width="100%">
-          <box
-            paddingLeft={dimensions().width < 44 ? 1 : 2}
-            paddingRight={dimensions().width < 44 ? 1 : 2}
-            flexShrink={0}
-            backgroundColor={promptBg()}
-            flexGrow={1}
-            width="100%"
-          >
+        {/* RIFT: a hairline field; its top edge is the waterline the typing koi swim down to. */}
+        <ComposerFrame
+          accent={highlight()}
+          border={theme.border.base}
+          fill={promptBg()}
+          quiet={disabled() || !!muted()}
+          draft={store.prompt.text.length > 0}
+          busy={status() === "running"}
+          animations={animationsEnabled()}
+          glyph={store.mode === "shell" ? "$" : undefined}
+        >
+          <box flexShrink={0} flexGrow={1} width="100%">
             <Show when={config.prompt?.image_preview && visibleImageAttachments().length > 0}>
               <box
                 width="100%"
@@ -1758,112 +1739,97 @@ export function Prompt(props: PromptProps) {
                 </Show>
               </box>
             </Show>
-            <box flexDirection="row" gap={1} flexShrink={0}>
-              {/* RIFT: Codex-style prompt glyph, in place of the accent bar down the left edge. */}
-              <text fg={disabled() ? theme.text.muted : theme.text.base} attributes={TextAttributes.BOLD}>
-                ›
-              </text>
-              <box flexGrow={1} flexShrink={1} minWidth={0}>
-                <textarea
-                  width="100%"
-                  placeholder={placeholderText()}
-                  placeholderColor={theme.text.muted}
-                  textColor={muted() ? theme.text.muted : theme.text.base}
-                  focusedTextColor={muted() ? theme.text.muted : theme.text.base}
-                  minHeight={1}
-                  maxHeight={maxHeight()}
-                  cursorStyle={cursorStyle()}
-                  onContentChange={() => {
-                    const value = input.plainText
-                    setStore("prompt", "text", value)
-                    auto()?.onInput(value)
-                    syncExtmarksWithPromptParts()
-                    setCursorVersion((value) => value + 1)
-                  }}
-                  onCursorChange={() => setCursorVersion((value) => value + 1)}
-                  onKeyDown={(e: { preventDefault(): void }) => {
-                    if (disabled()) {
-                      e.preventDefault()
-                      return
-                    }
-                  }}
-                  onSubmit={() => {
-                    if (disabled()) return
-                    // IME: double-defer so the last composed character (e.g. Korean
-                    // hangul) is flushed to plainText before we read it for submission.
-                    setTimeout(() => setTimeout(() => submit(), 0), 0)
-                  }}
-                  onPaste={(event: PasteEvent) => {
-                    if (disabled()) {
-                      event.preventDefault()
-                      return
-                    }
+            <textarea
+              width="100%"
+              placeholder={placeholderText()}
+              placeholderColor={theme.text.muted}
+              textColor={muted() ? theme.text.muted : theme.text.base}
+              focusedTextColor={muted() ? theme.text.muted : theme.text.base}
+              minHeight={1}
+              maxHeight={maxHeight()}
+              cursorStyle={cursorStyle()}
+              onContentChange={() => {
+                const value = input.plainText
+                setStore("prompt", "text", value)
+                auto()?.onInput(value)
+                syncExtmarksWithPromptParts()
+                setCursorVersion((value) => value + 1)
+              }}
+              onCursorChange={() => setCursorVersion((value) => value + 1)}
+              onKeyDown={(e: { preventDefault(): void }) => {
+                if (disabled()) {
+                  e.preventDefault()
+                  return
+                }
+              }}
+              onSubmit={() => {
+                if (disabled()) return
+                // IME: double-defer so the last composed character (e.g. Korean
+                // hangul) is flushed to plainText before we read it for submission.
+                setTimeout(() => setTimeout(() => submit(), 0), 0)
+              }}
+              onPaste={(event: PasteEvent) => {
+                if (disabled()) {
+                  event.preventDefault()
+                  return
+                }
 
-                    // Normalize line endings at the boundary
-                    // Windows ConPTY/Terminal often sends CR-only newlines in bracketed paste
-                    // Replace CRLF first, then any remaining CR
-                    const normalizedText = decodePasteBytes(event.bytes).replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+                // Normalize line endings at the boundary
+                // Windows ConPTY/Terminal often sends CR-only newlines in bracketed paste
+                // Replace CRLF first, then any remaining CR
+                const normalizedText = decodePasteBytes(event.bytes).replace(/\r\n/g, "\n").replace(/\r/g, "\n")
 
-                    // Windows Terminal <1.25 can surface image-only clipboard as an
-                    // empty bracketed paste. Windows Terminal 1.25+ does not.
-                    if (event.bytes.byteLength === 0) {
-                      keymap.dispatch("prompt.paste")
-                      return
-                    }
+                // Windows Terminal <1.25 can surface image-only clipboard as an
+                // empty bracketed paste. Windows Terminal 1.25+ does not.
+                if (event.bytes.byteLength === 0) {
+                  keymap.dispatch("prompt.paste")
+                  return
+                }
 
-                    // Once we cross an async boundary below, the terminal may perform its
-                    // default paste unless we suppress it first and handle insertion ourselves.
-                    event.preventDefault()
+                // Once we cross an async boundary below, the terminal may perform its
+                // default paste unless we suppress it first and handle insertion ourselves.
+                event.preventDefault()
 
-                    void enqueuePaste((changed) => pasteInputText(normalizedText, changed))
-                  }}
-                  ref={(r: TextareaRenderable) => {
-                    input = r
-                    Object.assign(r, {
-                      getClipboardText: (text: string) => expandPastedTextPlaceholders(text, store.prompt.pasted),
-                    })
-                    setInputTarget(r)
-                    if (promptPartTypeId === 0) {
-                      promptPartTypeId = input.extmarks.registerType("prompt-part")
-                    }
-                    props.ref?.(ref)
-                    setTimeout(() => {
-                      // setTimeout is a workaround and needs to be addressed properly
-                      if (!input || input.isDestroyed) return
-                      input.cursorColor = disabled() ? theme.background.raised.base : theme.text.base
-                    }, 0)
-                  }}
-                  onMouseDown={(r: MouseEvent) => {
-                    if (disabled()) {
-                      r.preventDefault()
-                      return
-                    }
-                    if (r.button !== 0) return
-                    r.target?.focus()
-                    const extmark = input.extmarks
-                      .getAtOffset(input.cursorOffset)
-                      .find((item) => store.extmarkToPart.get(item.id)?.type === "pasted")
-                    if (!extmark || !expandPastedText(extmark.id)) return
-                    r.preventDefault()
-                    r.stopPropagation()
-                  }}
-                  focusedBackgroundColor="transparent"
-                  cursorColor={disabled() ? theme.background.raised.base : theme.text.base}
-                  syntaxStyle={syntax()}
-                />
-              </box>
-            </box>
+                void enqueuePaste((changed) => pasteInputText(normalizedText, changed))
+              }}
+              ref={(r: TextareaRenderable) => {
+                input = r
+                Object.assign(r, {
+                  getClipboardText: (text: string) => expandPastedTextPlaceholders(text, store.prompt.pasted),
+                })
+                setInputTarget(r)
+                if (promptPartTypeId === 0) {
+                  promptPartTypeId = input.extmarks.registerType("prompt-part")
+                }
+                props.ref?.(ref)
+                setTimeout(() => {
+                  // setTimeout is a workaround and needs to be addressed properly
+                  if (!input || input.isDestroyed) return
+                  input.cursorColor = disabled() ? theme.background.raised.base : theme.text.base
+                }, 0)
+              }}
+              onMouseDown={(r: MouseEvent) => {
+                if (disabled()) {
+                  r.preventDefault()
+                  return
+                }
+                if (r.button !== 0) return
+                r.target?.focus()
+                const extmark = input.extmarks
+                  .getAtOffset(input.cursorOffset)
+                  .find((item) => store.extmarkToPart.get(item.id)?.type === "pasted")
+                if (!extmark || !expandPastedText(extmark.id)) return
+                r.preventDefault()
+                r.stopPropagation()
+              }}
+              focusedBackgroundColor="transparent"
+              cursorColor={disabled() ? theme.background.raised.base : theme.text.base}
+              syntaxStyle={syntax()}
+            />
           </box>
-        </box>
-        <box height={1} width="100%" backgroundColor={promptBg()} />
-        <box
-          width="100%"
-          flexDirection="row"
-          justifyContent="space-between"
-          gap={2}
-          paddingLeft={dimensions().width < 44 ? 1 : 2}
-          paddingRight={dimensions().width < 44 ? 1 : 2}
-        >
+        </ComposerFrame>
+        {/* RIFT: under the field, on the draft's column: who answers, where, and one hint. */}
+        <box width="100%" flexDirection="row" justifyContent="space-between" gap={2} paddingLeft={4} paddingRight={2}>
           <Slot path="prompt.footer" input={footerInput()}>
             <Slot path="prompt.footer.status" input={footerInput()}>
               <box
@@ -1878,11 +1844,10 @@ export function Prompt(props: PromptProps) {
                 <Switch>
                   <Match when={status() === "running"}>
                     <box flexDirection="row" gap={1} flexGrow={1} justifyContent="flex-start">
-                      <box marginLeft={1}>
-                        <Show when={config.animations ?? true} fallback={<text fg={theme.text.muted}>[⋯]</text>}>
-                          <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
-                        </Show>
-                      </box>
+                      {/* RIFT: the crest on the waterline is the spinner; this is for when it cannot move. */}
+                      <Show when={!crestAllowed(animationsEnabled())}>
+                        <text fg={theme.text.muted}>[⋯]</text>
+                      </Show>
                       <PromptInterruptStatus
                         armed={store.interrupt > 0}
                         animations={animationsEnabled()}
@@ -1912,7 +1877,6 @@ export function Prompt(props: PromptProps) {
                   </Match>
                   <Match when={true}>
                     <box flexDirection="row" gap={2} flexGrow={1} flexShrink={1} minWidth={0}>
-                      {/* RIFT: under the input, only who answers and where. The provider is in the model picker. */}
                       <box flexDirection="row" flexShrink={0} gap={1}>
                         <PromptMetadataRow
                           mode={store.mode}
