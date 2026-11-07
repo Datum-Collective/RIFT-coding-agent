@@ -6,6 +6,7 @@ Rules:
 - Change only files under `rift/`. `opencode/` is generated and is thrown away after you finish.
 - Do not change `rift/check.sh`, `rift/sync.sh`, `rift/repair.sh`, `rift/regress.py`, `rift/known-differences.txt`, or anything in a `test` folder. They define what working means. If a test is genuinely obsolete, say so and stop.
 - A patch in `rift/patches/` applies to upstream's file with paths starting `opencode/`. To fix one, restate the same intent against the new upstream file, keeping it as small as you can.
+- A rule in `rift/rebrand.txt` that matches nothing means upstream reworded that string. Restate the rule against the new wording. Delete it only if the string is gone from the product.
 - A file that collides with an upstream one must become a patch, or be renamed.
 - Prefer upstream's new way of doing a thing over forcing the old way.
 
