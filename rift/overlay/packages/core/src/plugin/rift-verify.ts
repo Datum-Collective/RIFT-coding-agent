@@ -1,86 +1,151 @@
 export * as RiftVerifyPlugin from "./rift-verify.js"
 
+import { existsSync } from "node:fs"
 import path from "node:path"
 import { define } from "@opencode/plugin/effect/plugin"
 import { Session } from "@opencode/schema/session"
 import { ToolFailure } from "@opencode/ai/effect"
-import { Cause, Effect, Option, Schema } from "effect"
+import { Cause, Effect, FiberMap, Option, Schema } from "effect"
 import { Agent } from "@opencode/schema/agent"
 import { Rift } from "@opencode/schema/rift"
 import { Permission } from "../permission.js"
 import type { PluginInternal } from "./internal.js"
-import { RiftChecks } from "./rift-verify/checks.js"
 import { RiftGraph } from "./rift-verify/graph.js"
-import { RiftIntegrity } from "./rift-verify/integrity.js"
-import { RiftReceipt } from "./rift-verify/receipt.js"
+import { RiftPipeline } from "./rift-verify/pipeline.js"
+import { RiftStages } from "./rift-verify/stages.js"
+import { RiftVerdict } from "./rift-verify/verdict.js"
+import { RiftWorkspace } from "./rift-verify/workspace.js"
 import DESCRIPTION from "./rift-verify/graph.txt"
 
 export const ID = "rift.verify"
 export const MAX_ROUNDS = 3
-/** Receipts kept per session; older ones are dropped from the front of the chain. */
-const MAX_RECEIPTS = 50
-const TIMEOUT_MS = 10 * 60 * 1000
 
 const GraphInput = Schema.Struct({
   nodes: Schema.Array(RiftGraph.Node).annotate({ description: "The full node list" }),
 })
 const GraphOutput = Schema.Struct({ nodes: Schema.Number })
-const Saved = Schema.Struct({
-  nodes: Schema.Array(RiftGraph.Node),
-  proofs: Schema.Array(RiftGraph.Proof),
-})
-const decodeSaved = Schema.decodeUnknownOption(Saved)
-const decodeState = Schema.decodeUnknownOption(Rift.State)
+/** A run as stored: the process that ran it, and for the per-turn tier the fix rounds used on the prompt. */
+const Stored = Schema.Struct({ boot: Schema.String, run: Rift.Run, round: Schema.Number })
+const decodeStored = Schema.decodeUnknownOption(Stored)
+// Identifies this server process, so a run another process left active is known to be dead. Created on first use:
+// Workers forbid random values while a module loads.
+let processBoot: string | undefined
+const boot = () => (processBoot ??= crypto.randomUUID())
 // Storage holds JSON. This drops the undefined fields the type checker cannot rule out.
-const plain = (value: typeof Saved.Type) => JSON.parse(JSON.stringify(value))
+const json = (value: unknown) => JSON.parse(JSON.stringify(value))
+const key = (sessionID: string, tier: RiftPipeline.Tier) => `run:${sessionID}:${tier}`
 
-interface State {
-  /** The tree when the current work started, so edits the user already had are not counted. */
-  baseline?: RiftChecks.Tree
+interface Loop {
+  /** The tree when the current prompt started, so edits the user already had are not counted. */
+  baseline?: RiftWorkspace.TreeId
   /** The tree the last verification saw, so unchanged work is not checked twice. */
-  verified?: string
+  verified?: RiftWorkspace.TreeId
   round: number
   /** The rounds ran out for this prompt, so nothing runs again until the next one. */
   finished: boolean
 }
 
-/** After the agent finishes editing, runs the project's own checks and reports the real output. */
+const USAGE = "Usage: /verify [quick] [fix] [path...] | stop"
+
+export type Args =
+  | { readonly kind: "run"; readonly quick: boolean; readonly fix: boolean; readonly paths: readonly string[] }
+  | { readonly kind: "stop" }
+  | { readonly kind: "usage"; readonly message: string }
+
+/** `stop` alone, or `quick`, `fix` and paths in any order. A directory literally named `quick` is written `./quick`. */
+export const parseArgs = (text: string): Args => {
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  if (words.length === 1 && words[0] === "stop") return { kind: "stop" }
+  if (words.includes("stop")) return { kind: "usage", message: USAGE }
+  const paths: string[] = []
+  for (const word of words.filter((item) => item !== "quick" && item !== "fix")) {
+    const normal = path.posix.normalize(word.replaceAll("\\", "/")).replace(/(.)\/+$/, "$1")
+    if (path.posix.isAbsolute(normal) || normal === ".." || normal.startsWith("../"))
+      return { kind: "usage", message: `${USAGE}\nA path must be inside the project: ${word}` }
+    paths.push(normal)
+  }
+  return { kind: "run", quick: words.includes("quick"), fix: words.includes("fix"), paths }
+}
+
+const FIX =
+  "The user ran /verify fix. Fix the failures this report marks as new first, then the ones that were already failing. Fix the code, never the checks or what the tests expect."
+
+/** What the agent is told to do with a report it is sent back. */
+const INSTRUCTION: Record<"tampered" | "regressed" | "failing", string> = {
+  tampered: "Your changes weakened the tests or the checks. Restore them and fix the code instead.",
+  regressed: "These checks failed on your changes. Fix the code, not the checks.",
+  failing:
+    "These were already failing before your change. If the user asked you to fix them, keep going; otherwise tell the user and stop. Fix the code, not the checks.",
+}
+
+/** After the agent finishes editing, runs the project's own checks on a snapshot of its work and reports the real output. */
 export const Plugin = define({
   id: ID,
   effect: Effect.fn("RiftVerify.Plugin")(function* (ctx) {
     if (process.env.RIFT_VERIFY === "0") return
-    const directory = ctx.location.directory
+    const root = ctx.location.directory
     const permission = yield* Permission.Service
+    const scope = yield* Effect.scope
 
-    const readGraph = Effect.fn("RiftVerify.readGraph")(function* (sessionID: string) {
-      const saved = Option.getOrUndefined(decodeSaved(yield* ctx.storage.get(`graph:${sessionID}`)))
-      return {
-        nodes: saved?.nodes ?? ([] as readonly RiftGraph.Node[]),
-        proofs: saved?.proofs ?? ([] as readonly RiftGraph.Proof[]),
-      }
-    })
-
-    const readReceipts = Effect.fn("RiftVerify.readReceipts")(function* (sessionID: string) {
-      const saved = yield* ctx.storage.get(`receipts:${sessionID}`)
-      return Array.isArray(saved) ? (saved as RiftReceipt.Sealed[]) : []
-    })
-
-    const rpc = yield* ctx.rpc
-      .register(Rift.Definition, {
-        get: (input) =>
-          ctx.storage
-            .get(`state:${input.sessionID}`)
-            .pipe(Effect.map((value) => Option.getOrNull(decodeState(value)))),
+    const graphView = Effect.fn("RiftVerify.graphView")(function* (sessionID: string) {
+      const graph = yield* pipeline.ledger.graph(sessionID)
+      const assessments = RiftGraph.assess(graph.nodes, graph.proofs, (node) => RiftGraph.hash(root, graph.nodes, node))
+      return assessments.map(({ node, verdict, because }) => {
+        const info = graph.nodes.find((item) => item.id === node)
+        return { id: node, parent: info?.parent_id ?? undefined, title: info?.title ?? node, verdict, because }
       })
-      .pipe(Effect.orDie)
+    })
+
+    // Each writer has its own key; the state clients see is put together here, on every read.
+    const state = Effect.fn("RiftVerify.state")(function* (sessionID: string) {
+      const change = Option.getOrUndefined(decodeStored(yield* ctx.storage.get(key(sessionID, "change"))))
+      const project = Option.getOrUndefined(decodeStored(yield* ctx.storage.get(key(sessionID, "project"))))
+      const graph = yield* graphView(sessionID)
+      if (!change && !project && graph.length === 0) return null
+      return { change: change && { run: change.run, round: change.round }, project: project?.run, graph } satisfies Rift.State
+    })
+
+    const rpc = yield* ctx.rpc.register(Rift.Definition, { get: (input) => state(input.sessionID) }).pipe(Effect.orDie)
 
     // Clients read the state through `get` and follow `changed`, so every write publishes the new value.
-    const publish = Effect.fn("RiftVerify.publish")(function* (sessionID: string, next: Rift.State) {
-      yield* ctx.storage.set(`state:${sessionID}`, JSON.parse(JSON.stringify(next)))
-      yield* rpc.events
-        .emit("changed", { sessionID, state: next })
-        .pipe(Effect.catchCause((cause) => Effect.logWarning("failed to publish verification", { sessionID, cause })))
+    const changed = Effect.fn("RiftVerify.changed")(function* (sessionID: string) {
+      const next = yield* state(sessionID)
+      if (next)
+        yield* rpc.events
+          .emit("changed", { sessionID, state: next })
+          .pipe(Effect.catchCause((cause) => Effect.logWarning("failed to publish verification", { sessionID, cause })))
     })
+
+    const loops = new Map<string, Loop>()
+    const loop = (sessionID: string) => {
+      const existing = loops.get(sessionID)
+      if (existing) return existing
+      const created: Loop = { round: 0, finished: false }
+      loops.set(sessionID, created)
+      return created
+    }
+
+    const publish = Effect.fn("RiftVerify.publish")(function* (sessionID: string, tier: RiftPipeline.Tier, view: Rift.Run) {
+      yield* ctx.storage.set(key(sessionID, tier), json({ boot: boot(), run: view, round: tier === "change" ? loop(sessionID).round : 0 }))
+      yield* changed(sessionID)
+    })
+
+    const pipeline: RiftPipeline.Pipeline = yield* RiftPipeline.make({ root, storage: ctx.storage, permission, publish })
+
+    // A run an earlier process left active will never finish, so it is shown as stopped. Storage is shared by every
+    // project this process has open, so a run of this process is left alone.
+    for (let after: string | undefined, more = true; more; ) {
+      const page = yield* ctx.storage.scan({ prefix: "run:", after })
+      for (const entry of page.entries) {
+        const stored = Option.getOrUndefined(decodeStored(entry.value))
+        if (!stored || stored.boot === boot() || stored.run.phase === "done" || stored.run.phase === "cancelled") continue
+        const stopped = RiftPipeline.step(stored.run, { type: "cancelled", at: Date.now(), reason: "RIFT restarted" })
+        yield* ctx.storage.set(entry.key, json({ ...stored, run: stopped }))
+      }
+      after = page.next
+      more = after !== undefined
+    }
+    yield* RiftWorkspace.sweep().pipe(Effect.forkScoped)
 
     yield* ctx.tool
       .transform((editor) => {
@@ -91,155 +156,159 @@ export const Plugin = define({
           input: GraphInput,
           output: GraphOutput,
           execute: (input, context) =>
-            Effect.gen(function* () {
-              // Proofs survive a rewrite of the graph. Each one still has to match a declared check and its inputs.
-              const saved = yield* readGraph(context.sessionID)
-              yield* ctx.storage.set(`graph:${context.sessionID}`, plain({ nodes: input.nodes, proofs: saved.proofs }))
-              return {
+            pipeline.ledger.writeGraph(context.sessionID, input.nodes).pipe(
+              Effect.andThen(changed(context.sessionID)),
+              Effect.as({
                 output: { nodes: input.nodes.length },
                 content: `Graph updated: ${input.nodes.length} nodes. RIFT runs their checks when you finish.`,
-              }
-            }).pipe(Effect.mapError((error) => new ToolFailure({ message: "Unable to update the graph", error }))),
+              }),
+              Effect.mapError((error) => new ToolFailure({ message: "Unable to update the graph", error })),
+            ),
         })
       })
       .pipe(Effect.orDie)
-    const states = new Map<string, State>()
-    const state = (sessionID: string) => {
-      const existing = states.get(sessionID)
-      if (existing) return existing
-      const created: State = { round: 0, finished: false }
-      states.set(sessionID, created)
-      return created
-    }
 
-    yield* ctx.session.hook("prompt", (event) =>
-      Effect.promise(async () => {
-        const current = state(event.sessionID)
-        current.baseline = await RiftChecks.tree(directory)
-        current.verified = undefined
+    // At most one /verify per session. A command returns at once; the TUI follows the run through `changed`.
+    const runs = yield* FiberMap.make<string>()
+
+    // The user sees one notice row. The model reads the report on its next turn, or now with `fix`.
+    const deliver = Effect.fn("RiftVerify.deliver")(function* (
+      sessionID: Session.ID,
+      snapshot: RiftWorkspace.Snapshot,
+      result: RiftPipeline.Result,
+      fix: boolean,
+    ) {
+      if (result.kind === "empty") {
+        yield* ctx.session.synthetic({
+          sessionID,
+          text: RiftVerdict.nothing(result.looked),
+          description: "Verify: no checks found",
+          metadata: { source: "rift-verify", tier: "project", verdict: "unproven" },
+          resume: false,
+        })
+        return
+      }
+      const { report } = result
+      const wake = fix && RiftVerdict.fixable(report.verdict)
+      if (wake) {
+        // The agent's fixes are checked each turn against the tree this run verified.
+        const current = loop(sessionID)
+        current.baseline = snapshot.tree
+        current.verified = snapshot.tree
         current.round = 0
         current.finished = false
-      }),
+      }
+      yield* ctx.session.synthetic({
+        sessionID,
+        text: wake ? `${report.text}\n\n${FIX}` : report.text,
+        description: report.headline,
+        metadata: { source: "rift-verify", tier: "project", verdict: report.verdict, ...(wake ? { decision: "fix" } : {}) },
+        resume: wake,
+      })
+    })
+
+    yield* ctx.command.transform((editor) => {
+      editor.add({
+        name: "verify",
+        description: "verify the whole project from a clean checkout, like CI [quick] [fix] [path...] | stop",
+        execute: (input) =>
+          Effect.gen(function* () {
+            const args = parseArgs(input.prompt.text)
+            if (args.kind === "usage") return yield* Effect.fail(new Error(args.message))
+            const running = yield* FiberMap.has(runs, input.sessionID)
+            if (args.kind === "stop") {
+              if (!running) return yield* Effect.fail(new Error("No /verify is running."))
+              return yield* FiberMap.remove(runs, input.sessionID)
+            }
+            if (running) return yield* Effect.fail(new Error("/verify is already running. /verify stop cancels it."))
+            const missing = args.paths.filter((item) => !existsSync(path.join(root, item)))
+            if (missing.length > 0) return yield* Effect.fail(new Error(`No such path in the project: ${missing.join(", ")}`))
+            const snapshot = yield* RiftWorkspace.snapshot(root)
+            if (!snapshot) return yield* Effect.fail(new Error("/verify needs a git repository to make a clean copy of the project."))
+            const session = yield* ctx.session.get({ sessionID: input.sessionID })
+            yield* FiberMap.run(
+              runs,
+              input.sessionID,
+              pipeline
+                .run({
+                  sessionID: input.sessionID,
+                  agent: session.agent ?? Agent.ID.make("build"),
+                  tier: "project",
+                  candidate: snapshot,
+                  baseline: snapshot.headTree,
+                  scope: args.paths.length > 0 && !args.paths.includes(".") ? { kind: "paths", paths: args.paths } : { kind: "all" },
+                  mutate: !args.quick,
+                })
+                .pipe(
+                  Effect.flatMap((result) => deliver(input.sessionID, snapshot, result, args.fix)),
+                  Effect.catchCause((cause) =>
+                    Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.logWarning("/verify failed", { sessionID: input.sessionID, cause }),
+                  ),
+                ),
+              { onlyIfMissing: true },
+            )
+          }),
+      })
+    })
+
+    yield* ctx.session.hook("prompt", (event) =>
+      RiftWorkspace.snapshot(root).pipe(
+        Effect.map((snapshot) => {
+          const current = loop(event.sessionID)
+          current.baseline = snapshot?.tree
+          current.verified = undefined
+          current.round = 0
+          current.finished = false
+        }),
+      ),
     )
 
     const idle = Effect.fn("RiftVerify.idle")(function* (sessionID: Session.ID) {
       const session = yield* ctx.session.get({ sessionID })
       if (session.parentID) return
-      const current = state(sessionID)
-      const tree = yield* Effect.promise(() => RiftChecks.tree(directory))
-      if (current.finished || !tree || tree.fingerprint === current.verified) return
-      const files = RiftChecks.edited(current.baseline, tree)
-      if (files.length === 0 || RiftChecks.docsOnly(files)) return
-      const checks = RiftChecks.resolve(directory, files)
-      const graph = yield* readGraph(sessionID)
-      const inputs = new Map(graph.nodes.map((node) => [node.id, RiftGraph.hash(directory, graph.nodes, node)]))
-      const planned = graph.nodes.flatMap((node) =>
-        node.checks
-          .filter((check) => RiftGraph.due(node, check, graph.proofs, inputs.get(node.id)!))
-          .map((check) => ({ node, check })),
-      )
-      if (checks.length === 0 && planned.length === 0) return
-
-      // A real permission request, as for a shell tool call: the user approves or declines it, and rules still apply.
-      const permitted = (command: string) =>
-        permission
-          .assert({
-            sessionID,
-            agent: session.agent ?? Agent.ID.make("build"),
-            action: "shell",
-            resources: [command],
-            save: [command],
-          })
-          .pipe(
-            Effect.as(true),
-            Effect.orElseSucceed(() => false),
-          )
-      const gated = Effect.fn("RiftVerify.gated")(function* (check: RiftChecks.Check) {
-        if (yield* permitted(check.command)) return yield* Effect.promise((signal) => RiftChecks.run(check, TIMEOUT_MS, signal))
-        return RiftChecks.blocked(check, "permission denied")
+      const current = loop(sessionID)
+      const now = yield* RiftWorkspace.snapshot(root)
+      // Without a prompt in this process, the work is compared with HEAD.
+      const baseline = current.baseline ?? now?.headTree
+      if (!now || !baseline || current.finished || now.tree === current.verified) return
+      const files = yield* RiftWorkspace.changed(root, baseline, now.tree)
+      if (files.length === 0 || RiftStages.docsOnly(files)) return
+      const result = yield* pipeline.run({
+        sessionID,
+        agent: session.agent ?? Agent.ID.make("build"),
+        tier: "change",
+        candidate: now,
+        baseline,
+        scope: { kind: "files", files },
+        mutate: false,
       })
-
-      const declared = planned.map(({ node, check }) => ({
-        name: check.label,
-        command: check.command,
-        dir: check.cwd ? path.resolve(directory, check.cwd) : directory,
-      }))
-      yield* publish(sessionID, { running: true, round: current.round, checks: [], graph: [] })
-      const [own, evidence] = yield* Effect.all(
-        [Effect.all(checks.map(gated)), Effect.all(declared.map(gated))],
-        // One request at a time, so permission prompts do not stack up.
-      )
-      const results = [...own, ...evidence]
-      // Did the change make the checks pass by changing the checks? Read from the diff, not from what the agent says.
-      const changes = yield* Effect.promise(() => RiftChecks.diff(directory, files))
-      const findings = RiftIntegrity.review(RiftIntegrity.parse(changes))
-      const tampered = RiftIntegrity.tampered(findings)
-      const chain = yield* readReceipts(sessionID)
-      const sealed = RiftReceipt.seal({
-        session: sessionID,
-        root: directory,
-        head: tree.head,
-        files,
-        results,
-        findings,
-        prev: chain.at(-1)?.digest,
-      })
-      yield* ctx.storage.set(`receipts:${sessionID}`, JSON.parse(JSON.stringify([...chain, sealed].slice(-MAX_RECEIPTS))))
-      const proofs: RiftGraph.Proof[] = evidence.map((result, index) => {
-        const { node, check } = planned[index]!
-        return {
-          node: node.id,
-          label: check.label,
-          command: check.command,
-          status: result.status,
-          inputs: inputs.get(node.id)!,
-          detail: result.reason,
-        }
-      })
-      const replaced = new Set(proofs.map((proof) => `${proof.node}\0${proof.label}\0${proof.command}`))
-      const allProofs = [
-        ...graph.proofs.filter((proof) => !replaced.has(`${proof.node}\0${proof.label}\0${proof.command}`)),
-        ...proofs,
-      ]
-      if (graph.nodes.length > 0) yield* ctx.storage.set(`graph:${sessionID}`, plain({ nodes: graph.nodes, proofs: allProofs }))
-      const assessments = RiftGraph.assess(graph.nodes, allProofs, (node) => inputs.get(node.id)!)
       // The checks can take minutes; verify the tree they actually saw, and let a later edit run them again.
-      current.verified = tree.fingerprint
-      const decision = RiftChecks.decide(results, current.round, MAX_ROUNDS, tampered)
-      const text = [
-        RiftChecks.format(results),
-        graph.nodes.length > 0 ? RiftGraph.format(graph.nodes, assessments) : "",
-        RiftIntegrity.format(findings),
-        RiftReceipt.format(sealed),
-      ]
-        .filter(Boolean)
-        .join("\n\n")
-      const metadata = { source: "rift-verify", decision: decision.type }
-      yield* publish(sessionID, {
-        running: false,
-        round: current.round + (decision.type === "fix" ? 1 : 0),
-        checks: results.map(({ command, status, reason, ms }) => ({ command, status, reason, ms })),
-        graph: assessments.map(({ node, verdict, because }) => {
-          const info = graph.nodes.find((item) => item.id === node)
-          return { id: node, parent: info?.parent_id ?? undefined, title: info?.title ?? node, verdict, because }
-        }),
-      })
+      current.verified = now.tree
+      if (result.kind === "empty") return
+      const { report } = result
+      const decision = RiftVerdict.decide(report.verdict, current.round, MAX_ROUNDS)
+      const metadata = { source: "rift-verify", tier: "change", decision: decision.type, verdict: report.verdict }
       if (decision.type === "report") {
-        // Anything admitted to the inbox wakes the model, so a result with no failures is stored for clients instead.
-        yield* ctx.storage.set(`session:${sessionID}`, { text, time: Date.now() })
-        yield* Effect.logInfo("verification finished", { sessionID })
+        if (report.verdict === "verified") return
+        // Unproven work is shown to the user and left for the model's next turn. Input admitted during this hook
+        // would continue the execution, so the notice waits until the Session is idle.
+        yield* ctx.session.wait({ sessionID }).pipe(
+          Effect.andThen(ctx.session.synthetic({ sessionID, text: report.text, description: report.headline, metadata, resume: false })),
+          Effect.catchCause((cause) => Effect.logWarning("failed to post a verification notice", { sessionID, cause })),
+          Effect.forkIn(scope),
+        )
         return
       }
       if (decision.type === "fix") current.round++
       else current.finished = true
+      const stored = Option.getOrUndefined(decodeStored(yield* ctx.storage.get(key(sessionID, "change"))))
+      if (stored) yield* publish(sessionID, "change", stored.run)
       yield* ctx.session.synthetic({
         sessionID,
         text:
           decision.type === "fix"
-            ? tampered
-              ? `${text}\n\nYour changes weakened the tests or the checks. Restore them and fix the code instead.`
-              : `${text}\n\nThese checks failed on your changes. Fix the code, not the checks.`
-            : `${text}\n\nStopped after ${MAX_ROUNDS} fix rounds. Tell the user this work is not proven. Change nothing else.`,
+            ? `${report.text}\n\n${INSTRUCTION[report.verdict as keyof typeof INSTRUCTION]}`
+            : `${report.text}\n\nStopped after ${MAX_ROUNDS} fix rounds. Tell the user this work is not proven. Change nothing else.`,
         metadata,
       })
     })

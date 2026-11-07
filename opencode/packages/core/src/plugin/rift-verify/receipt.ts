@@ -1,10 +1,9 @@
 export * as RiftReceipt from "./receipt.js"
 
 import { createHash } from "node:crypto"
-import { readFileSync } from "node:fs"
-import path from "node:path"
-import type { RiftChecks } from "./checks.js"
 import type { RiftIntegrity } from "./integrity.js"
+import type { RiftStages } from "./stages.js"
+import type { RiftVerdict } from "./verdict.js"
 
 /**
  * A proof receipt: what was checked, on exactly which files, with what result, written down so it can be
@@ -23,7 +22,7 @@ export type Verdict =
   /** The checks passed, but the change tampered with the tests or checks. */
   | "tampered"
 
-export interface Receipt {
+export interface ReceiptV1 {
   readonly version: 1
   readonly session: string
   readonly time: string
@@ -33,7 +32,7 @@ export interface Receipt {
   readonly checks: readonly {
     readonly name: string
     readonly command: string
-    readonly status: RiftChecks.Status
+    readonly status: "passed" | "failed" | "timed_out" | "not_run"
     readonly reason?: string
     readonly ms: number
     /** Hash of the output the check produced, so the output can be matched to the receipt later. */
@@ -44,6 +43,45 @@ export interface Receipt {
   /** Digest of the receipt before this one in the session, or none for the first. */
   readonly prev?: string
 }
+
+type Hashed = { readonly path: string; readonly sha256: string }
+
+/** A pipeline run: SLSA-style inputs, the environment, every stage with its attempts and attribution. */
+export interface ReceiptV2 {
+  readonly version: 2
+  readonly session: string
+  readonly run: string
+  readonly tier: "change" | "project"
+  readonly time: string
+  /** The tree id covers every file; changed files and lockfiles are also listed by content. */
+  readonly inputs: {
+    readonly head?: string
+    readonly tree: string
+    readonly baseline?: string
+    readonly files: readonly Hashed[]
+    readonly lockfiles: readonly Hashed[]
+  }
+  readonly environment: { readonly kind: "snapshot" | "clean"; readonly platform: string }
+  readonly stages: readonly {
+    readonly id: string
+    readonly kind: RiftStages.Kind
+    readonly command: string
+    readonly status: RiftVerdict.Outcome["status"]
+    /** `output` is the sha256 of the full output, not the tail. */
+    readonly attempts: readonly { readonly status: RiftVerdict.Attempt["status"]; readonly ms: number; readonly output: string }[]
+    readonly introduced?: readonly string[]
+    readonly preexisting?: readonly string[]
+    readonly flaky?: readonly string[]
+    readonly reason?: string
+  }[]
+  readonly integrity: readonly RiftIntegrity.Finding[]
+  readonly mutation?: { readonly total: number; readonly killed: number }
+  readonly verdict: RiftVerdict.Verdict
+  readonly prev?: string
+}
+
+/** v1 receipts stay valid: the digest is canonical over whatever fields exist, so `audit` walks a mixed chain. */
+export type Receipt = ReceiptV1 | ReceiptV2
 
 export type Sealed = Receipt & { readonly digest: string }
 
@@ -63,51 +101,7 @@ const canonical = (value: unknown): string => {
 
 export const digest = (receipt: Receipt) => sha(canonical(receipt))
 
-export const verdict = (results: readonly RiftChecks.Result[], findings: readonly RiftIntegrity.Finding[]): Verdict => {
-  if (results.some((result) => result.status === "failed" || result.status === "timed_out")) return "failed"
-  if (findings.some((finding) => finding.severity === "block")) return "tampered"
-  if (results.length === 0 || results.some((result) => result.status === "not_run")) return "unproven"
-  return "verified"
-}
-
-const hashFile = (root: string, file: string) => {
-  try {
-    return sha(readFileSync(path.resolve(root, file)))
-  } catch {
-    return "missing"
-  }
-}
-
-export const seal = (input: {
-  session: string
-  root: string
-  head?: string
-  files: readonly string[]
-  results: readonly RiftChecks.Result[]
-  findings: readonly RiftIntegrity.Finding[]
-  prev?: string
-  now?: Date
-}): Sealed => {
-  const receipt: Receipt = {
-    version: 1,
-    session: input.session,
-    time: (input.now ?? new Date()).toISOString(),
-    head: input.head,
-    files: [...input.files].sort().map((file) => ({ path: file, sha256: hashFile(input.root, file) })),
-    checks: input.results.map((result) => ({
-      name: result.name,
-      command: result.command,
-      status: result.status,
-      reason: result.reason,
-      ms: result.ms,
-      output: sha(result.output),
-    })),
-    integrity: input.findings,
-    verdict: verdict(input.results, input.findings),
-    prev: input.prev,
-  }
-  return { ...receipt, digest: digest(receipt) }
-}
+export const seal = (receipt: ReceiptV2): Sealed => ({ ...receipt, digest: digest(receipt) })
 
 /** The first problem in a chain of receipts, or undefined when every digest matches and every link holds. */
 export const audit = (chain: readonly Sealed[]): string | undefined => {

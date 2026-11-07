@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import type { Rift } from "@opencode/schema/rift"
 import { tree } from "../../src/feature-plugins/sidebar/rift"
 import { bar, count, layout } from "../../src/feature-plugins/sidebar/rift-graph"
+import { stages, status } from "../../src/feature-plugins/sidebar/rift-run"
 
 const node = (id: string, parent?: string): Rift.Node => ({ id, parent, title: id, verdict: "unproven", because: [] })
 const shape = (nodes: Rift.Node[]) => tree(nodes).map((line) => [line.node.id, line.depth])
@@ -73,4 +74,25 @@ test("the summary counts verdicts and the bar fills in proportion", () => {
   expect(counts).toMatchObject({ proven: 2, failed: 1, stale: 1, total: 4 })
   expect(bar(counts, 8)).toBe("████░░░░")
   expect(bar(count([]), 4)).toBe("░░░░")
+})
+
+const run = (statuses: Rift.Stage["status"][]): Rift.Run => ({
+  id: "r",
+  tree: "t",
+  started: 0,
+  phase: "running",
+  stages: statuses.map((item, index) => ({ id: `${index}`, unit: ".", kind: "test", command: `step ${index}`, status: item })),
+})
+
+test("a long run folds its passes into one line, and keeps everything else", () => {
+  const lines = stages(run(["passed", "passed", "failed", "passed", "skipped", "passed", "not_run"]))
+  expect(lines.map((line) => `${line.glyph} ${line.text}`)).toEqual(["✗ step 2", "⊘ step 4", "○ step 6", "✓ 4 passed"])
+  expect(stages(run(["passed", "flaky"])).map((line) => `${line.glyph} ${line.text}`)).toEqual(["✓ step 0", "~ step 1 (flaky)"])
+})
+
+test("the header says what a run is doing, and how it ended", () => {
+  expect(status(run(["passed", "running", "pending"])).text).toBe("running 1/3")
+  expect(status({ ...run([]), phase: "asking" }).text).toBe("waiting for permission")
+  expect(status({ ...run([]), phase: "done", finished: 1, verdict: "unproven", headline: "", receipt: "" })).toEqual({ text: "unproven", tone: "warning" })
+  expect(status({ ...run([]), phase: "cancelled", finished: 1, reason: "RIFT restarted" }).text).toBe("stopped: RIFT restarted")
 })

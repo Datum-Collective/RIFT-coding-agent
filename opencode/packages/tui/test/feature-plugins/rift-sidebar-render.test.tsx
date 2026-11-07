@@ -21,7 +21,7 @@ const context = (state: Rift.State | null) =>
   }) as unknown as Context
 
 async function frame(state: Rift.State | null) {
-  const app = await testRender(() => <SidebarRift context={context(state)} sessionID="session" />, { width: 42, height: 12 })
+  const app = await testRender(() => <SidebarRift context={context(state)} sessionID="session" />, { width: 48, height: 16 })
   try {
     await new Promise((resolve) => setTimeout(resolve, 10))
     await app.renderOnce()
@@ -35,25 +35,66 @@ test("nothing shows before verification has run", async () => {
   expect(await frame(null)).not.toContain("Verification")
 })
 
-test("shows each check and the graph's verdicts, nested", async () => {
+const stage = (command: string, status: Rift.Stage["status"], extra: Partial<Rift.Stage> = {}): Rift.Stage => ({
+  id: command,
+  unit: ".",
+  kind: "test",
+  command,
+  status,
+  ...extra,
+})
+
+test("shows each check of the turn and the graph's verdicts, nested", async () => {
   const text = await frame({
-    running: false,
-    round: 1,
-    checks: [
-      { command: "bun run test", status: "failed", ms: 1 },
-      { command: "bun run lint", status: "not_run", reason: "permission denied", ms: 0 },
-    ],
+    change: {
+      round: 1,
+      run: {
+        id: "r",
+        tree: "t",
+        started: 0,
+        phase: "done",
+        finished: 1,
+        verdict: "regressed",
+        headline: "Verify: regressed",
+        receipt: "abc",
+        stages: [
+          stage("bun run test", "failed", { introduced: 1, preexisting: 1 }),
+          stage("bun run lint", "not_run", { reason: "declined" }),
+        ],
+      },
+    },
     graph: [
       { id: "root", title: "Product", verdict: "at_risk", because: ["a"] },
       { id: "a", parent: "root", title: "Value", verdict: "stale", because: [] },
     ],
   })
-  expect(text).toContain("Verification round 1")
-  expect(text).toContain("✗ bun run test")
-  expect(text).toContain("○ bun run lint (permission denied)")
+  expect(text).toContain("Verification regressed round 1")
+  expect(text).toContain("✗ bun run test (1 new, 1 already failing)")
+  expect(text).toContain("○ bun run lint (declined)")
   expect(text).toContain("Engineering graph")
   expect(text).toContain("⚠ Product · at risk")
   expect(text).toContain("0/2 proven")
   expect(text).toContain("└─ ⟳ Value · stale")
   expect(text).toContain("↳ waiting on Value")
+})
+
+test("a full verify shows its progress, by unit", async () => {
+  const text = await frame({
+    project: {
+      id: "r",
+      tree: "t",
+      started: 0,
+      phase: "running",
+      stages: [
+        stage("bun install --frozen-lockfile", "passed"),
+        stage("bun run test", "running", { unit: "packages/api", attempt: 2 }),
+        stage("bun run test:e2e", "pending"),
+      ],
+    },
+    graph: [],
+  })
+  expect(text).toContain("Full verify running 1/3")
+  expect(text).toContain("✓ bun install --frozen-lockfile")
+  expect(text).toContain("◌ packages/api bun run test (attempt 2)")
+  expect(text).not.toContain("Verification")
 })

@@ -2,15 +2,7 @@ import { Plugin } from "@opencode/plugin/tui"
 import { Rift } from "@opencode/schema/rift"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type Accessor } from "solid-js"
 import { bar, count, layout } from "./rift-graph"
-
-type Tone = "success" | "error" | "warning" | "muted"
-
-const CHECK: Record<Rift.Check["status"], { glyph: string; tone: Tone }> = {
-  passed: { glyph: "✓", tone: "success" },
-  failed: { glyph: "✗", tone: "error" },
-  timed_out: { glyph: "✗", tone: "error" },
-  not_run: { glyph: "○", tone: "warning" },
-}
+import { stages, status, type Tone } from "./rift-run"
 
 const VERDICT: Record<Rift.Node["verdict"], { glyph: string; tone: Tone; label: string }> = {
   proven: { glyph: "✓", tone: "success", label: "proven" },
@@ -54,41 +46,55 @@ function createState(context: Plugin.Context, sessionID: Accessor<string>) {
   return state
 }
 
+const paint = (theme: Plugin.Context["theme"], tone: Tone) =>
+  tone === "muted"
+    ? theme.text.muted
+    : tone === "success"
+      ? theme.text.feedback.success.base
+      : tone === "error"
+        ? theme.text.feedback.error.base
+        : theme.text.feedback.warning.base
+
+function RunView(props: { context: Plugin.Context; title: string; run: Rift.Run; round?: number }) {
+  const theme = props.context.theme
+  const header = () => status(props.run)
+  return (
+    <>
+      <text fg={theme.text.base}>
+        <b>{props.title}</b>
+        <span style={{ fg: paint(theme, header().tone) }}> {header().text}</span>
+        <Show when={(props.round ?? 0) > 0}>
+          <span style={{ fg: theme.text.muted }}> round {props.round}</span>
+        </Show>
+      </text>
+      <For each={stages(props.run)}>
+        {(line) => (
+          <text fg={theme.text.muted} wrapMode="none">
+            <span style={{ fg: paint(theme, line.tone) }}>{line.glyph}</span> {line.text}
+          </text>
+        )}
+      </For>
+    </>
+  )
+}
+
 export function SidebarRift(props: { context: Plugin.Context; sessionID: string }) {
   const theme = props.context.theme
   const state = createState(props.context, () => props.sessionID)
   const counts = createMemo(() => count(state()?.graph ?? []))
   const lines = createMemo(() => layout(state()?.graph ?? []))
-  const colour = (tone: Tone) =>
-    tone === "muted"
-      ? theme.text.muted
-      : tone === "success"
-        ? theme.text.feedback.success.base
-        : tone === "error"
-          ? theme.text.feedback.error.base
-          : theme.text.feedback.warning.base
+  const colour = (tone: Tone) => paint(theme, tone)
 
   return (
     <Show when={state()}>
       {(current) => (
         <box>
-          <text fg={theme.text.base}>
-            <b>Verification</b>
-            <Show when={current().running}>
-              <span style={{ fg: theme.text.muted }}> running</span>
-            </Show>
-            <Show when={current().round > 0}>
-              <span style={{ fg: theme.text.muted }}> round {current().round}</span>
-            </Show>
-          </text>
-          <For each={current().checks}>
-            {(check) => (
-              <text fg={theme.text.muted} wrapMode="none">
-                <span style={{ fg: colour(CHECK[check.status].tone) }}>{CHECK[check.status].glyph}</span> {check.command}
-                <Show when={check.reason}> ({check.reason})</Show>
-              </text>
-            )}
-          </For>
+          <Show when={current().change}>
+            {(change) => <RunView context={props.context} title="Verification" run={change().run} round={change().round} />}
+          </Show>
+          <Show when={current().project}>
+            {(project) => <RunView context={props.context} title="Full verify" run={project()} />}
+          </Show>
           <Show when={current().graph.length > 0}>
             <text fg={theme.text.base}>
               <b>Engineering graph</b>
