@@ -4,16 +4,8 @@ import { Schema } from "effect"
 import { Rpc } from "./rpc.js"
 import { optional } from "./schema.js"
 
-export const CheckStatus = Schema.Literals(["passed", "failed", "timed_out", "not_run"])
+/** An engineering graph node's verdict. */
 export const Verdict = Schema.Literals(["proven", "failed", "stale", "unproven", "at_risk"])
-
-export const Check = Schema.Struct({
-  command: Schema.String,
-  status: CheckStatus,
-  reason: optional(Schema.String),
-  ms: Schema.Number,
-})
-export type Check = typeof Check.Type
 
 export const Node = Schema.Struct({
   id: Schema.String,
@@ -26,6 +18,7 @@ export type Node = typeof Node.Type
 
 export const StageStatus = Schema.Literals(["pending", "running", "passed", "flaky", "failed", "timed_out", "skipped", "not_run"])
 export const RunVerdict = Schema.Literals(["verified", "regressed", "failing", "unproven", "tampered"])
+export type RunVerdict = typeof RunVerdict.Type
 
 export const Stage = Schema.Struct({
   id: Schema.String,
@@ -61,11 +54,12 @@ export const Run = Schema.Union([
 ])
 export type Run = typeof Run.Type
 
+/** Composed when read from each writer's own key, so the per-turn run, /verify and the graph never share one. */
 export const State = Schema.Struct({
-  running: Schema.Boolean,
-  /** Fix rounds used on the current prompt. */
-  round: Schema.Number,
-  checks: Schema.Array(Check),
+  /** The per-turn run, and the fix rounds used on the current prompt. */
+  change: optional(Schema.Struct({ run: Run, round: Schema.Number })),
+  /** The latest /verify. */
+  project: optional(Run),
   graph: Schema.Array(Node),
 })
 export type State = typeof State.Type

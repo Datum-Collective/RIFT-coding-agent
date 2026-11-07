@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import { RiftChecks } from "../../src/plugin/rift-verify/checks.js"
 import { RiftIntegrity } from "../../src/plugin/rift-verify/integrity.js"
 import { RiftReceipt } from "../../src/plugin/rift-verify/receipt.js"
 
@@ -79,27 +78,26 @@ describe("RiftIntegrity.review", () => {
   })
 })
 
-const result = (status: RiftChecks.Status): RiftChecks.Result => ({ name: "t", command: "bun run test", dir: "/", status, ms: 5, output: "out" })
+const receipt = (status: "passed" | "failed", prev?: string, output = "out"): RiftReceipt.ReceiptV2 => ({
+  version: 2,
+  session: "s",
+  run: "r",
+  tier: "change",
+  time: new Date(0).toISOString(),
+  inputs: { tree: "t", files: [{ path: "a.ts", sha256: "x" }], lockfiles: [] },
+  environment: { kind: "snapshot", platform: "test" },
+  stages: [{ id: ".:test:test", kind: "test", command: "bun run test", status, attempts: [{ status, ms: 5, output }] }],
+  integrity: [],
+  verdict: status === "passed" ? "verified" : "regressed",
+  prev,
+})
 
 describe("RiftReceipt", () => {
-  const seal = (status: RiftChecks.Status, prev?: string, findings: RiftIntegrity.Finding[] = []) =>
-    RiftReceipt.sealChecks({ session: "s", root: "/nonexistent", files: ["b.ts", "a.ts"], results: [result(status)], findings, prev, now: new Date(0) })
+  const seal = (status: "passed" | "failed", prev?: string) => RiftReceipt.seal(receipt(status, prev))
 
-  test("the verdict is never better than the evidence", () => {
-    const block: RiftIntegrity.Finding = { severity: "block", rule: "skipped-test", file: "a.test.ts", detail: "x" }
-    expect(RiftReceipt.verdict([result("passed")], [])).toBe("verified")
-    expect(RiftReceipt.verdict([result("failed")], [])).toBe("failed")
-    expect(RiftReceipt.verdict([result("timed_out")], [])).toBe("failed")
-    expect(RiftReceipt.verdict([result("not_run")], [])).toBe("unproven")
-    expect(RiftReceipt.verdict([], [])).toBe("unproven")
-    expect(RiftReceipt.verdict([result("passed")], [block])).toBe("tampered")
-    expect(RiftReceipt.verdict([result("failed")], [block])).toBe("failed")
-  })
-  test("the same inputs give the same digest, in sorted file order", () => {
-    const a = seal("passed")
-    expect(a.digest).toBe(seal("passed").digest)
-    expect(a.files.map((f) => f.path)).toEqual(["a.ts", "b.ts"])
-    expect(seal("failed").digest).not.toBe(a.digest)
+  test("the same receipt always has the same digest, and a different one does not", () => {
+    expect(seal("passed").digest).toBe(seal("passed").digest)
+    expect(seal("failed").digest).not.toBe(seal("passed").digest)
   })
   test("a chain audits clean, and any edit, removal or reorder is found", () => {
     const one = seal("passed")
@@ -108,20 +106,25 @@ describe("RiftReceipt", () => {
     expect(RiftReceipt.audit([one, two, three])).toBeUndefined()
     expect(RiftReceipt.audit([two, three])).toBeUndefined()
     expect(RiftReceipt.audit([one, three])).toContain("does not follow")
-    expect(RiftReceipt.audit([one, { ...two, verdict: "verified", checks: [] }, three])).toContain("does not match its digest")
+    expect(RiftReceipt.audit([one, { ...receipt("passed", one.digest), stages: [], digest: two.digest }, three])).toContain("does not match its digest")
     expect(RiftReceipt.audit([two, one, three])).toContain("does not")
   })
-  test("a changed check output changes the receipt", () => {
-    const a = RiftReceipt.sealChecks({ session: "s", root: "/x", files: [], results: [{ ...result("passed"), output: "one" }], findings: [], now: new Date(0) })
-    const b = RiftReceipt.sealChecks({ session: "s", root: "/x", files: [], results: [{ ...result("passed"), output: "two" }], findings: [], now: new Date(0) })
-    expect(a.digest).not.toBe(b.digest)
+  test("a changed stage output changes the receipt", () => {
+    expect(RiftReceipt.seal(receipt("passed", undefined, "one")).digest).not.toBe(RiftReceipt.seal(receipt("passed", undefined, "two")).digest)
   })
-})
-
-describe("RiftChecks.decide with tampering", () => {
-  test("a pass that tampered is handled like a failure, until the rounds run out", () => {
-    expect(RiftChecks.decide([result("passed")], 0, 3, true)).toEqual({ type: "fix" })
-    expect(RiftChecks.decide([result("passed")], 3, 3, true)).toEqual({ type: "give_up" })
-    expect(RiftChecks.decide([result("passed")], 0, 3)).toEqual({ type: "report" })
+  test("receipts written before the pipeline still audit, in a chain with new ones", () => {
+    const old: RiftReceipt.ReceiptV1 = {
+      version: 1,
+      session: "s",
+      time: new Date(0).toISOString(),
+      files: [{ path: "a.ts", sha256: "x" }],
+      checks: [{ name: "test", command: "bun run test", status: "passed", ms: 5, output: "y" }],
+      integrity: [],
+      verdict: "verified",
+    }
+    const first = { ...old, digest: RiftReceipt.digest(old) }
+    const next = seal("passed", first.digest)
+    expect(RiftReceipt.audit([first, next])).toBeUndefined()
+    expect(RiftReceipt.audit([{ ...first, verdict: "failed" }, next])).toContain("does not match its digest")
   })
 })

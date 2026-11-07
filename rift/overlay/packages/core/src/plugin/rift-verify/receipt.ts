@@ -1,9 +1,6 @@
 export * as RiftReceipt from "./receipt.js"
 
 import { createHash } from "node:crypto"
-import { readFileSync } from "node:fs"
-import path from "node:path"
-import type { RiftChecks } from "./checks.js"
 import type { RiftIntegrity } from "./integrity.js"
 import type { RiftStages } from "./stages.js"
 import type { RiftVerdict } from "./verdict.js"
@@ -35,7 +32,7 @@ export interface ReceiptV1 {
   readonly checks: readonly {
     readonly name: string
     readonly command: string
-    readonly status: RiftChecks.Status
+    readonly status: "passed" | "failed" | "timed_out" | "not_run"
     readonly reason?: string
     readonly ms: number
     /** Hash of the output the check produced, so the output can be matched to the receipt later. */
@@ -103,52 +100,6 @@ const canonical = (value: unknown): string => {
 }
 
 export const digest = (receipt: Receipt) => sha(canonical(receipt))
-
-export const verdict = (results: readonly RiftChecks.Result[], findings: readonly RiftIntegrity.Finding[]): Verdict => {
-  if (results.some((result) => result.status === "failed" || result.status === "timed_out")) return "failed"
-  if (findings.some((finding) => finding.severity === "block")) return "tampered"
-  if (results.length === 0 || results.some((result) => result.status === "not_run")) return "unproven"
-  return "verified"
-}
-
-const hashFile = (root: string, file: string) => {
-  try {
-    return sha(readFileSync(path.resolve(root, file)))
-  } catch {
-    return "missing"
-  }
-}
-
-export const sealChecks = (input: {
-  session: string
-  root: string
-  head?: string
-  files: readonly string[]
-  results: readonly RiftChecks.Result[]
-  findings: readonly RiftIntegrity.Finding[]
-  prev?: string
-  now?: Date
-}): ReceiptV1 & { readonly digest: string } => {
-  const receipt: ReceiptV1 = {
-    version: 1,
-    session: input.session,
-    time: (input.now ?? new Date()).toISOString(),
-    head: input.head,
-    files: [...input.files].sort().map((file) => ({ path: file, sha256: hashFile(input.root, file) })),
-    checks: input.results.map((result) => ({
-      name: result.name,
-      command: result.command,
-      status: result.status,
-      reason: result.reason,
-      ms: result.ms,
-      output: sha(result.output),
-    })),
-    integrity: input.findings,
-    verdict: verdict(input.results, input.findings),
-    prev: input.prev,
-  }
-  return { ...receipt, digest: digest(receipt) }
-}
 
 export const seal = (receipt: ReceiptV2): Sealed => ({ ...receipt, digest: digest(receipt) })
 

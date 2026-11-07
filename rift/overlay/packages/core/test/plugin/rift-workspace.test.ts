@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { Effect, Fiber } from "effect"
@@ -59,6 +59,20 @@ describe("RiftWorkspace.snapshot", () => {
     expect(await run(RiftWorkspace.changed(root, before.tree, after.tree))).toEqual(["a.ts"])
     write("a.ts", "dirty\n")
     expect((await snap(root)).tree).toBe(before.tree)
+  })
+
+  test("an edit that keeps the size and the timestamp git last saw is still seen", async () => {
+    const { root, write, git } = repo({ "a.ts": "export const a = 1\n" })
+    // An index entry and an index file stamped in the same second: git must read the file to trust it.
+    const then = new Date(Math.floor(Date.now() / 1000) * 1000 - 100_000)
+    utimesSync(path.join(root, "a.ts"), then, then)
+    git("add", "a.ts")
+    utimesSync(path.join(root, ".git/index"), then, then)
+    write("a.ts", "export const a = 2\n")
+    utimesSync(path.join(root, "a.ts"), then, then)
+    const edited = await snap(root)
+    expect(edited.tree).not.toBe(edited.headTree!)
+    expect(await run(RiftWorkspace.changed(root, edited.headTree!, edited.tree))).toEqual(["a.ts"])
   })
 
   test("a project in a subdirectory of the repository is snapshotted on its own", async () => {

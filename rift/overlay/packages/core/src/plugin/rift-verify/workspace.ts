@@ -2,7 +2,7 @@ export * as RiftWorkspace from "./workspace.js"
 
 import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs"
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -76,8 +76,14 @@ const take = async (root: string): Promise<Snapshot | undefined> => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "rift-index-"))
   const env = { GIT_INDEX_FILE: path.join(dir, "index") }
   try {
-    // A copy of the user's index lets git skip files whose stat is unchanged. The user's index is only read.
-    if (existsSync(where.index)) copyFileSync(where.index, env.GIT_INDEX_FILE)
+    // A copy of the user's index lets git skip files whose stat is unchanged. The user's index is only read. The copy
+    // keeps the original's timestamps: git trusts an entry's stat only if it is older than the index file, so a fresh
+    // timestamp would hide a same-size edit made in the second the entry was recorded.
+    const original = statSync(where.index, { throwIfNoEntry: false })
+    if (original) {
+      copyFileSync(where.index, env.GIT_INDEX_FILE)
+      utimesSync(env.GIT_INDEX_FILE, original.atime, original.mtime)
+    }
     if ((await git(root, ["add", "-A", "--", "."], { env })) === undefined) return undefined
     const whole = await text(where.top, ["write-tree"], { env })
     if (!whole) return undefined
