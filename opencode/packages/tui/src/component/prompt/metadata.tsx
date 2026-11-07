@@ -58,7 +58,7 @@ export function PromptMetadataRow(props: {
               minWidth={0}
               wrapMode="none"
               truncate
-              fg={fade(props.muted ? theme.text.muted : theme.text.base, props.modelAlpha)}
+              fg={fade(theme.text.muted, props.modelAlpha)}
             >
               {layout().model}
             </text>
