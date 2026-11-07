@@ -1,5 +1,5 @@
 diff --git a/opencode/install b/opencode/install
-index 84f97f5467..4e8526adbe 100755
+index f7914b02ec..4e8526adbe 100755
 --- a/opencode/install
 +++ b/opencode/install
 @@ -1,7 +1,21 @@
@@ -728,7 +728,7 @@ index 84f97f5467..4e8526adbe 100755
 -echo -e "opencode      ${MUTED}# Run command${NC}"
 +echo -e "rift          ${MUTED}# Run command${NC}"
  echo -e ""
--echo -e "${MUTED}For more information visit ${NC}https://opencode.ai/v2/docs"
+-echo -e "${MUTED}For more information visit ${NC}https://opencode.ai/docs"
 +echo -e "${MUTED}For more information visit ${NC}https://github.com/Datum-Collective/RIFT-coding-agent"
  echo -e ""
  echo -e ""
