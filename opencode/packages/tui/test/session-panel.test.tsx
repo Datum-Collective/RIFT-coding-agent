@@ -667,7 +667,7 @@ type AppFixture = Awaited<ReturnType<typeof createAppFixture>>
 
 async function ready(setup: AppFixture) {
   await setup.ready
-  await setup.waitForFrame((frame) => frame.includes("Transcript item 11") && frame.includes("Build · Model Fixture"), {
+  await setup.waitForFrame((frame) => frame.includes("Transcript item 11") && frame.includes("Build · Model"), {
     maxPasses: 120,
   })
   await setup.waitFor(() => setup.renderer.currentFocusedEditor instanceof TextareaRenderable)
