@@ -24,9 +24,13 @@ const GraphInput = Schema.Struct({
   nodes: Schema.Array(RiftGraph.Node).annotate({ description: "The full node list" }),
 })
 const GraphOutput = Schema.Struct({ nodes: Schema.Number })
-const Change = Schema.Struct({ run: Rift.Run, round: Schema.Number })
-const decodeChange = Schema.decodeUnknownOption(Change)
-const decodeRun = Schema.decodeUnknownOption(Rift.Run)
+/** A run as stored: the process that ran it, and for the per-turn tier the fix rounds used on the prompt. */
+const Stored = Schema.Struct({ boot: Schema.String, run: Rift.Run, round: Schema.Number })
+const decodeStored = Schema.decodeUnknownOption(Stored)
+// Identifies this server process, so a run another process left active is known to be dead. Created on first use:
+// Workers forbid random values while a module loads.
+let processBoot: string | undefined
+const boot = () => (processBoot ??= crypto.randomUUID())
 // Storage holds JSON. This drops the undefined fields the type checker cannot rule out.
 const json = (value: unknown) => JSON.parse(JSON.stringify(value))
 const key = (sessionID: string, tier: RiftPipeline.Tier) => `run:${sessionID}:${tier}`
@@ -94,11 +98,11 @@ export const Plugin = define({
 
     // Each writer has its own key; the state clients see is put together here, on every read.
     const state = Effect.fn("RiftVerify.state")(function* (sessionID: string) {
-      const change = Option.getOrUndefined(decodeChange(yield* ctx.storage.get(key(sessionID, "change"))))
-      const project = Option.getOrUndefined(decodeRun(yield* ctx.storage.get(key(sessionID, "project"))))
+      const change = Option.getOrUndefined(decodeStored(yield* ctx.storage.get(key(sessionID, "change"))))
+      const project = Option.getOrUndefined(decodeStored(yield* ctx.storage.get(key(sessionID, "project"))))
       const graph = yield* graphView(sessionID)
       if (!change && !project && graph.length === 0) return null
-      return { change, project, graph } satisfies Rift.State
+      return { change: change && { run: change.run, round: change.round }, project: project?.run, graph } satisfies Rift.State
     })
 
     const rpc = yield* ctx.rpc.register(Rift.Definition, { get: (input) => state(input.sessionID) }).pipe(Effect.orDie)
@@ -122,20 +126,24 @@ export const Plugin = define({
     }
 
     const publish = Effect.fn("RiftVerify.publish")(function* (sessionID: string, tier: RiftPipeline.Tier, view: Rift.Run) {
-      yield* ctx.storage.set(key(sessionID, tier), json(tier === "change" ? { run: view, round: loop(sessionID).round } : view))
+      yield* ctx.storage.set(key(sessionID, tier), json({ boot: boot(), run: view, round: tier === "change" ? loop(sessionID).round : 0 }))
       yield* changed(sessionID)
     })
 
     const pipeline: RiftPipeline.Pipeline = yield* RiftPipeline.make({ root, storage: ctx.storage, permission, publish })
 
-    // A run left active by an earlier process will never finish, so it is shown as stopped.
-    const stale = (yield* ctx.storage.scan({ prefix: "run:" })).entries
-    for (const entry of stale) {
-      const change = Option.getOrUndefined(decodeChange(entry.value))
-      const run = change?.run ?? Option.getOrUndefined(decodeRun(entry.value))
-      if (!run || run.phase === "done" || run.phase === "cancelled") continue
-      const stopped = RiftPipeline.step(run, { type: "cancelled", at: Date.now(), reason: "RIFT restarted" })
-      yield* ctx.storage.set(entry.key, json(change ? { ...change, run: stopped } : stopped))
+    // A run an earlier process left active will never finish, so it is shown as stopped. Storage is shared by every
+    // project this process has open, so a run of this process is left alone.
+    for (let after: string | undefined, more = true; more; ) {
+      const page = yield* ctx.storage.scan({ prefix: "run:", after })
+      for (const entry of page.entries) {
+        const stored = Option.getOrUndefined(decodeStored(entry.value))
+        if (!stored || stored.boot === boot() || stored.run.phase === "done" || stored.run.phase === "cancelled") continue
+        const stopped = RiftPipeline.step(stored.run, { type: "cancelled", at: Date.now(), reason: "RIFT restarted" })
+        yield* ctx.storage.set(entry.key, json({ ...stored, run: stopped }))
+      }
+      after = page.next
+      more = after !== undefined
     }
     yield* RiftWorkspace.sweep().pipe(Effect.forkScoped)
 
@@ -293,7 +301,7 @@ export const Plugin = define({
       }
       if (decision.type === "fix") current.round++
       else current.finished = true
-      const stored = Option.getOrUndefined(decodeChange(yield* ctx.storage.get(key(sessionID, "change"))))
+      const stored = Option.getOrUndefined(decodeStored(yield* ctx.storage.get(key(sessionID, "change"))))
       if (stored) yield* publish(sessionID, "change", stored.run)
       yield* ctx.session.synthetic({
         sessionID,

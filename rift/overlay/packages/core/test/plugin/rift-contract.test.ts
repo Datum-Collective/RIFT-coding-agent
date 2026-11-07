@@ -20,6 +20,7 @@ import { Location } from "@opencode/core/location"
 import { LocationServiceMap } from "@opencode/core/location-service-map"
 import { Model } from "@opencode/core/model"
 import { Permission } from "@opencode/core/permission"
+import { Plugin } from "@opencode/core/plugin"
 import { PluginHost } from "@opencode/core/plugin/host"
 import { RiftVerifyPlugin } from "@opencode/core/plugin/rift-verify"
 import { RiftReceipt } from "@opencode/core/plugin/rift-verify/receipt"
@@ -327,12 +328,10 @@ describe("rift contract", () => {
   )
 
   const status = (dir: string) => execFileSync("git", ["status", "--porcelain=v1"], { cwd: dir, encoding: "utf8" })
+  const at = (dir: string) => Effect.provide(LocationServiceMap.Service.get(Location.Ref.make({ directory: AbsolutePath.make(dir) })))
   // The plugin asks the permission service of its project's location, so the test answers through the same one.
   const permissions = <A, E>(dir: string, use: (permission: Permission.Interface) => Effect.Effect<A, E>) =>
-    Permission.Service.use(use).pipe(
-      Effect.scoped,
-      Effect.provide(LocationServiceMap.Service.get(Location.Ref.make({ directory: AbsolutePath.make(dir) }))),
-    )
+    Permission.Service.use(use).pipe(Effect.scoped, at(dir))
   const asked = (dir: string, sessionID: Session.ID) =>
     until(
       () => permissions(dir, (permission) => permission.forSession(sessionID)),
@@ -342,8 +341,8 @@ describe("rift contract", () => {
     permissions(dir, (permission) => permission.reply({ requestID, reply: answer }))
   const finished = (sessionID: Session.ID) =>
     until(
-      () => stored(`run:${sessionID}:project`),
-      (run) => (run as { phase?: string } | undefined)?.phase === "done" || (run as { phase?: string } | undefined)?.phase === "cancelled",
+      () => stored(`run:${sessionID}:project`).pipe(Effect.map((value) => (value as { run?: { phase?: string } } | undefined)?.run)),
+      (run) => run?.phase === "done" || run?.phase === "cancelled",
     )
   const cart = (dir: string) => {
     commitTest(dir, "cart.ts", "export const total = (a: number, b: number) => a + b\n")
@@ -395,18 +394,27 @@ describe("rift contract", () => {
     }),
   )
 
-  it.live("/verify stop cancels the run and its commands", () =>
+  it.live("/verify stop cancels the run and its commands, and only a dead process's runs are marked as restarted", () =>
     Effect.gen(function* () {
       const marker = outside((yield* tmpdirScoped()).path, "finished")
-      const { session, sessions } = yield* project(`sleep 3 && touch ${marker}`)
+      const { session, sessions } = yield* project(`sleep 4 && touch ${marker}`)
       yield* sessions.command({ sessionID: session.id, command: "verify", text: "" })
       yield* until(
         () => stored(`run:${session.id}:project`),
         (run) => JSON.stringify(run ?? "").includes('"status":"running"'),
       )
+      // Another project opening in this process stops a run an earlier process left, and leaves this one running.
+      const left = { boot: "an-earlier-process", round: 0, run: { id: "r", tree: "t", started: 0, phase: "running", stages: [] } }
+      yield* storage.pipe(Effect.flatMap((store) => store.set("run:ses_gone:project", left)))
+      const other = yield* project("true")
+      yield* Plugin.Service.use((plugins) => plugins.awaitActivation).pipe(Effect.scoped, at(other.dir))
+      expect(yield* until(() => stored("run:ses_gone:project"), (value) => JSON.stringify(value).includes("RIFT restarted"))).toMatchObject({
+        run: { phase: "cancelled", reason: "RIFT restarted" },
+      })
+      expect(yield* stored(`run:${session.id}:project`)).toMatchObject({ run: { phase: "running" } })
       yield* sessions.command({ sessionID: session.id, command: "verify", text: "stop" })
       expect(yield* finished(session.id)).toMatchObject({ phase: "cancelled", stages: [{ status: "not_run", reason: "cancelled" }] })
-      yield* Effect.sleep("3500 millis")
+      yield* Effect.sleep("4500 millis")
       expect(existsSync(marker)).toBe(false)
     }),
   )
