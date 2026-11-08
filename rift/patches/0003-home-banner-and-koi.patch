@@ -1,5 +1,5 @@
 diff --git a/opencode/packages/tui/src/routes/home.tsx b/opencode/packages/tui/src/routes/home.tsx
-index 71e7b64..d67a001 100644
+index 71e7b64..cb6b86b 100644
 --- a/opencode/packages/tui/src/routes/home.tsx
 +++ b/opencode/packages/tui/src/routes/home.tsx
 @@ -1,6 +1,9 @@
@@ -21,7 +21,7 @@ index 71e7b64..d67a001 100644
    // Global MCP elicitations can arrive without a session route, so keep them reachable from Home.
    const currentLocation = () => route.location ?? data.location.default()
    const forms = createMemo(() => data.session.form.list("global", currentLocation()) ?? [])
-@@ -80,28 +84,20 @@ export function Home() {
+@@ -80,31 +84,29 @@ export function Home() {
  
    return (
      <>
@@ -42,17 +42,29 @@ index 71e7b64..d67a001 100644
 -          }}
 -        >
 -          <Logo />
--        </box>
--        <box height={1} flexShrink={0} />
--        <UpdateNotification width={logoWidth()} />
--        <box width="100%" maxWidth={75} zIndex={1000} paddingTop={1} flexShrink={0} position="relative">
 +        <Landing onWidth={setLogoWidth}>
 +          <UpdateNotification width={logoWidth()} />
 +        </Landing>
-+        <box ref={setComposer} width="100%" zIndex={1000} paddingTop={1} flexShrink={0} position="relative">
-           <Prompt ref={bind} placeholders={placeholder} disabled={forms().length > 0} />
++        {/* RIFT: plugins' home footer sits above the composer; the composer's own row is the last. */}
++        <box width="100%" flexShrink={0}>
++          <Slot path="home.footer" />
+         </box>
+-        <box height={1} flexShrink={0} />
+-        <UpdateNotification width={logoWidth()} />
+-        <box width="100%" maxWidth={75} zIndex={1000} paddingTop={1} flexShrink={0} position="relative">
+-          <Prompt ref={bind} placeholders={placeholder} disabled={forms().length > 0} />
++        <box ref={setComposer} width="100%" zIndex={1000} flexShrink={0} position="relative">
++          <Prompt
++            ref={bind}
++            placeholders={placeholder}
++            disabled={forms().length > 0}
++            aside={<Slot path="home.footer.status" />}
++          />
          </box>
 -        <box flexGrow={1} minHeight={0} />
+-      </box>
+-      <box width="100%" flexShrink={0}>
+-        <Slot path="home.footer" />
        </box>
-       <box width="100%" flexShrink={0}>
-         <Slot path="home.footer" />
+       <Show when={forms()[0]?.id} keyed>
+         {(_) => {

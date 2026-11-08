@@ -5,7 +5,8 @@ import { testRender } from "@opentui/solid"
 import type { JSX } from "solid-js"
 import type { Context } from "@opencode/plugin/tui/context"
 import type { Rift } from "@opencode/schema/rift"
-import { barLook, barOutset, barTone, ComposerBar, TEXT_INSET, type BarColours, type BarLook } from "../src/component/prompt/frame"
+import { BAR_PAD, barLook, barOutset, barTone, ComposerBar, TEXT_INSET, type BarColours, type BarLook } from "../src/component/prompt/frame"
+import { fitInfoRow, folderForms, type InfoParts } from "../src/component/prompt/info-row"
 import { landingDetail } from "../src/component/landing"
 import { brief } from "../src/feature-plugins/sidebar/rift-run"
 import { ComposerStatus } from "../src/feature-plugins/rift/status"
@@ -49,9 +50,9 @@ function bar(props: { look?: BarLook; busy?: boolean; lines?: string[] }) {
   )
 }
 
-test("at rest the bar is three tinted rows: padding, the prompt row with the glyph in its first cell, padding", async () => {
+test("at rest the bar is three tinted rows: padding, the prompt row with the glyph two columns in, padding", async () => {
   const { rows, spans } = await draw(() => bar({}))
-  expect(rows.slice(0, 4)).toEqual(["", "› fix the flaky test", "", ""].map((row) => row.padEnd(40)))
+  expect(rows.slice(0, 4)).toEqual(["", "  › fix the flaky test", "", ""].map((row) => row.padEnd(40)))
   const fill = rgb(look().fill)
   for (const row of backgrounds(spans).slice(0, 3)) expect(row).toEqual(Array(40).fill(fill))
   expect(backgrounds(spans)[3]).not.toContainEqual(fill)
@@ -59,22 +60,25 @@ test("at rest the bar is three tinted rows: padding, the prompt row with the gly
 
 test("a longer draft makes the bar taller by whole rows and keeps a padding row above and below", async () => {
   const { rows, spans } = await draw(() => bar({ lines: ["one", "two", "three"] }))
-  expect(rows.slice(0, 6).map((row) => row.trimEnd())).toEqual(["", "› one", "  two", "  three", "", ""])
+  expect(rows.slice(0, 6).map((row) => row.trimEnd())).toEqual(["", "  › one", "    two", "    three", "", ""])
   const fill = rgb(look().fill)
   const column = backgrounds(spans).map((row) => row[20])
   expect(column.slice(0, 5)).toEqual(Array(5).fill(fill))
   expect(column[5]).not.toEqual(fill)
 })
 
-test("the draft starts TEXT_INSET columns into the bar", async () => {
+test("the glyph sits after two columns of padding and the draft two columns after it", async () => {
   const { rows } = await draw(() => bar({ lines: ["x"] }))
-  expect(rows[1]!.indexOf("x")).toBe(TEXT_INSET)
+  expect(rows[1]!.indexOf("›")).toBe(2)
+  expect(rows[1]!.indexOf("x")).toBe(4)
+  expect({ BAR_PAD, TEXT_INSET }).toEqual({ BAR_PAD: 2, TEXT_INSET: 4 })
 })
 
 test("shell mode swaps the glyph for an amber $ and keeps the draft's column", async () => {
   const { rows, spans } = await draw(() => bar({ look: look({ shell: true, draft: true }), lines: ["git status"] }))
-  expect(rows[1]!.startsWith("$ git status")).toBe(true)
-  expect(rgb(spans.lines[1]!.spans[0]!.fg)).toEqual(rgb(colours.shell))
+  expect(rows[1]!.startsWith("  $ git status")).toBe(true)
+  const glyph = spans.lines[1]!.spans.find((span) => span.text.includes("$"))!
+  expect(rgb(glyph.fg)).toEqual(rgb(colours.shell))
 })
 
 test("idle, focused and quiet bars have three different fills; a draft and the shell keep the focused one", () => {
@@ -108,7 +112,7 @@ test("a crest runs along the bottom padding row while the session works", async 
   const busy = await draw(() => bar({ busy: true }), { wait: 300 })
   expect(busy.rows[2]).toMatch(/[▂▃▄]/)
   expect(busy.rows[0]!.trim()).toBe("")
-  expect(busy.rows[1]!.startsWith("› fix")).toBe(true)
+  expect(busy.rows[1]!.startsWith("  › fix")).toBe(true)
 })
 
 test("RIFT_NO_ANIMATION keeps the bar still while busy", async () => {
@@ -166,14 +170,18 @@ test("the status says how the newest verification stands", () => {
   expect(brief({ permissions: 0, state: state(newer, older) })?.text).toBe("1 failing")
 })
 
-const grey = RGBA.fromInts(200, 200, 200)
+const base = RGBA.fromInts(237, 237, 237)
+const muted = RGBA.fromInts(143, 143, 143)
+const red = RGBA.fromInts(230, 80, 80)
+const amber = RGBA.fromInts(229, 181, 103)
+const green = RGBA.fromInts(107, 203, 139)
 const fakeContext = (rift: Rift.State | null, permissions = 0) =>
   ({
     theme: {
       text: {
-        base: grey,
-        muted: grey,
-        feedback: { success: { base: grey }, error: { base: grey }, warning: { base: grey } },
+        base,
+        muted,
+        feedback: { success: { base: green }, error: { base: red }, warning: { base: amber } },
       },
     },
     data: {
@@ -187,32 +195,86 @@ const fakeContext = (rift: Rift.State | null, permissions = 0) =>
     client: { rpc: () => ({ get: async () => rift, events: { on: () => () => undefined } }) },
   }) as unknown as Context
 
-async function footer(width: number, rift: Rift.State | null, permissions = 0) {
-  const { rows } = await draw(
+async function status(rift: Rift.State | null, permissions = 0) {
+  const { rows, spans } = await draw(
     () => (
-      <box flexDirection="row" gap={2} width={width} height={1}>
-        <text flexShrink={0}>ctrl+p commands</text>
+      <box flexDirection="row" width={40} height={1}>
         <ComposerStatus context={fakeContext(rift, permissions)} sessionID="session" />
       </box>
     ),
-    { width, height: 1, wait: 10 },
+    { width: 40, height: 1, wait: 10 },
   )
-  return rows[0]!
+  const ink = spans.lines[0]!.spans.find((span) => span.text.trim())
+  return { text: rows[0]!.trimEnd(), colour: ink && rgb(ink.fg) }
 }
 
-test("the status sits at the right end of the hint's row", async () => {
-  expect(await footer(60, state(done("failing", [stage("test", "failed")])))).toBe(
-    "ctrl+p commands" + "✗ 1 failing · /verify".padStart(45),
-  )
-  expect(await footer(60, null, 1)).toBe("ctrl+p commands" + "⚠ 1 permission waiting".padStart(45))
+test("the status reads whole at its natural width", async () => {
+  expect((await status(state(done("failing", [stage("test", "failed")])))).text).toBe("✗ 1 failing · /verify")
+  expect((await status(null, 1)).text).toBe("⚠ 1 permission waiting")
+  expect((await status(null)).text).toBe("")
 })
 
-test("on a short row the status drops its key, then itself, and the hint always reads whole", async () => {
-  const failing = state(done("failing", [stage("test", "failed")]))
-  expect(await footer(38, failing)).toBe("ctrl+p commands" + "✗ 1 failing · /verify".padStart(23))
-  expect(await footer(37, failing)).toBe("ctrl+p commands" + "✗ 1 failing".padStart(22))
-  expect(await footer(28, failing)).toBe("ctrl+p commands" + "✗ 1 failing".padStart(13))
-  expect(await footer(27, failing)).toBe("ctrl+p commands".padEnd(27))
+test("the status keeps its feedback colour only while it is a problem", async () => {
+  expect((await status(state(done("failing", [stage("test", "failed")])))).colour).toEqual(rgb(red))
+  expect((await status(null, 1)).colour).toEqual(rgb(amber))
+  expect((await status(state(done("verified")))).colour).toEqual(rgb(muted))
+  expect((await status(state(running))).colour).toEqual(rgb(muted))
+})
+
+/** Agent and model, the hint "ctrl+p commands", a version, a status and a folder whose last two segments read 33 wide. */
+const parts = (row: number, more: Partial<InfoParts> = {}): InfoParts => ({
+  row,
+  lead: 18,
+  key: 6,
+  label: 8,
+  version: 6,
+  status: 11,
+  folder: { directory: "~/work/clients/acme/payments/checkout", branch: "main" },
+  ...more,
+})
+
+test("the folder folds its middle segments into an ellipsis, down to its last two, and keeps its branch", () => {
+  expect(folderForms({ directory: "~/work/clients/acme/payments/checkout", branch: "main" })).toEqual([
+    "~/work/clients/acme/payments/checkout:main",
+    "~/…/clients/acme/payments/checkout:main",
+    "~/…/acme/payments/checkout:main",
+    "~/…/payments/checkout:main",
+  ])
+  expect(folderForms({ directory: "/srv/app" })).toEqual(["/srv/app"])
+})
+
+test("as the row shortens the folder folds first, then the version, the hint's label and the status go; what the status leaves goes back to the label", () => {
+  // Agent and model 18, hint 15 (key 6), version 6, status 11, four gaps of 2: the folder gets the row less 58.
+  const all = { version: true, label: true, status: true }
+  const noVersion = { ...all, version: false }
+  const noLabel = { ...noVersion, label: false }
+  const noStatus = { ...noLabel, status: false }
+  expect(fitInfoRow(parts(100))).toEqual({ ...all, folder: "~/work/clients/acme/payments/checkout:main" })
+  expect(fitInfoRow(parts(89))).toEqual({ ...all, folder: "~/…/acme/payments/checkout:main" })
+  expect(fitInfoRow(parts(84))).toEqual({ ...all, folder: "~/…/payments/checkout:main" })
+  // Without the version (6 and a gap) the folder has room to unfold a segment again.
+  expect(fitInfoRow(parts(83))).toEqual({ ...noVersion, folder: "~/…/acme/payments/checkout:main" })
+  expect(fitInfoRow(parts(76))).toEqual({ ...noVersion, folder: "~/…/payments/checkout:main" })
+  expect(fitInfoRow(parts(75))).toEqual({ ...noLabel, folder: "~/…/acme/payments/checkout:main" })
+  expect(fitInfoRow(parts(67))).toEqual({ ...noLabel, folder: "~/…/payments/checkout:main" })
+  // With the status gone the label fits again (key and label 15, agent and model 18, a gap: the folder gets the row less 37).
+  expect(fitInfoRow(parts(66))).toEqual({ ...noStatus, label: true, folder: "~/…/payments/checkout:main" })
+  expect(fitInfoRow(parts(63))).toEqual({ ...noStatus, label: true, folder: "~/…/payments/checkout:main" })
+  expect(fitInfoRow(parts(62))).toEqual({ ...noStatus, folder: "~/…/acme/payments/checkout:main" })
+  expect(fitInfoRow(parts(58))).toEqual({ ...noStatus, folder: "~/…/payments/checkout:main" })
+  expect(fitInfoRow(parts(54))).toEqual({ ...noStatus, folder: "~/…/payments/checkout:main" })
+  // Past its last two segments the folder is cut in the middle, and below 8 columns it goes.
+  expect(fitInfoRow(parts(53))).toEqual({ ...noStatus, folder: "~/…/payments…heckout:main" })
+  expect(fitInfoRow(parts(36)).folder).toHaveLength(8)
+  expect(fitInfoRow(parts(35)).folder).toBeUndefined()
+})
+
+test("whatever the width, what the row shows fits it", () => {
+  for (let row = 20; row <= 120; row++) {
+    const fit = fitInfoRow(parts(row))
+    const widths = [18, 6 + (fit.label ? 9 : 0), fit.version ? 6 : 0, fit.status ? 11 : 0, fit.folder?.length ?? 0].filter(Boolean)
+    if (fit.folder) expect(widths.reduce((a, b) => a + b, 0) + 2 * (widths.length - 1)).toBeLessThanOrEqual(row)
+  }
 })
 
 test("the landing gives up detail as its rows run out, and the banner needs its width", () => {

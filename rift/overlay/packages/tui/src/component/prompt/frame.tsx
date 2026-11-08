@@ -1,6 +1,6 @@
 /**
  * The composer's bar: one long tinted slab, three rows at rest (a padding row, the prompt row, a padding row), with
- * the prompt glyph in its first cell. A longer draft adds rows between the paddings. No outline: the fill alone sets
+ * the prompt glyph BAR_PAD columns in. A longer draft adds rows between the paddings. No outline: the fill alone sets
  * it off from the page.
  *
  * Home and the session draw the same bar, so it is the same size in both at the same terminal size. While the
@@ -16,8 +16,17 @@ import { animationOff } from "../koi-enabled"
 /** Columns between the bar and the edge of the column it sits in, on each side. */
 const BAR_MARGIN = 1
 
-/** Where text starts inside the bar: the glyph and a space. The rows under the bar and the slash list start there too. */
-export const TEXT_INSET = 2
+/** Empty columns inside the bar on each side: the glyph sits after the left ones, right-aligned text ends before the right ones. */
+export const BAR_PAD = 2
+
+/**
+ * The composer's one text column, counted from the bar's left edge: the padding, the glyph and a space. The draft, the
+ * row under the bar and the slash list all start on it.
+ */
+export const TEXT_INSET = BAR_PAD + 2
+
+/** The slash list's own padding. Its rows pad their text by one more column, so their text lands on TEXT_INSET and ends on the mirror of it. */
+export const LIST_PAD = { left: TEXT_INSET - 1, right: BAR_PAD - 1 }
 
 /**
  * How far the composer reaches out of its column's padding to keep BAR_MARGIN. Home and the session column both pad
@@ -117,8 +126,8 @@ export function ComposerBar(props: { look: BarLook; busy: boolean; animations: b
 
   return (
     <box width="100%" flexShrink={0} backgroundColor={props.look.fill} paddingTop={1}>
-      <box flexDirection="row" paddingRight={1}>
-        <text width={TEXT_INSET} flexShrink={0} fg={props.look.glyph} attributes={TextAttributes.BOLD} selectable={false}>
+      <box flexDirection="row" paddingLeft={BAR_PAD} paddingRight={BAR_PAD}>
+        <text width={TEXT_INSET - BAR_PAD} flexShrink={0} fg={props.look.glyph} attributes={TextAttributes.BOLD} selectable={false}>
           {props.look.mark}
         </text>
         <box flexGrow={1} flexShrink={1} minWidth={0}>
