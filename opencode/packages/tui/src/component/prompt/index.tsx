@@ -7,16 +7,15 @@ import {
   decodePasteBytes,
   measureEditText,
   stripAnsiSequences,
-  TextAttributes,
   type KeyEvent,
 } from "@opentui/core"
-import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match, For } from "solid-js"
+import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match, For, type JSX } from "solid-js"
 import path from "path"
 import { useLocal } from "../../context/local"
 import { useTheme, useThemes } from "../../context/theme"
 import { tint } from "../../theme/color"
 import { createAnimatable, tween } from "../../ui/animation"
-import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
+import { useTuiApp, useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { useClipboard } from "../../context/clipboard"
 import { Spinner } from "../spinner"
 import { useClient } from "../../context/client"
@@ -41,7 +40,6 @@ import { type AutocompleteOption, type AutocompleteRef, Autocomplete } from "./a
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { Locale } from "../../util/locale"
 import { errorMessage } from "../../util/error"
-import { createColors, createFrames } from "../../ui/spinner"
 import { useDialog } from "../../ui/dialog"
 import { DialogIntegration } from "../dialog-integration"
 import { useConnected } from "../use-connected"
@@ -68,8 +66,9 @@ import { DialogImagePreview } from "../dialog-image-preview"
 import { useDirectoryRecents } from "../../prompt/directory-recents"
 import { directoryRecentValue } from "../../prompt/directory-completion"
 import { useWorkingDirectoryActions } from "../../ui/working-directory-actions"
-import { truncateFilePath } from "../../ui/file-path"
 import { PromptMetadataRow } from "./metadata"
+import { barLook, barOutset, barTone, ComposerBar, crestAllowed, useBarFocus } from "./frame"
+import { InfoRow } from "./info-row"
 import { limitLabel, useUsageLimits } from "../usage"
 
 export type PromptProps = {
@@ -84,6 +83,8 @@ export type PromptProps = {
     normal?: string[]
     shell?: string[]
   }
+  /** RIFT: more for the status end of the row under the bar, after the footer slots. */
+  aside?: JSX.Element
 }
 
 export type PromptRef = {
@@ -137,7 +138,7 @@ export function PromptInterruptStatus(props: {
 
   return (
     <text fg={props.armed ? armedColor() : props.text} wrapMode="none" truncate flexShrink={1}>
-      esc{" "}
+      <b>esc</b>{" "}
       <span style={{ fg: props.armed ? armedColor() : props.subdued }}>
         {props.armed ? "again to interrupt" : "interrupt"}
       </span>
@@ -194,6 +195,8 @@ export function Prompt(props: PromptProps) {
   const muted = () => leader() || props.muted
   const local = useLocal()
   const paths = useTuiPaths()
+  const app = useTuiApp()
+  const shortcuts = Keymap.useShortcuts()
   const terminalEnvironment = useTuiTerminalEnvironment()
   const clipboard = useClipboard()
   const client = useClient()
@@ -1589,7 +1592,7 @@ export function Prompt(props: PromptProps) {
   })
   const highlight = createMemo(() => {
     if (muted()) return theme.border.base
-    if (store.mode === "shell") return theme.text.action.primary.selected
+    if (store.mode === "shell") return theme.text.feedback.warning.base
     return promptDisplay().agentColor ?? theme.border.base
   })
   const agentLabel = createMemo(() => (store.mode === "shell" ? "Shell" : promptDisplay().agentLabel))
@@ -1620,7 +1623,7 @@ export function Prompt(props: PromptProps) {
         return `Run a command… "${shell()[store.placeholder % shell().length]}"`
       }
       if (!list().length) return undefined
-      return "Ask RIFT to do anything"
+      return `Ask anything… "${list()[store.placeholder % list().length]}"`
     })()
     if (!value) return undefined
     const width = dimensions().width < 44 ? dimensions().width - 5 : Math.min(75, dimensions().width - 4) - 5
@@ -1631,7 +1634,6 @@ export function Prompt(props: PromptProps) {
       // No session yet: show where the next session will be created.
       return currentLocation.ref ?? data.location.default()
     }
-    if (status() !== "idle") return
     return data.session.get(props.sessionID)?.location
   })
   const locationLabel = createMemo(() => {
@@ -1639,57 +1641,46 @@ export function Prompt(props: PromptProps) {
     const location = pending ? { directory: pending } : footerLocation()
     if (!location) return
     const directory = abbreviateHome(location.directory, paths.home)
-    const branch = data.location.vcs.info(location)?.branch.current
-    return branch ? `${directory}:${branch}` : directory
-  })
-  const [locationWidth, setLocationWidth] = createSignal(dimensions().width)
-  const locationLabelDisplay = createMemo(() => {
-    const label = locationLabel()
-    if (!label) return
-    return truncateFilePath(label, locationWidth())
+    return { directory, branch: data.location.vcs.info(location)?.branch.current }
   })
   const locationActions = useWorkingDirectoryActions({
     directory: () => footerLocation()?.directory,
     onMove: () => void move.open(),
   })
 
-  const spinnerDef = createMemo(() => {
-    const color = promptDisplay().agentColor ?? theme.border.base
-    return {
-      frames: createFrames({
-        color,
-        style: "blocks",
-        inactiveFactor: 0.6,
-        // enableFading: false,
-        minAlpha: 0.3,
-      }),
-      color: createColors({
-        color,
-        style: "blocks",
-        inactiveFactor: 0.6,
-        // enableFading: false,
-        minAlpha: 0.3,
-      }),
-    }
-  })
   const maxHeight = createMemo(() => Math.max(6, Math.floor(dimensions().height / 3)))
 
-  const promptBg = createMemo(() => theme.decrease(theme.background.raised.base))
+  // RIFT: the bar's fill and glyph for what the composer is doing; the slash and file list standing on it takes the fill.
+  const focused = useBarFocus(() => anchor)
+  const look = createMemo(() =>
+    barLook(
+      barTone({
+        quiet: disabled() || !!muted() || dialog.stack.length > 0,
+        focused: focused(),
+        shell: store.mode === "shell",
+        draft: !!store.prompt.text,
+      }),
+      {
+        agent: promptDisplay().agentColor ?? theme.border.base,
+        shell: theme.text.feedback.warning.base,
+        muted: theme.text.muted,
+        raised: theme.background.raised,
+      },
+    ),
+  )
 
   return (
     <>
-      <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
-        {/* RIFT: one tinted row above and below the text, Codex's padding. */}
-        <box height={1} width="100%" backgroundColor={promptBg()} />
-        <box width="100%">
-          <box
-            paddingLeft={dimensions().width < 44 ? 1 : 2}
-            paddingRight={dimensions().width < 44 ? 1 : 2}
-            flexShrink={0}
-            backgroundColor={promptBg()}
-            flexGrow={1}
-            width="100%"
-          >
+      <box
+        ref={(r: BoxRenderable) => (anchor = r)}
+        visible={props.visible !== false}
+        alignSelf="stretch"
+        marginLeft={-barOutset(dimensions().width)}
+        marginRight={-barOutset(dimensions().width)}
+      >
+        {/* RIFT: one long tinted bar, the same on home and in a session. */}
+        <ComposerBar look={look()} busy={status() === "running"} animations={animationsEnabled()}>
+          <box flexShrink={0} flexGrow={1} width="100%">
             <Show when={config.prompt?.image_preview && visibleImageAttachments().length > 0}>
               <box
                 width="100%"
@@ -1758,215 +1749,180 @@ export function Prompt(props: PromptProps) {
                 </Show>
               </box>
             </Show>
-            <box flexDirection="row" gap={1} flexShrink={0}>
-              {/* RIFT: Codex-style prompt glyph, in place of the accent bar down the left edge. */}
-              <text fg={disabled() ? theme.text.muted : theme.text.base} attributes={TextAttributes.BOLD}>
-                ›
-              </text>
-              <box flexGrow={1} flexShrink={1} minWidth={0}>
-                <textarea
-                  width="100%"
-                  placeholder={placeholderText()}
-                  placeholderColor={theme.text.muted}
-                  textColor={muted() ? theme.text.muted : theme.text.base}
-                  focusedTextColor={muted() ? theme.text.muted : theme.text.base}
-                  minHeight={1}
-                  maxHeight={maxHeight()}
-                  cursorStyle={cursorStyle()}
-                  onContentChange={() => {
-                    const value = input.plainText
-                    setStore("prompt", "text", value)
-                    auto()?.onInput(value)
-                    syncExtmarksWithPromptParts()
-                    setCursorVersion((value) => value + 1)
-                  }}
-                  onCursorChange={() => setCursorVersion((value) => value + 1)}
-                  onKeyDown={(e: { preventDefault(): void }) => {
-                    if (disabled()) {
-                      e.preventDefault()
-                      return
-                    }
-                  }}
-                  onSubmit={() => {
-                    if (disabled()) return
-                    // IME: double-defer so the last composed character (e.g. Korean
-                    // hangul) is flushed to plainText before we read it for submission.
-                    setTimeout(() => setTimeout(() => submit(), 0), 0)
-                  }}
-                  onPaste={(event: PasteEvent) => {
-                    if (disabled()) {
-                      event.preventDefault()
-                      return
-                    }
+            <textarea
+              width="100%"
+              placeholder={placeholderText()}
+              placeholderColor={theme.text.muted}
+              textColor={muted() ? theme.text.muted : theme.text.base}
+              focusedTextColor={muted() ? theme.text.muted : theme.text.base}
+              minHeight={1}
+              maxHeight={maxHeight()}
+              cursorStyle={cursorStyle()}
+              onContentChange={() => {
+                const value = input.plainText
+                setStore("prompt", "text", value)
+                auto()?.onInput(value)
+                syncExtmarksWithPromptParts()
+                setCursorVersion((value) => value + 1)
+              }}
+              onCursorChange={() => setCursorVersion((value) => value + 1)}
+              onKeyDown={(e: { preventDefault(): void }) => {
+                if (disabled()) {
+                  e.preventDefault()
+                  return
+                }
+              }}
+              onSubmit={() => {
+                if (disabled()) return
+                // IME: double-defer so the last composed character (e.g. Korean
+                // hangul) is flushed to plainText before we read it for submission.
+                setTimeout(() => setTimeout(() => submit(), 0), 0)
+              }}
+              onPaste={(event: PasteEvent) => {
+                if (disabled()) {
+                  event.preventDefault()
+                  return
+                }
 
-                    // Normalize line endings at the boundary
-                    // Windows ConPTY/Terminal often sends CR-only newlines in bracketed paste
-                    // Replace CRLF first, then any remaining CR
-                    const normalizedText = decodePasteBytes(event.bytes).replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+                // Normalize line endings at the boundary
+                // Windows ConPTY/Terminal often sends CR-only newlines in bracketed paste
+                // Replace CRLF first, then any remaining CR
+                const normalizedText = decodePasteBytes(event.bytes).replace(/\r\n/g, "\n").replace(/\r/g, "\n")
 
-                    // Windows Terminal <1.25 can surface image-only clipboard as an
-                    // empty bracketed paste. Windows Terminal 1.25+ does not.
-                    if (event.bytes.byteLength === 0) {
-                      keymap.dispatch("prompt.paste")
-                      return
-                    }
+                // Windows Terminal <1.25 can surface image-only clipboard as an
+                // empty bracketed paste. Windows Terminal 1.25+ does not.
+                if (event.bytes.byteLength === 0) {
+                  keymap.dispatch("prompt.paste")
+                  return
+                }
 
-                    // Once we cross an async boundary below, the terminal may perform its
-                    // default paste unless we suppress it first and handle insertion ourselves.
-                    event.preventDefault()
+                // Once we cross an async boundary below, the terminal may perform its
+                // default paste unless we suppress it first and handle insertion ourselves.
+                event.preventDefault()
 
-                    void enqueuePaste((changed) => pasteInputText(normalizedText, changed))
-                  }}
-                  ref={(r: TextareaRenderable) => {
-                    input = r
-                    Object.assign(r, {
-                      getClipboardText: (text: string) => expandPastedTextPlaceholders(text, store.prompt.pasted),
-                    })
-                    setInputTarget(r)
-                    if (promptPartTypeId === 0) {
-                      promptPartTypeId = input.extmarks.registerType("prompt-part")
-                    }
-                    props.ref?.(ref)
-                    setTimeout(() => {
-                      // setTimeout is a workaround and needs to be addressed properly
-                      if (!input || input.isDestroyed) return
-                      input.cursorColor = disabled() ? theme.background.raised.base : theme.text.base
-                    }, 0)
-                  }}
-                  onMouseDown={(r: MouseEvent) => {
-                    if (disabled()) {
-                      r.preventDefault()
-                      return
-                    }
-                    if (r.button !== 0) return
-                    r.target?.focus()
-                    const extmark = input.extmarks
-                      .getAtOffset(input.cursorOffset)
-                      .find((item) => store.extmarkToPart.get(item.id)?.type === "pasted")
-                    if (!extmark || !expandPastedText(extmark.id)) return
-                    r.preventDefault()
-                    r.stopPropagation()
-                  }}
-                  focusedBackgroundColor="transparent"
-                  cursorColor={disabled() ? theme.background.raised.base : theme.text.base}
-                  syntaxStyle={syntax()}
-                />
-              </box>
-            </box>
+                void enqueuePaste((changed) => pasteInputText(normalizedText, changed))
+              }}
+              ref={(r: TextareaRenderable) => {
+                input = r
+                Object.assign(r, {
+                  getClipboardText: (text: string) => expandPastedTextPlaceholders(text, store.prompt.pasted),
+                })
+                setInputTarget(r)
+                if (promptPartTypeId === 0) {
+                  promptPartTypeId = input.extmarks.registerType("prompt-part")
+                }
+                props.ref?.(ref)
+                setTimeout(() => {
+                  // setTimeout is a workaround and needs to be addressed properly
+                  if (!input || input.isDestroyed) return
+                  input.cursorColor = disabled() ? theme.background.raised.base : theme.text.base
+                }, 0)
+              }}
+              onMouseDown={(r: MouseEvent) => {
+                if (disabled()) {
+                  r.preventDefault()
+                  return
+                }
+                if (r.button !== 0) return
+                r.target?.focus()
+                const extmark = input.extmarks
+                  .getAtOffset(input.cursorOffset)
+                  .find((item) => store.extmarkToPart.get(item.id)?.type === "pasted")
+                if (!extmark || !expandPastedText(extmark.id)) return
+                r.preventDefault()
+                r.stopPropagation()
+              }}
+              focusedBackgroundColor="transparent"
+              cursorColor={disabled() ? theme.background.raised.base : theme.text.base}
+              syntaxStyle={syntax()}
+            />
           </box>
-        </box>
-        <box height={1} width="100%" backgroundColor={promptBg()} />
-        <box
-          width="100%"
-          flexDirection="row"
-          justifyContent="space-between"
-          gap={2}
-          paddingLeft={dimensions().width < 44 ? 1 : 2}
-          paddingRight={dimensions().width < 44 ? 1 : 2}
-        >
-          <Slot path="prompt.footer" input={footerInput()}>
-            <Slot path="prompt.footer.status" input={footerInput()}>
-              <box
-                flexGrow={1}
-                flexShrink={1}
-                minWidth={0}
-                onSizeChange={function (this: BoxRenderable) {
-                  const width = this.width
-                  queueMicrotask(() => setLocationWidth(width))
-                }}
-              >
-                <Switch>
-                  <Match when={status() === "running"}>
-                    <box flexDirection="row" gap={1} flexGrow={1} justifyContent="flex-start">
-                      <box marginLeft={1}>
-                        <Show when={config.animations ?? true} fallback={<text fg={theme.text.muted}>[⋯]</text>}>
-                          <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
+        </ComposerBar>
+        {/* RIFT: under the bar, one row: who answers and the hints on the draft's column; the status and the folder on the right. */}
+        <InfoRow
+          folder={locationLabel()}
+          folderActions={locationActions}
+          lead={
+            <PromptMetadataRow
+              mode={store.mode}
+              agent={agentLabel()}
+              auto={local.permission.mode === "autoaccept"}
+              model={promptDisplay().modelLabel}
+              provider=""
+              variant={promptDisplay().variant}
+              limit={limit()}
+              muted={!!muted()}
+              highlight={highlight()}
+              agentAlpha={agentMetaAlpha()}
+              modelAlpha={modelMetaAlpha()}
+              variantAlpha={variantMetaAlpha()}
+            />
+          }
+          status={
+            <>
+              <Slot path="prompt.footer" input={footerInput()}>
+                <Slot path="prompt.footer.status" input={footerInput()}>
+                  <Switch>
+                    <Match when={status() === "running"}>
+                      <box flexDirection="row" gap={1} flexShrink={0}>
+                        {/* RIFT: the crest along the bar is the spinner; this is for when it cannot move. */}
+                        <Show when={!crestAllowed(animationsEnabled())}>
+                          <text fg={theme.text.muted}>[⋯]</text>
                         </Show>
-                      </box>
-                      <PromptInterruptStatus
-                        armed={store.interrupt > 0}
-                        animations={animationsEnabled()}
-                        text={theme.text.base}
-                        subdued={theme.text.muted}
-                        warning={theme.text.feedback.warning.base}
-                        flash={theme.decrease(theme.text.feedback.warning.base, 2)}
-                      />
-                    </box>
-                  </Match>
-                  <Match when={move.progress()}>
-                    {(progress) => (
-                      <box paddingLeft={3} height={1} minHeight={0} flexShrink={1}>
-                        <Spinner color={theme.hue.accent[500]}>
-                          {progress()}
-                          <span style={{ fg: theme.text.muted }}>{".".repeat(move.creatingDots())}</span>
-                        </Spinner>
-                      </box>
-                    )}
-                  </Match>
-                  <Match when={move.pendingNew()}>
-                    <box paddingLeft={3} height={1} minHeight={0} flexShrink={1}>
-                      <text fg={theme.hue.accent[500]} wrapMode="none" truncate>
-                        (new worktree)
-                      </text>
-                    </box>
-                  </Match>
-                  <Match when={true}>
-                    <box flexDirection="row" gap={2} flexGrow={1} flexShrink={1} minWidth={0}>
-                      {/* RIFT: under the input, only who answers and where. The provider is in the model picker. */}
-                      <box flexDirection="row" flexShrink={0} gap={1}>
-                        <PromptMetadataRow
-                          mode={store.mode}
-                          agent={agentLabel()}
-                          auto={local.permission.mode === "autoaccept"}
-                          model={promptDisplay().modelLabel}
-                          provider=""
-                          variant={promptDisplay().variant}
-                          limit={limit()}
-                          muted={!!muted()}
-                          highlight={highlight()}
-                          agentAlpha={agentMetaAlpha()}
-                          modelAlpha={modelMetaAlpha()}
-                          variantAlpha={variantMetaAlpha()}
+                        <PromptInterruptStatus
+                          armed={store.interrupt > 0}
+                          animations={animationsEnabled()}
+                          text={theme.text.base}
+                          subdued={theme.text.muted}
+                          warning={theme.text.feedback.warning.base}
+                          flash={theme.decrease(theme.text.feedback.warning.base, 2)}
                         />
                       </box>
-                      <Show when={locationLabelDisplay()} fallback={<text />}>
-                        {(location) => (
-                          <text
-                            id="prompt.footer.location"
-                            fg={locationActions.hovered() ? theme.text.base : theme.text.muted}
-                            wrapMode="none"
-                            truncate
-                            flexGrow={1}
-                            flexShrink={1}
-                            onMouseOver={locationActions.onMouseOver}
-                            onMouseOut={locationActions.onMouseOut}
-                            onMouseUp={locationActions.onMouseUp}
-                          >
-                            {location()}
-                          </text>
-                        )}
-                      </Show>
-                    </box>
-                  </Match>
-                </Switch>
-              </box>
-            </Slot>
-            <Slot path="prompt.footer.file" input={footerInput()}>
-              <Show when={editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined}>
-                {(file) => (
-                  <text
-                    wrapMode="none"
-                    truncate
-                    flexShrink={1}
-                    fg={editorContextLabelState() === "pending" ? theme.hue.accent[500] : theme.text.muted}
-                  >
-                    {file()}
-                  </text>
-                )}
-              </Show>
-            </Slot>
-          </Slot>
-        </box>
+                    </Match>
+                    <Match when={move.progress()}>
+                      {(progress) => (
+                        <box height={1} minHeight={0} flexShrink={1}>
+                          <Spinner color={theme.hue.accent[500]}>
+                            {progress()}
+                            <span style={{ fg: theme.text.muted }}>{".".repeat(move.creatingDots())}</span>
+                          </Spinner>
+                        </box>
+                      )}
+                    </Match>
+                    <Match when={move.pendingNew()}>
+                      <box height={1} minHeight={0} flexShrink={1}>
+                        <text fg={theme.hue.accent[500]} wrapMode="none" truncate>
+                          (new worktree)
+                        </text>
+                      </box>
+                    </Match>
+                  </Switch>
+                </Slot>
+                <Slot path="prompt.footer.file" input={footerInput()}>
+                  <Show when={editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined}>
+                    {(file) => (
+                      <text
+                        wrapMode="none"
+                        truncate
+                        flexShrink={1}
+                        fg={editorContextLabelState() === "pending" ? theme.hue.accent[500] : theme.text.muted}
+                      >
+                        {file()}
+                      </text>
+                    )}
+                  </Show>
+                </Slot>
+              </Slot>
+              {props.aside}
+            </>
+          }
+          hint={
+            store.mode === "shell"
+              ? { key: "esc", label: "exit shell mode" }
+              : { key: shortcuts.get("command.palette.show") ?? "", label: "commands" }
+          }
+          version={app.version}
+        />
       </box>
       <Autocomplete
         sessionID={props.sessionID}
@@ -1998,6 +1954,7 @@ export function Prompt(props: PromptProps) {
           setAuto(() => r)
         }}
         anchor={() => anchor}
+        fill={look().fill}
         input={() => input}
         setPrompt={(cb) => {
           setStore("prompt", produce(cb))

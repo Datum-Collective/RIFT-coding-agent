@@ -7,3 +7,14 @@ core: test/location-layer.test.ts::LocationServiceMap::isolates provider state b
 # when isolated via `-t` (verified 2026-11-02). session.ts's module-level `session`/`takeDraft` state depends
 # on file execution order; isolating one of the two `for (const queued of [false, true])` cases breaks it.
 tui: test/session-media-refs.test.tsx::::an /undo that finishes after leaving and returning joins what was typed since
+
+# The key hint moved from the prompt footer plugin into the composer's own row under the bar, so the plugin no longer draws it.
+tui: test/feature-plugins/prompt-footer.test.tsx::::prompt footer separates simultaneous subagent, shell, and usage status
+tui: test/feature-plugins/prompt-footer.test.tsx::::prompt footer can hide details
+
+# They wait for "commands" at 44 columns, where the composer's row keeps the hint's key and drops its label to fit the folder.
+tui: test/app-lifecycle.test.tsx::::Ctrl-O is immediate, dismissible, and prunes cached deletions at width %s
+tui: test/app-lifecycle.test.tsx::::execution failure keeps the empty session composer and draft usable at width %s
+
+# Waits for "commands" at 44 columns (label dropped there), and the home status now sits in the composer's row, which measures it one frame before showing it.
+tui: test/app-lifecycle.test.tsx::::server plugin failures are visible at width %s (already failed: %s)

@@ -1,12 +1,12 @@
 diff --git a/opencode/packages/tui/src/routes/home.tsx b/opencode/packages/tui/src/routes/home.tsx
-index 71e7b64339..819910862b 100644
+index 71e7b64..cb6b86b 100644
 --- a/opencode/packages/tui/src/routes/home.tsx
 +++ b/opencode/packages/tui/src/routes/home.tsx
 @@ -1,6 +1,9 @@
  import { Prompt, type PromptRef } from "../component/prompt"
  import { createEffect, createMemo, createSignal, onMount, Show, untrack } from "solid-js"
 -import { Logo } from "../component/logo"
-+import { Banner } from "../component/banner"
++import { Landing } from "../component/landing"
 +import { IdleKoi } from "../component/idle-koi"
 +import { TypingKoi } from "../component/typing-koi"
 +import type { BoxRenderable } from "@opentui/core"
@@ -21,7 +21,7 @@ index 71e7b64339..819910862b 100644
    // Global MCP elicitations can arrive without a session route, so keep them reachable from Home.
    const currentLocation = () => route.location ?? data.location.default()
    const forms = createMemo(() => data.session.form.list("global", currentLocation()) ?? [])
-@@ -80,6 +84,8 @@ export function Home() {
+@@ -80,31 +84,29 @@ export function Home() {
  
    return (
      <>
@@ -30,17 +30,41 @@ index 71e7b64339..819910862b 100644
        <box
          flexGrow={1}
          alignItems="center"
-@@ -94,11 +100,11 @@ export function Home() {
-             setLogoWidth(this.width)
-           }}
-         >
+         paddingLeft={dimensions().width < 44 ? 1 : 2}
+         paddingRight={dimensions().width < 44 ? 1 : 2}
+       >
+-        <box flexGrow={1} minHeight={0} />
+-        <box height={3} minHeight={0} flexShrink={1} />
+-        <box
+-          flexShrink={0}
+-          onSizeChange={function () {
+-            setLogoWidth(this.width)
+-          }}
+-        >
 -          <Logo />
-+          <Banner />
++        <Landing onWidth={setLogoWidth}>
++          <UpdateNotification width={logoWidth()} />
++        </Landing>
++        {/* RIFT: plugins' home footer sits above the composer; the composer's own row is the last. */}
++        <box width="100%" flexShrink={0}>
++          <Slot path="home.footer" />
          </box>
-         <box height={1} flexShrink={0} />
-         <UpdateNotification width={logoWidth()} />
+-        <box height={1} flexShrink={0} />
+-        <UpdateNotification width={logoWidth()} />
 -        <box width="100%" maxWidth={75} zIndex={1000} paddingTop={1} flexShrink={0} position="relative">
-+        <box ref={setComposer} width="100%" maxWidth={75} zIndex={1000} paddingTop={1} flexShrink={0} position="relative">
-           <Prompt ref={bind} placeholders={placeholder} disabled={forms().length > 0} />
+-          <Prompt ref={bind} placeholders={placeholder} disabled={forms().length > 0} />
++        <box ref={setComposer} width="100%" zIndex={1000} flexShrink={0} position="relative">
++          <Prompt
++            ref={bind}
++            placeholders={placeholder}
++            disabled={forms().length > 0}
++            aside={<Slot path="home.footer.status" />}
++          />
          </box>
-         <box flexGrow={1} minHeight={0} />
+-        <box flexGrow={1} minHeight={0} />
+-      </box>
+-      <box width="100%" flexShrink={0}>
+-        <Slot path="home.footer" />
+       </box>
+       <Show when={forms()[0]?.id} keyed>
+         {(_) => {

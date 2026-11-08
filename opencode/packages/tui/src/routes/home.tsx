@@ -1,6 +1,6 @@
 import { Prompt, type PromptRef } from "../component/prompt"
 import { createEffect, createMemo, createSignal, onMount, Show, untrack } from "solid-js"
-import { Banner } from "../component/banner"
+import { Landing } from "../component/landing"
 import { IdleKoi } from "../component/idle-koi"
 import { TypingKoi } from "../component/typing-koi"
 import type { BoxRenderable } from "@opentui/core"
@@ -92,25 +92,21 @@ export function Home() {
         paddingLeft={dimensions().width < 44 ? 1 : 2}
         paddingRight={dimensions().width < 44 ? 1 : 2}
       >
-        <box flexGrow={1} minHeight={0} />
-        <box height={3} minHeight={0} flexShrink={1} />
-        <box
-          flexShrink={0}
-          onSizeChange={function () {
-            setLogoWidth(this.width)
-          }}
-        >
-          <Banner />
+        <Landing onWidth={setLogoWidth}>
+          <UpdateNotification width={logoWidth()} />
+        </Landing>
+        {/* RIFT: plugins' home footer sits above the composer; the composer's own row is the last. */}
+        <box width="100%" flexShrink={0}>
+          <Slot path="home.footer" />
         </box>
-        <box height={1} flexShrink={0} />
-        <UpdateNotification width={logoWidth()} />
-        <box ref={setComposer} width="100%" maxWidth={75} zIndex={1000} paddingTop={1} flexShrink={0} position="relative">
-          <Prompt ref={bind} placeholders={placeholder} disabled={forms().length > 0} />
+        <box ref={setComposer} width="100%" zIndex={1000} flexShrink={0} position="relative">
+          <Prompt
+            ref={bind}
+            placeholders={placeholder}
+            disabled={forms().length > 0}
+            aside={<Slot path="home.footer.status" />}
+          />
         </box>
-        <box flexGrow={1} minHeight={0} />
-      </box>
-      <box width="100%" flexShrink={0}>
-        <Slot path="home.footer" />
       </box>
       <Show when={forms()[0]?.id} keyed>
         {(_) => {

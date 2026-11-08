@@ -75,8 +75,7 @@ export function TypingKoi(props: {
     const band = () => {
       const box = props.composer()
       if (!box) return undefined
-      // The composer's box starts with a row of padding above the card; the strip ends on it.
-      const bottom = Math.round(box.y)
+      const bottom = Math.round(box.y) - 1
       const rows = Math.min(BAND, bottom + 1)
       return rows < MIN_BAND ? undefined : { top: bottom - rows + 1, rows }
     }

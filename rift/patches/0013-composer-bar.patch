@@ -1,0 +1,642 @@
+diff --git a/opencode/packages/tui/src/component/prompt/autocomplete.tsx b/opencode/packages/tui/src/component/prompt/autocomplete.tsx
+index 444297a..2e0e64c 100644
+--- a/opencode/packages/tui/src/component/prompt/autocomplete.tsx
++++ b/opencode/packages/tui/src/component/prompt/autocomplete.tsx
+@@ -29,8 +29,8 @@ import { useTuiPaths } from "../../context/runtime"
+ import { useConfig, useNewDesigns } from "../../config"
+ import { useLocation } from "../../context/location"
+ import { useTheme } from "../../context/theme"
+-import { SplitBorder } from "../../ui/border"
+ import { useRenderer, useTerminalDimensions } from "@opentui/solid"
++import { LIST_PAD } from "./frame"
+ import { Locale } from "../../util/locale"
+ import type { PromptInfo, PromptPartRef } from "../../prompt/history"
+ import { useFrecency } from "../../prompt/frecency"
+@@ -80,6 +80,8 @@ export function Autocomplete(props: {
+   setPrompt: (input: (prompt: PromptInfo) => void) => void
+   setExtmark: (part: PromptPartRef, extmarkId: number) => void
+   anchor: () => BoxRenderable
++  /** RIFT: the composer bar's fill; the list stands on the bar as part of it. */
++  fill: RGBA
+   input: () => TextareaRenderable
+   ref: (ref: AutocompleteRef) => void
+   fileStyleId: number
+@@ -882,10 +884,9 @@ export function Autocomplete(props: {
+       left={position().x}
+       width={position().width}
+       zIndex={100}
+-      {...SplitBorder}
+-      // Under new designs each row draws its own left rail so the selected row can show the selection bar.
+-      border={newDesigns() ? ["right"] : SplitBorder.border}
+-      borderColor={theme.border.base}
++      backgroundColor={props.fill}
++      paddingLeft={LIST_PAD.left}
++      paddingRight={LIST_PAD.right}
+     >
+       <scrollbox
+         ref={(r: ScrollBoxRenderable) => {
+@@ -893,8 +894,6 @@ export function Autocomplete(props: {
+           scroll = r
+           scroll.verticalScrollBar.on("change", syncSelectionWindow)
+         }}
+-        // Under new designs rows paint the background themselves so the rail cell stays transparent like the border.
+-        backgroundColor={newDesigns() ? undefined : theme.background.raised.high}
+         height={height()}
+         scrollbarOptions={{ visible: false }}
+         scrollAcceleration={scrollAcceleration()}
+@@ -928,7 +927,7 @@ export function Autocomplete(props: {
+             }
+             const contentWidth = () => {
+               const text = label()
+-              return Math.max(1, position().width - 4 - (text ? stringWidth(text) + 2 : 0))
++              return Math.max(1, position().width - 2 - LIST_PAD.left - LIST_PAD.right - (text ? stringWidth(text) + 2 : 0))
+             }
+             const confirmingAction = () => {
+               const action = destructive()
+diff --git a/opencode/packages/tui/src/component/prompt/index.tsx b/opencode/packages/tui/src/component/prompt/index.tsx
+index 075f037..ea0b275 100644
+--- a/opencode/packages/tui/src/component/prompt/index.tsx
++++ b/opencode/packages/tui/src/component/prompt/index.tsx
+@@ -9,14 +9,13 @@ import {
+   stripAnsiSequences,
+   type KeyEvent,
+ } from "@opentui/core"
+-import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match, For } from "solid-js"
++import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match, For, type JSX } from "solid-js"
+ import path from "path"
+ import { useLocal } from "../../context/local"
+ import { useTheme, useThemes } from "../../context/theme"
+ import { tint } from "../../theme/color"
+ import { createAnimatable, tween } from "../../ui/animation"
+-import { EmptyBorder, SplitBorder } from "../../ui/border"
+-import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
++import { useTuiApp, useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
+ import { useClipboard } from "../../context/clipboard"
+ import { Spinner } from "../spinner"
+ import { useClient } from "../../context/client"
+@@ -41,7 +40,6 @@ import { type AutocompleteOption, type AutocompleteRef, Autocomplete } from "./a
+ import { useRenderer, useTerminalDimensions } from "@opentui/solid"
+ import { Locale } from "../../util/locale"
+ import { errorMessage } from "../../util/error"
+-import { createColors, createFrames } from "../../ui/spinner"
+ import { useDialog } from "../../ui/dialog"
+ import { DialogIntegration } from "../dialog-integration"
+ import { useConnected } from "../use-connected"
+@@ -68,8 +66,9 @@ import { DialogImagePreview } from "../dialog-image-preview"
+ import { useDirectoryRecents } from "../../prompt/directory-recents"
+ import { directoryRecentValue } from "../../prompt/directory-completion"
+ import { useWorkingDirectoryActions } from "../../ui/working-directory-actions"
+-import { truncateFilePath } from "../../ui/file-path"
+ import { PromptMetadataRow } from "./metadata"
++import { barLook, barOutset, barTone, ComposerBar, crestAllowed, useBarFocus } from "./frame"
++import { InfoRow } from "./info-row"
+ import { limitLabel, useUsageLimits } from "../usage"
+ 
+ export type PromptProps = {
+@@ -84,6 +83,8 @@ export type PromptProps = {
+     normal?: string[]
+     shell?: string[]
+   }
++  /** RIFT: more for the status end of the row under the bar, after the footer slots. */
++  aside?: JSX.Element
+ }
+ 
+ export type PromptRef = {
+@@ -137,7 +138,7 @@ export function PromptInterruptStatus(props: {
+ 
+   return (
+     <text fg={props.armed ? armedColor() : props.text} wrapMode="none" truncate flexShrink={1}>
+-      esc{" "}
++      <b>esc</b>{" "}
+       <span style={{ fg: props.armed ? armedColor() : props.subdued }}>
+         {props.armed ? "again to interrupt" : "interrupt"}
+       </span>
+@@ -194,6 +195,8 @@ export function Prompt(props: PromptProps) {
+   const muted = () => leader() || props.muted
+   const local = useLocal()
+   const paths = useTuiPaths()
++  const app = useTuiApp()
++  const shortcuts = Keymap.useShortcuts()
+   const terminalEnvironment = useTuiTerminalEnvironment()
+   const clipboard = useClipboard()
+   const client = useClient()
+@@ -1589,7 +1592,7 @@ export function Prompt(props: PromptProps) {
+   })
+   const highlight = createMemo(() => {
+     if (muted()) return theme.border.base
+-    if (store.mode === "shell") return theme.text.action.primary.selected
++    if (store.mode === "shell") return theme.text.feedback.warning.base
+     return promptDisplay().agentColor ?? theme.border.base
+   })
+   const agentLabel = createMemo(() => (store.mode === "shell" ? "Shell" : promptDisplay().agentLabel))
+@@ -1607,7 +1610,6 @@ export function Prompt(props: PromptProps) {
+   createEffect(() => {
+     if (agentLabel()) revealedPromptMetadata.add(local)
+   })
+-  const borderHighlight = createMemo(() => tint(theme.border.base, highlight(), agentMetaAlpha()))
+   const footerInput = () => ({
+     sessionID: props.sessionID,
+     mode: store.mode,
+@@ -1632,7 +1634,6 @@ export function Prompt(props: PromptProps) {
+       // No session yet: show where the next session will be created.
+       return currentLocation.ref ?? data.location.default()
+     }
+-    if (status() !== "idle") return
+     return data.session.get(props.sessionID)?.location
+   })
+   const locationLabel = createMemo(() => {
+@@ -1640,64 +1641,46 @@ export function Prompt(props: PromptProps) {
+     const location = pending ? { directory: pending } : footerLocation()
+     if (!location) return
+     const directory = abbreviateHome(location.directory, paths.home)
+-    const branch = data.location.vcs.info(location)?.branch.current
+-    return branch ? `${directory}:${branch}` : directory
+-  })
+-  const [locationWidth, setLocationWidth] = createSignal(dimensions().width)
+-  const locationLabelDisplay = createMemo(() => {
+-    const label = locationLabel()
+-    if (!label) return
+-    return truncateFilePath(label, locationWidth())
++    return { directory, branch: data.location.vcs.info(location)?.branch.current }
+   })
+   const locationActions = useWorkingDirectoryActions({
+     directory: () => footerLocation()?.directory,
+     onMove: () => void move.open(),
+   })
+ 
+-  const spinnerDef = createMemo(() => {
+-    const color = promptDisplay().agentColor ?? theme.border.base
+-    return {
+-      frames: createFrames({
+-        color,
+-        style: "blocks",
+-        inactiveFactor: 0.6,
+-        // enableFading: false,
+-        minAlpha: 0.3,
+-      }),
+-      color: createColors({
+-        color,
+-        style: "blocks",
+-        inactiveFactor: 0.6,
+-        // enableFading: false,
+-        minAlpha: 0.3,
+-      }),
+-    }
+-  })
+   const maxHeight = createMemo(() => Math.max(6, Math.floor(dimensions().height / 3)))
+ 
+-  const promptBg = createMemo(() => theme.decrease(theme.background.raised.base))
++  // RIFT: the bar's fill and glyph for what the composer is doing; the slash and file list standing on it takes the fill.
++  const focused = useBarFocus(() => anchor)
++  const look = createMemo(() =>
++    barLook(
++      barTone({
++        quiet: disabled() || !!muted() || dialog.stack.length > 0,
++        focused: focused(),
++        shell: store.mode === "shell",
++        draft: !!store.prompt.text,
++      }),
++      {
++        agent: promptDisplay().agentColor ?? theme.border.base,
++        shell: theme.text.feedback.warning.base,
++        muted: theme.text.muted,
++        raised: theme.background.raised,
++      },
++    ),
++  )
+ 
+   return (
+     <>
+-      <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
+-        <box
+-          width="100%"
+-          border={["left"]}
+-          borderColor={borderHighlight()}
+-          customBorderChars={{
+-            ...SplitBorder.customBorderChars,
+-            bottomLeft: "╹",
+-          }}
+-        >
+-          <box
+-            paddingLeft={dimensions().width < 44 ? 1 : 2}
+-            paddingRight={dimensions().width < 44 ? 1 : 2}
+-            paddingTop={1}
+-            flexShrink={0}
+-            backgroundColor={promptBg()}
+-            flexGrow={1}
+-            width="100%"
+-          >
++      <box
++        ref={(r: BoxRenderable) => (anchor = r)}
++        visible={props.visible !== false}
++        alignSelf="stretch"
++        marginLeft={-barOutset(dimensions().width)}
++        marginRight={-barOutset(dimensions().width)}
++      >
++        {/* RIFT: one long tinted bar, the same on home and in a session. */}
++        <ComposerBar look={look()} busy={status() === "running"} animations={animationsEnabled()}>
++          <box flexShrink={0} flexGrow={1} width="100%">
+             <Show when={config.prompt?.image_preview && visibleImageAttachments().length > 0}>
+               <box
+                 width="100%"
+@@ -1853,135 +1836,93 @@ export function Prompt(props: PromptProps) {
+               cursorColor={disabled() ? theme.background.raised.base : theme.text.base}
+               syntaxStyle={syntax()}
+             />
+-            <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
+-              <PromptMetadataRow
+-                mode={store.mode}
+-                agent={agentLabel()}
+-                auto={local.permission.mode === "autoaccept"}
+-                model={promptDisplay().modelLabel}
+-                provider={promptDisplay().providerLabel}
+-                variant={promptDisplay().variant}
+-                limit={limit()}
+-                muted={!!muted()}
+-                highlight={highlight()}
+-                agentAlpha={agentMetaAlpha()}
+-                modelAlpha={modelMetaAlpha()}
+-                variantAlpha={variantMetaAlpha()}
+-              />
+-            </box>
+           </box>
+-        </box>
+-        <box
+-          height={1}
+-          border={["left"]}
+-          borderColor={borderHighlight()}
+-          customBorderChars={{
+-            ...EmptyBorder,
+-            vertical: promptBg().a !== 0 ? "╹" : " ",
+-          }}
+-        >
+-          <box
+-            height={1}
+-            border={["bottom"]}
+-            borderColor={promptBg()}
+-            customBorderChars={
+-              promptBg().a !== 0
+-                ? {
+-                    ...EmptyBorder,
+-                    horizontal: "▀",
+-                  }
+-                : {
+-                    ...EmptyBorder,
+-                    horizontal: " ",
+-                  }
+-            }
+-          />
+-        </box>
+-        <box width="100%" flexDirection="row" justifyContent="space-between" gap={2}>
+-          <Slot path="prompt.footer" input={footerInput()}>
+-            <Slot path="prompt.footer.status" input={footerInput()}>
+-              <box
+-                flexGrow={1}
+-                flexShrink={1}
+-                minWidth={0}
+-                onSizeChange={function (this: BoxRenderable) {
+-                  const width = this.width
+-                  queueMicrotask(() => setLocationWidth(width))
+-                }}
+-              >
+-                <Switch>
+-                  <Match when={status() === "running"}>
+-                    <box flexDirection="row" gap={1} flexGrow={1} justifyContent="flex-start">
+-                      <box marginLeft={1}>
+-                        <Show when={config.animations ?? true} fallback={<text fg={theme.text.muted}>[⋯]</text>}>
+-                          <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
++        </ComposerBar>
++        {/* RIFT: under the bar, one row: who answers and the hints on the draft's column; the status and the folder on the right. */}
++        <InfoRow
++          folder={locationLabel()}
++          folderActions={locationActions}
++          lead={
++            <PromptMetadataRow
++              mode={store.mode}
++              agent={agentLabel()}
++              auto={local.permission.mode === "autoaccept"}
++              model={promptDisplay().modelLabel}
++              provider=""
++              variant={promptDisplay().variant}
++              limit={limit()}
++              muted={!!muted()}
++              highlight={highlight()}
++              agentAlpha={agentMetaAlpha()}
++              modelAlpha={modelMetaAlpha()}
++              variantAlpha={variantMetaAlpha()}
++            />
++          }
++          status={
++            <>
++              <Slot path="prompt.footer" input={footerInput()}>
++                <Slot path="prompt.footer.status" input={footerInput()}>
++                  <Switch>
++                    <Match when={status() === "running"}>
++                      <box flexDirection="row" gap={1} flexShrink={0}>
++                        {/* RIFT: the crest along the bar is the spinner; this is for when it cannot move. */}
++                        <Show when={!crestAllowed(animationsEnabled())}>
++                          <text fg={theme.text.muted}>[⋯]</text>
+                         </Show>
++                        <PromptInterruptStatus
++                          armed={store.interrupt > 0}
++                          animations={animationsEnabled()}
++                          text={theme.text.base}
++                          subdued={theme.text.muted}
++                          warning={theme.text.feedback.warning.base}
++                          flash={theme.decrease(theme.text.feedback.warning.base, 2)}
++                        />
+                       </box>
+-                      <PromptInterruptStatus
+-                        armed={store.interrupt > 0}
+-                        animations={animationsEnabled()}
+-                        text={theme.text.base}
+-                        subdued={theme.text.muted}
+-                        warning={theme.text.feedback.warning.base}
+-                        flash={theme.decrease(theme.text.feedback.warning.base, 2)}
+-                      />
+-                    </box>
+-                  </Match>
+-                  <Match when={move.progress()}>
+-                    {(progress) => (
+-                      <box paddingLeft={3} height={1} minHeight={0} flexShrink={1}>
+-                        <Spinner color={theme.hue.accent[500]}>
+-                          {progress()}
+-                          <span style={{ fg: theme.text.muted }}>{".".repeat(move.creatingDots())}</span>
+-                        </Spinner>
++                    </Match>
++                    <Match when={move.progress()}>
++                      {(progress) => (
++                        <box height={1} minHeight={0} flexShrink={1}>
++                          <Spinner color={theme.hue.accent[500]}>
++                            {progress()}
++                            <span style={{ fg: theme.text.muted }}>{".".repeat(move.creatingDots())}</span>
++                          </Spinner>
++                        </box>
++                      )}
++                    </Match>
++                    <Match when={move.pendingNew()}>
++                      <box height={1} minHeight={0} flexShrink={1}>
++                        <text fg={theme.hue.accent[500]} wrapMode="none" truncate>
++                          (new worktree)
++                        </text>
+                       </box>
+-                    )}
+-                  </Match>
+-                  <Match when={move.pendingNew()}>
+-                    <box paddingLeft={3} height={1} minHeight={0} flexShrink={1}>
+-                      <text fg={theme.hue.accent[500]} wrapMode="none" truncate>
+-                        (new worktree)
++                    </Match>
++                  </Switch>
++                </Slot>
++                <Slot path="prompt.footer.file" input={footerInput()}>
++                  <Show when={editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined}>
++                    {(file) => (
++                      <text
++                        wrapMode="none"
++                        truncate
++                        flexShrink={1}
++                        fg={editorContextLabelState() === "pending" ? theme.hue.accent[500] : theme.text.muted}
++                      >
++                        {file()}
+                       </text>
+-                    </box>
+-                  </Match>
+-                  <Match when={true}>
+-                    <Show when={locationLabelDisplay()} fallback={<text />}>
+-                      {(location) => (
+-                        <text
+-                          id="prompt.footer.location"
+-                          fg={locationActions.hovered() ? theme.text.base : theme.text.muted}
+-                          wrapMode="none"
+-                          truncate
+-                          flexGrow={1}
+-                          flexShrink={1}
+-                          onMouseOver={locationActions.onMouseOver}
+-                          onMouseOut={locationActions.onMouseOut}
+-                          onMouseUp={locationActions.onMouseUp}
+-                        >
+-                          {location()}
+-                        </text>
+-                      )}
+-                    </Show>
+-                  </Match>
+-                </Switch>
+-              </box>
+-            </Slot>
+-            <Slot path="prompt.footer.file" input={footerInput()}>
+-              <Show when={editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined}>
+-                {(file) => (
+-                  <text
+-                    wrapMode="none"
+-                    truncate
+-                    flexShrink={1}
+-                    fg={editorContextLabelState() === "pending" ? theme.hue.accent[500] : theme.text.muted}
+-                  >
+-                    {file()}
+-                  </text>
+-                )}
+-              </Show>
+-            </Slot>
+-          </Slot>
+-        </box>
++                    )}
++                  </Show>
++                </Slot>
++              </Slot>
++              {props.aside}
++            </>
++          }
++          hint={
++            store.mode === "shell"
++              ? { key: "esc", label: "exit shell mode" }
++              : { key: shortcuts.get("command.palette.show") ?? "", label: "commands" }
++          }
++          version={app.version}
++        />
+       </box>
+       <Autocomplete
+         sessionID={props.sessionID}
+@@ -2013,6 +1954,7 @@ export function Prompt(props: PromptProps) {
+           setAuto(() => r)
+         }}
+         anchor={() => anchor}
++        fill={look().fill}
+         input={() => input}
+         setPrompt={(cb) => {
+           setStore("prompt", produce(cb))
+diff --git a/opencode/packages/tui/src/component/prompt/metadata.tsx b/opencode/packages/tui/src/component/prompt/metadata.tsx
+index 9f7fea8..dfbe7cc 100644
+--- a/opencode/packages/tui/src/component/prompt/metadata.tsx
++++ b/opencode/packages/tui/src/component/prompt/metadata.tsx
+@@ -1,4 +1,4 @@
+-import { RGBA, TextAttributes } from "@opentui/core"
++import { RGBA } from "@opentui/core"
+ import { useTerminalDimensions } from "@opentui/solid"
+ import { createMemo, Show } from "solid-js"
+ import { useTheme } from "../../context/theme"
+@@ -73,12 +73,7 @@ export function PromptMetadataRow(props: {
+               {(variant) => (
+                 <>
+                   <text fg={fade(theme.text.muted, props.variantAlpha)}>·</text>
+-                  <text
+-                    fg={fade(theme.text.feedback.warning.base, props.variantAlpha)}
+-                    attributes={TextAttributes.BOLD}
+-                  >
+-                    {variant()}
+-                  </text>
++                  <text fg={fade(props.muted ? theme.text.muted : theme.text.base, props.variantAlpha)}>{variant()}</text>
+                 </>
+               )}
+             </Show>
+diff --git a/opencode/packages/tui/src/feature-plugins/home/footer.tsx b/opencode/packages/tui/src/feature-plugins/home/footer.tsx
+index d31888c..6757949 100644
+--- a/opencode/packages/tui/src/feature-plugins/home/footer.tsx
++++ b/opencode/packages/tui/src/feature-plugins/home/footer.tsx
+@@ -2,7 +2,6 @@ import { Plugin } from "@opencode/plugin/tui"
+ import { createMemo, Match, Show, Switch } from "solid-js"
+ import { useTerminalDimensions } from "@opentui/solid"
+ import { usePlugin } from "../../plugin/context"
+-import { Slot } from "../../plugin/render"
+ 
+ export function homeFooterVisibility(width: number) {
+   return {
+@@ -29,15 +28,7 @@ function Mcp(props: { context: Plugin.Context }) {
+               {failed()} MCP failed
+             </Match>
+             <Match when={true}>
+-              <span
+-                style={{
+-                  fg:
+-                    count() > 0 ? props.context.theme.text.feedback.success.base : props.context.theme.text.muted,
+-                }}
+-              >
+-                ⊙{" "}
+-              </span>
+-              {count()} MCP
++              <span style={{ fg: props.context.theme.text.muted }}>⊙ {count()} MCP</span>
+             </Match>
+           </Switch>
+         </text>
+@@ -74,43 +65,20 @@ function Plugins(props: { context: Plugin.Context }) {
+   )
+ }
+ 
++// RIFT: these sit in the row under the composer, after its status; the composer's row shows the version.
+ function View(props: { context: Plugin.Context }) {
+-  const dimensions = useTerminalDimensions()
+-  const visibility = createMemo(() => homeFooterVisibility(dimensions().width))
+-
+   return (
+-    <Show when={dimensions().height >= 14 && dimensions().width >= 44}>
+-      <box
+-        width="100%"
+-        paddingTop={dimensions().height < 16 ? 0 : 1}
+-        paddingBottom={dimensions().height < 16 ? 0 : 1}
+-        paddingLeft={2}
+-        paddingRight={2}
+-        flexDirection="row"
+-        flexShrink={0}
+-        gap={2}
+-      >
+-        <Mcp context={props.context} />
+-        <Plugins context={props.context} />
+-        <Slot path="home.footer.status" />
+-        <box flexGrow={1} />
+-        <Show when={visibility().version}>
+-          <box flexShrink={0}>
+-            <text fg={props.context.theme.text.muted}>{props.context.app.version}</text>
+-          </box>
+-        </Show>
+-      </box>
+-    </Show>
++    <>
++      <Mcp context={props.context} />
++      <Plugins context={props.context} />
++    </>
+   )
+ }
+ 
+ export default Plugin.define({
+   id: "opencode.home.footer",
+   setup(context) {
+-    // Root takeover: an external plugin replacing home.footer wins (last-
+-    // enabled) and this builtin shows as suppressed, not silently gone.
+-    // Append keeps the path open to additive plugin claims; an external
+-    // replace still takes the boundary over.
+-    context.ui.slot({ append: "home.footer", render: () => <View context={context} /> })
++    // RIFT: home.footer.status is the status end of the composer's row on home; home.footer stays free for plugins.
++    context.ui.slot({ append: "home.footer.status", render: () => <View context={context} /> })
+   },
+ })
+diff --git a/opencode/packages/tui/src/feature-plugins/prompt/footer.tsx b/opencode/packages/tui/src/feature-plugins/prompt/footer.tsx
+index a997d9a..b5eb095 100644
+--- a/opencode/packages/tui/src/feature-plugins/prompt/footer.tsx
++++ b/opencode/packages/tui/src/feature-plugins/prompt/footer.tsx
+@@ -2,8 +2,6 @@ import { Plugin } from "@opencode/plugin/tui"
+ import { createMemo, createSignal, Match, Show, Switch } from "solid-js"
+ import { contextUsage, formatContextUsage } from "../../util/session"
+ import { useTerminalDimensions } from "@opentui/solid"
+-import { TextAttributes } from "@opentui/core"
+-import { useInteractivity } from "../../context/interactivity"
+ import { stringWidth } from "../../util/string-width"
+ import { createGoal, GoalStatus } from "./goal"
+ 
+@@ -51,8 +49,6 @@ export function PromptFooter(props: {
+   })
+   const live = createMemo(() => Boolean(subagents() || shells()))
+   const goal = createGoal(props.context, () => props.sessionID)
+-  // Prompt hints read as disabled while the session does not own input, e.g. while a side panel is focused.
+-  const interactive = useInteractivity()
+   const shortcut = (id: string) => props.context.keymap.shortcuts(id)[0]
+   const layout = createMemo(() => {
+     const command = shortcut("command.palette.show")
+@@ -106,36 +102,7 @@ export function PromptFooter(props: {
+               </Show>
+             </box>
+           </Match>
+-          <Match when={props.showDetails && layout().shortcuts}>
+-            <text
+-              fg={interactive() ? props.context.theme.text.base : props.context.theme.text.action.primary.disabled}
+-              attributes={interactive() ? 0 : TextAttributes.DIM}
+-              flexShrink={0}
+-            >
+-              {shortcut("agent.cycle")}{" "}
+-              <span style={interactive() ? { fg: props.context.theme.text.muted } : {}}>agents</span>
+-            </text>
+-          </Match>
+         </Switch>
+-        <Show when={props.showDetails && layout().shortcuts}>
+-          <text
+-            fg={interactive() ? props.context.theme.text.base : props.context.theme.text.action.primary.disabled}
+-            attributes={interactive() ? 0 : TextAttributes.DIM}
+-            wrapMode="none"
+-            flexShrink={0}
+-          >
+-            {shortcut("command.palette.show")}{" "}
+-            <span style={interactive() ? { fg: props.context.theme.text.muted } : {}}>commands</span>
+-          </text>
+-        </Show>
+-      </Match>
+-      <Match when={props.mode === "shell"}>
+-        <text fg={props.context.theme.text.base} flexShrink={0}>
+-          esc{" "}
+-          <span style={{ fg: props.context.theme.text.muted }}>
+-            {dimensions().width < 44 ? "shell" : "exit shell mode"}
+-          </span>
+-        </text>
+       </Match>
+     </Switch>
+   )
+diff --git a/opencode/packages/tui/src/routes/session/index.tsx b/opencode/packages/tui/src/routes/session/index.tsx
+index bda0514..6329433 100644
+--- a/opencode/packages/tui/src/routes/session/index.tsx
++++ b/opencode/packages/tui/src/routes/session/index.tsx
+@@ -1516,7 +1516,6 @@ export function Session(props: {
+         <box
+           flexGrow={1}
+           minHeight={0}
+-          paddingBottom={1}
+           paddingLeft={dimensions().width < 44 ? 1 : 2}
+           paddingRight={dimensions().width < 44 ? 1 : 2}
+         >

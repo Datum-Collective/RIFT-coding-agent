@@ -29,8 +29,8 @@ import { useTuiPaths } from "../../context/runtime"
 import { useConfig, useNewDesigns } from "../../config"
 import { useLocation } from "../../context/location"
 import { useTheme } from "../../context/theme"
-import { SplitBorder } from "../../ui/border"
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
+import { LIST_PAD } from "./frame"
 import { Locale } from "../../util/locale"
 import type { PromptInfo, PromptPartRef } from "../../prompt/history"
 import { useFrecency } from "../../prompt/frecency"
@@ -80,6 +80,8 @@ export function Autocomplete(props: {
   setPrompt: (input: (prompt: PromptInfo) => void) => void
   setExtmark: (part: PromptPartRef, extmarkId: number) => void
   anchor: () => BoxRenderable
+  /** RIFT: the composer bar's fill; the list stands on the bar as part of it. */
+  fill: RGBA
   input: () => TextareaRenderable
   ref: (ref: AutocompleteRef) => void
   fileStyleId: number
@@ -882,10 +884,9 @@ export function Autocomplete(props: {
       left={position().x}
       width={position().width}
       zIndex={100}
-      {...SplitBorder}
-      // Under new designs each row draws its own left rail so the selected row can show the selection bar.
-      border={newDesigns() ? ["right"] : SplitBorder.border}
-      borderColor={theme.border.base}
+      backgroundColor={props.fill}
+      paddingLeft={LIST_PAD.left}
+      paddingRight={LIST_PAD.right}
     >
       <scrollbox
         ref={(r: ScrollBoxRenderable) => {
@@ -893,8 +894,6 @@ export function Autocomplete(props: {
           scroll = r
           scroll.verticalScrollBar.on("change", syncSelectionWindow)
         }}
-        // Under new designs rows paint the background themselves so the rail cell stays transparent like the border.
-        backgroundColor={newDesigns() ? undefined : theme.background.raised.high}
         height={height()}
         scrollbarOptions={{ visible: false }}
         scrollAcceleration={scrollAcceleration()}
@@ -928,7 +927,7 @@ export function Autocomplete(props: {
             }
             const contentWidth = () => {
               const text = label()
-              return Math.max(1, position().width - 4 - (text ? stringWidth(text) + 2 : 0))
+              return Math.max(1, position().width - 2 - LIST_PAD.left - LIST_PAD.right - (text ? stringWidth(text) + 2 : 0))
             }
             const confirmingAction = () => {
               const action = destructive()
