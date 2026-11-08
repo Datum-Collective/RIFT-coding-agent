@@ -628,15 +628,3 @@ index a997d9a..b5eb095 100644
        </Match>
      </Switch>
    )
-diff --git a/opencode/packages/tui/src/routes/session/index.tsx b/opencode/packages/tui/src/routes/session/index.tsx
-index bda0514..6329433 100644
---- a/opencode/packages/tui/src/routes/session/index.tsx
-+++ b/opencode/packages/tui/src/routes/session/index.tsx
-@@ -1516,7 +1516,6 @@ export function Session(props: {
-         <box
-           flexGrow={1}
-           minHeight={0}
--          paddingBottom={1}
-           paddingLeft={dimensions().width < 44 ? 1 : 2}
-           paddingRight={dimensions().width < 44 ? 1 : 2}
-         >
