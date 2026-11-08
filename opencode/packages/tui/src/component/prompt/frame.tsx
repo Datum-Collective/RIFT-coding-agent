@@ -15,8 +15,14 @@ import { EmptyBorder } from "../../ui/border"
 import { tint } from "../../theme/color"
 import { animationOff } from "../koi-enabled"
 
-/** The home field's width: the banner's 72 columns and four either side, so the draft starts on the banner's left edge. */
+/**
+ * The field's width wherever it sits, home or session: the banner's 72 columns and four either side, so on
+ * home the draft starts on the banner's left edge. A narrower column gets all of its width.
+ */
 export const FIELD_WIDTH = 80
+
+/** The text rows the field keeps when the draft is shorter: the draft's first row and room under it to write on. */
+export const FIELD_ROWS = 3
 
 const ABOVE = "▁"
 const BELOW = "▔"

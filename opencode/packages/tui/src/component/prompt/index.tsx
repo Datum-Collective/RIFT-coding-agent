@@ -68,7 +68,7 @@ import { directoryRecentValue } from "../../prompt/directory-completion"
 import { useWorkingDirectoryActions } from "../../ui/working-directory-actions"
 import { truncateFilePath } from "../../ui/file-path"
 import { PromptMetadataRow } from "./metadata"
-import { ComposerFrame, crestAllowed, FIELD_WIDTH, fieldTone, ringColour } from "./frame"
+import { ComposerFrame, crestAllowed, FIELD_ROWS, FIELD_WIDTH, fieldTone, ringColour } from "./frame"
 import { limitLabel, useUsageLimits } from "../usage"
 
 export type PromptProps = {
@@ -1622,7 +1622,7 @@ export function Prompt(props: PromptProps) {
       return `Try "${list()[store.placeholder % list().length]}"`
     })()
     if (!value) return undefined
-    const width = dimensions().width < 44 ? dimensions().width - 5 : Math.min(FIELD_WIDTH, dimensions().width) - 7
+    const width = dimensions().width < 44 ? dimensions().width - 9 : Math.min(FIELD_WIDTH, dimensions().width - 4) - 7
     return Locale.takeWidth(value, Math.max(1, width)).trimEnd()
   })
   const footerLocation = createMemo(() => {
@@ -1669,7 +1669,13 @@ export function Prompt(props: PromptProps) {
 
   return (
     <>
-      <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
+      <box
+        ref={(r: BoxRenderable) => (anchor = r)}
+        visible={props.visible !== false}
+        width="100%"
+        maxWidth={FIELD_WIDTH}
+        alignSelf="center"
+      >
         {/* RIFT: a hairline field; its top edge is the waterline the typing koi swim down to. */}
         <ComposerFrame
           ring={ring()}
@@ -1755,7 +1761,7 @@ export function Prompt(props: PromptProps) {
               placeholderColor={theme.text.muted}
               textColor={muted() ? theme.text.muted : theme.text.base}
               focusedTextColor={muted() ? theme.text.muted : theme.text.base}
-              minHeight={1}
+              minHeight={FIELD_ROWS}
               maxHeight={maxHeight()}
               cursorStyle={cursorStyle()}
               onContentChange={() => {
