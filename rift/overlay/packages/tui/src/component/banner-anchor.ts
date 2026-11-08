@@ -5,6 +5,8 @@
  * The pond also hides the banner while it is out, since the logo has become the koi. The banner
  * does that itself: it stops drawing its rows but keeps its size, so nothing round it moves, and
  * nothing on the screen has to be recognised and cleared afterwards.
+ *
+ * And a click on the banner is passed to the pond, which starts at once rather than waiting.
  */
 import { createSignal } from "solid-js"
 
@@ -14,6 +16,7 @@ const [hidden, setHidden] = createSignal(false)
 type Box = { x: number; y: number }
 
 let current: Box | undefined
+let clicked: (() => void) | undefined
 
 export const logoAnchor = {
   /** Whether the banner is being kept off the screen. */
@@ -33,5 +36,16 @@ export const logoAnchor = {
   /** The cell the banner's top left corner is in, or nothing if it is not on the screen. */
   read(): { col: number; row: number } | undefined {
     return current ? { col: Math.round(current.x), row: Math.round(current.y) } : undefined
+  },
+  /** The banner was clicked. Nothing happens unless the pond is listening. */
+  click() {
+    clicked?.()
+  },
+  /** Calls `run` on every click until the returned function is called. */
+  onClick(run: () => void) {
+    clicked = run
+    return () => {
+      if (clicked === run) clicked = undefined
+    }
   },
 }
