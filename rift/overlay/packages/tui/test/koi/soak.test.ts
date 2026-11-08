@@ -4,6 +4,7 @@ import { createPond, type Scene } from "../../src/koi/pond"
 import { paintCells } from "../../src/koi/paint"
 import { riftPalette } from "../../src/koi/palette"
 import { riftLogo } from "../../src/koi/logo"
+import { stirStream } from "../../src/koi/stream"
 
 const palette = riftPalette({
   background: { r: 0, g: 0, b: 0 },
@@ -56,6 +57,38 @@ describe("a long idle", () => {
       expect(pond.chase?.ripples.length ?? 0).toBeLessThanOrEqual(8)
     }, 60000)
   }
+
+  test("the stream above the composer at 60 fps, typed into all the while: a frame is cheap and the heap does not grow", () => {
+    const pond = createPond({ cols: 160, rows: 7, aspect: 2, palette, seed: 3, scene: "stream" })
+    const buffer = OptimizedBuffer.create(160, 7, "wcwidth", { respectAlpha: true, owner: new ResourceContext({ objectCapacity: 8, renderCellsMax: 100_000 }) })
+    let index = 0
+    const frame = () => {
+      // Six keys a second.
+      if (index++ % 10 === 0) stirStream(pond)
+      buffer.clear(RGBA.fromInts(0, 0, 0, 255))
+      pond.step(1 / 60)
+      pond.draw()
+      return paintCells(buffer, pond.cells())
+    }
+    for (let warm = 0; warm < 300; warm++) frame()
+
+    Bun.gc(true)
+    const before = process.memoryUsage().heapUsed
+    const frames = 1800
+    const started = cpu()
+    let drawn = 0
+    for (let n = 0; n < frames; n++) drawn += frame()
+    const perFrame = (cpu() - started) / frames
+    Bun.gc(true)
+    const grown = process.memoryUsage().heapUsed - before
+
+    expect(drawn / frames).toBeGreaterThan(20)
+    expect(perFrame).toBeLessThan(8)
+    expect(grown).toBeLessThan(8 * 1024 * 1024)
+    expect(pond.koi.length).toBeLessThanOrEqual(3)
+    expect(pond.stream!.runs.size).toBe(pond.koi.length)
+    expect(pond.rings.length).toBeLessThanOrEqual(8)
+  }, 60000)
 
   test("the intro, the logo breaking into koi, costs about the same as swimming, all the way through", () => {
     const col = 34
