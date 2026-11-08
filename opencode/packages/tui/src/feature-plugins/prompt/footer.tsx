@@ -114,14 +114,14 @@ export function PromptFooter(props: {
             wrapMode="none"
             flexShrink={0}
           >
-            {shortcut("command.palette.show")}{" "}
+            <b>{shortcut("command.palette.show")}</b>{" "}
             <span style={interactive() ? { fg: props.context.theme.text.muted } : {}}>commands</span>
           </text>
         </Show>
       </Match>
       <Match when={props.mode === "shell"}>
         <text fg={props.context.theme.text.base} flexShrink={0}>
-          esc{" "}
+          <b>esc</b>{" "}
           <span style={{ fg: props.context.theme.text.muted }}>
             {dimensions().width < 44 ? "shell" : "exit shell mode"}
           </span>

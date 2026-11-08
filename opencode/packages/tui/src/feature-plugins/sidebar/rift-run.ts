@@ -1,6 +1,7 @@
 /**
  * How a verification run reads in the sidebar: what it is doing or how it ended, then one line per stage, with
- * passes folded once the list is long so what needs attention stays on screen.
+ * passes folded once the list is long so what needs attention stays on screen. Under the composer it reads as one
+ * short line (`brief`).
  */
 import type { Rift } from "@opencode/schema/rift"
 
@@ -76,4 +77,35 @@ export function stages(run: Rift.Run, limit = 6): Line[] {
     ...run.stages.filter((stage) => stage.status !== "passed").map(line),
     ...(passed > 0 ? [{ glyph: "✓", tone: "success" as const, text: `${passed} passed` }] : []),
   ]
+}
+
+/** A line under the composer: a glyph and words in one tone, then the key or command that acts on it. */
+export type Brief = { glyph: string; tone: Tone; text: string; key?: string }
+
+const failing = (run: Rift.Run) =>
+  run.stages.filter((stage) => stage.status === "failed" || stage.status === "timed_out").length
+
+/** The session's newest run: the per-turn one or the latest /verify, whichever started last. */
+function latest(state: Rift.State | undefined) {
+  const runs = [state?.change?.run, state?.project].filter((run): run is Rift.Run => run !== undefined)
+  return runs.sort((a, b) => b.started - a.started)[0]
+}
+
+/** What needs attention first: permission requests waiting on the user, else how the newest run stands. */
+export function brief(input: { permissions: number; state?: Rift.State }): Brief | undefined {
+  if (input.permissions > 0) {
+    const plural = input.permissions === 1 ? "" : "s"
+    return { glyph: "⚠", tone: "warning", text: `${input.permissions} permission${plural} waiting` }
+  }
+  const run = latest(input.state)
+  if (!run) return
+  const now = status(run)
+  if (run.phase === "asking") return { glyph: "⚠", tone: "warning", text: now.text }
+  if (run.phase === "cancelled") return { glyph: "○", tone: "warning", text: "stopped" }
+  if (run.phase !== "done") return { glyph: "◌", tone: "muted", text: now.text }
+  if (run.verdict === "verified") return { glyph: "✓", tone: "success", text: "verified" }
+  if (run.verdict === "unproven") return { glyph: "○", tone: "warning", text: "unproven" }
+  const count = failing(run)
+  const text = count > 0 && run.verdict !== "tampered" ? `${count} failing` : run.verdict
+  return { glyph: "✗", tone: "error", text, key: "/verify" }
 }

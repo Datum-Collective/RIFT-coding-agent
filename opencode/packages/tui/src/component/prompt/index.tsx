@@ -68,7 +68,7 @@ import { directoryRecentValue } from "../../prompt/directory-completion"
 import { useWorkingDirectoryActions } from "../../ui/working-directory-actions"
 import { truncateFilePath } from "../../ui/file-path"
 import { PromptMetadataRow } from "./metadata"
-import { ComposerFrame, crestAllowed, FIELD_ROWS, FIELD_WIDTH, fieldTone, ringColour } from "./frame"
+import { barLook, barOutset, barTone, ComposerBar, crestAllowed, TEXT_INSET, useBarFocus } from "./frame"
 import { limitLabel, useUsageLimits } from "../usage"
 
 export type PromptProps = {
@@ -136,7 +136,7 @@ export function PromptInterruptStatus(props: {
 
   return (
     <text fg={props.armed ? armedColor() : props.text} wrapMode="none" truncate flexShrink={1}>
-      esc{" "}
+      <b>esc</b>{" "}
       <span style={{ fg: props.armed ? armedColor() : props.subdued }}>
         {props.armed ? "again to interrupt" : "interrupt"}
       </span>
@@ -1619,10 +1619,10 @@ export function Prompt(props: PromptProps) {
         return `Run a command… "${shell()[store.placeholder % shell().length]}"`
       }
       if (!list().length) return undefined
-      return `Try "${list()[store.placeholder % list().length]}"`
+      return `Ask anything… "${list()[store.placeholder % list().length]}"`
     })()
     if (!value) return undefined
-    const width = dimensions().width < 44 ? dimensions().width - 9 : Math.min(FIELD_WIDTH, dimensions().width - 4) - 7
+    const width = dimensions().width < 44 ? dimensions().width - 5 : Math.min(75, dimensions().width - 4) - 5
     return Locale.takeWidth(value, Math.max(1, width)).trimEnd()
   })
   const footerLocation = createMemo(() => {
@@ -1630,7 +1630,6 @@ export function Prompt(props: PromptProps) {
       // No session yet: show where the next session will be created.
       return currentLocation.ref ?? data.location.default()
     }
-    if (status() !== "idle") return
     return data.session.get(props.sessionID)?.location
   })
   const locationLabel = createMemo(() => {
@@ -1654,16 +1653,22 @@ export function Prompt(props: PromptProps) {
 
   const maxHeight = createMemo(() => Math.max(6, Math.floor(dimensions().height / 3)))
 
-  const promptBg = createMemo(() => theme.decrease(theme.background.raised.base))
-  // RIFT: the field's ring, which the slash and file list growing out of it takes too.
-  const ring = createMemo(() =>
-    ringColour(
-      fieldTone({
+  // RIFT: the bar's fill and glyph for what the composer is doing; the slash and file list standing on it takes the fill.
+  const focused = useBarFocus(() => anchor)
+  const look = createMemo(() =>
+    barLook(
+      barTone({
         quiet: disabled() || !!muted() || dialog.stack.length > 0,
+        focused: focused(),
         shell: store.mode === "shell",
         draft: !!store.prompt.text,
       }),
-      { accent: highlight(), border: theme.border.base, page: theme.background.base },
+      {
+        agent: promptDisplay().agentColor ?? theme.border.base,
+        shell: theme.text.feedback.warning.base,
+        muted: theme.text.muted,
+        raised: theme.background.raised,
+      },
     ),
   )
 
@@ -1672,20 +1677,12 @@ export function Prompt(props: PromptProps) {
       <box
         ref={(r: BoxRenderable) => (anchor = r)}
         visible={props.visible !== false}
-        width="100%"
-        maxWidth={FIELD_WIDTH}
-        alignSelf="center"
+        alignSelf="stretch"
+        marginLeft={-barOutset(dimensions().width)}
+        marginRight={-barOutset(dimensions().width)}
       >
-        {/* RIFT: a hairline field; its top edge is the waterline the typing koi swim down to. */}
-        <ComposerFrame
-          ring={ring()}
-          accent={highlight()}
-          fill={promptBg()}
-          joined={auto()?.visible ? theme.background.raised.high : undefined}
-          busy={status() === "running"}
-          animations={animationsEnabled()}
-          glyph={store.mode === "shell" ? "$" : undefined}
-        >
+        {/* RIFT: one long tinted bar, the same on home and in a session. */}
+        <ComposerBar look={look()} busy={status() === "running"} animations={animationsEnabled()}>
           <box flexShrink={0} flexGrow={1} width="100%">
             <Show when={config.prompt?.image_preview && visibleImageAttachments().length > 0}>
               <box
@@ -1761,7 +1758,7 @@ export function Prompt(props: PromptProps) {
               placeholderColor={theme.text.muted}
               textColor={muted() ? theme.text.muted : theme.text.base}
               focusedTextColor={muted() ? theme.text.muted : theme.text.base}
-              minHeight={FIELD_ROWS}
+              minHeight={1}
               maxHeight={maxHeight()}
               cursorStyle={cursorStyle()}
               onContentChange={() => {
@@ -1843,24 +1840,64 @@ export function Prompt(props: PromptProps) {
               syntaxStyle={syntax()}
             />
           </box>
-        </ComposerFrame>
-        {/* RIFT: under the field, on the draft's column: who answers, where, and one hint. */}
-        <box width="100%" flexDirection="row" justifyContent="space-between" gap={2} paddingLeft={4} paddingRight={2}>
-          <Slot path="prompt.footer" input={footerInput()}>
-            <Slot path="prompt.footer.status" input={footerInput()}>
-              <box
-                flexGrow={1}
-                flexShrink={1}
-                minWidth={0}
-                onSizeChange={function (this: BoxRenderable) {
-                  const width = this.width
-                  queueMicrotask(() => setLocationWidth(width))
-                }}
-              >
+        </ComposerBar>
+        {/* RIFT: under the bar, on the draft's column: who answers and where; then the hint, and what needs attention. */}
+        <box paddingLeft={TEXT_INSET} paddingRight={1} flexShrink={0}>
+          <box
+            flexDirection="row"
+            height={1}
+            gap={1}
+            onSizeChange={function (this: BoxRenderable) {
+              const width = this.width
+              queueMicrotask(() => setLocationWidth(width))
+            }}
+          >
+            <box flexDirection="row" flexShrink={0}>
+              <PromptMetadataRow
+                mode={store.mode}
+                agent={agentLabel()}
+                auto={local.permission.mode === "autoaccept"}
+                model={promptDisplay().modelLabel}
+                provider=""
+                variant={promptDisplay().variant}
+                limit={limit()}
+                muted={!!muted()}
+                highlight={highlight()}
+                agentAlpha={agentMetaAlpha()}
+                modelAlpha={modelMetaAlpha()}
+                variantAlpha={variantMetaAlpha()}
+              />
+            </box>
+            <Show when={locationLabelDisplay()}>
+              {(location) => (
+                <>
+                  <Show when={agentLabel()}>
+                    <text fg={theme.text.muted}>·</text>
+                  </Show>
+                  <text
+                    id="prompt.footer.location"
+                    fg={locationActions.hovered() ? theme.text.base : theme.text.feedback.success.base}
+                    wrapMode="none"
+                    truncate
+                    flexShrink={1}
+                    minWidth={0}
+                    onMouseOver={locationActions.onMouseOver}
+                    onMouseOut={locationActions.onMouseOut}
+                    onMouseUp={locationActions.onMouseUp}
+                  >
+                    {location()}
+                  </text>
+                </>
+              )}
+            </Show>
+          </box>
+          <box flexDirection="row" height={1} gap={2}>
+            <Slot path="prompt.footer" input={footerInput()}>
+              <Slot path="prompt.footer.status" input={footerInput()}>
                 <Switch>
                   <Match when={status() === "running"}>
-                    <box flexDirection="row" gap={1} flexGrow={1} justifyContent="flex-start">
-                      {/* RIFT: the crest on the waterline is the spinner; this is for when it cannot move. */}
+                    <box flexDirection="row" gap={1} flexShrink={0}>
+                      {/* RIFT: the crest along the bar is the spinner; this is for when it cannot move. */}
                       <Show when={!crestAllowed(animationsEnabled())}>
                         <text fg={theme.text.muted}>[⋯]</text>
                       </Show>
@@ -1876,7 +1913,7 @@ export function Prompt(props: PromptProps) {
                   </Match>
                   <Match when={move.progress()}>
                     {(progress) => (
-                      <box paddingLeft={3} height={1} minHeight={0} flexShrink={1}>
+                      <box height={1} minHeight={0} flexShrink={1}>
                         <Spinner color={theme.hue.accent[500]}>
                           {progress()}
                           <span style={{ fg: theme.text.muted }}>{".".repeat(move.creatingDots())}</span>
@@ -1885,67 +1922,30 @@ export function Prompt(props: PromptProps) {
                     )}
                   </Match>
                   <Match when={move.pendingNew()}>
-                    <box paddingLeft={3} height={1} minHeight={0} flexShrink={1}>
+                    <box height={1} minHeight={0} flexShrink={1}>
                       <text fg={theme.hue.accent[500]} wrapMode="none" truncate>
                         (new worktree)
                       </text>
                     </box>
                   </Match>
-                  <Match when={true}>
-                    <box flexDirection="row" gap={2} flexGrow={1} flexShrink={1} minWidth={0}>
-                      <box flexDirection="row" flexShrink={0} gap={1}>
-                        <PromptMetadataRow
-                          mode={store.mode}
-                          agent={agentLabel()}
-                          auto={local.permission.mode === "autoaccept"}
-                          model={promptDisplay().modelLabel}
-                          provider=""
-                          variant={promptDisplay().variant}
-                          limit={limit()}
-                          muted={!!muted()}
-                          highlight={highlight()}
-                          agentAlpha={agentMetaAlpha()}
-                          modelAlpha={modelMetaAlpha()}
-                          variantAlpha={variantMetaAlpha()}
-                        />
-                      </box>
-                      <Show when={locationLabelDisplay()} fallback={<text />}>
-                        {(location) => (
-                          <text
-                            id="prompt.footer.location"
-                            fg={locationActions.hovered() ? theme.text.base : theme.text.muted}
-                            wrapMode="none"
-                            truncate
-                            flexGrow={1}
-                            flexShrink={1}
-                            onMouseOver={locationActions.onMouseOver}
-                            onMouseOut={locationActions.onMouseOut}
-                            onMouseUp={locationActions.onMouseUp}
-                          >
-                            {location()}
-                          </text>
-                        )}
-                      </Show>
-                    </box>
-                  </Match>
                 </Switch>
-              </box>
+              </Slot>
+              <Slot path="prompt.footer.file" input={footerInput()}>
+                <Show when={editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined}>
+                  {(file) => (
+                    <text
+                      wrapMode="none"
+                      truncate
+                      flexShrink={1}
+                      fg={editorContextLabelState() === "pending" ? theme.hue.accent[500] : theme.text.muted}
+                    >
+                      {file()}
+                    </text>
+                  )}
+                </Show>
+              </Slot>
             </Slot>
-            <Slot path="prompt.footer.file" input={footerInput()}>
-              <Show when={editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined}>
-                {(file) => (
-                  <text
-                    wrapMode="none"
-                    truncate
-                    flexShrink={1}
-                    fg={editorContextLabelState() === "pending" ? theme.hue.accent[500] : theme.text.muted}
-                  >
-                    {file()}
-                  </text>
-                )}
-              </Show>
-            </Slot>
-          </Slot>
+          </box>
         </box>
       </box>
       <Autocomplete
@@ -1978,7 +1978,7 @@ export function Prompt(props: PromptProps) {
           setAuto(() => r)
         }}
         anchor={() => anchor}
-        ring={ring()}
+        fill={look().fill}
         input={() => input}
         setPrompt={(cb) => {
           setStore("prompt", produce(cb))

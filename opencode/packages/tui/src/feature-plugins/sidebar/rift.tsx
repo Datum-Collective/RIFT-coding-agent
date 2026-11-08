@@ -1,6 +1,7 @@
 import { Plugin } from "@opencode/plugin/tui"
 import { Rift } from "@opencode/schema/rift"
-import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type Accessor } from "solid-js"
+import { createMemo, For, Show } from "solid-js"
+import { createRiftState } from "../rift/state"
 import { bar, count, layout } from "./rift-graph"
 import { stages, status, type Tone } from "./rift-run"
 
@@ -14,39 +15,7 @@ const VERDICT: Record<Rift.Node["verdict"], { glyph: string; tone: Tone; label: 
 
 export { tree } from "./rift-graph"
 
-function createState(context: Plugin.Context, sessionID: Accessor<string>) {
-  const [state, setState] = createSignal<Rift.State>()
-  const rpc = context.client.rpc(Rift.Definition)
-  // A change that arrives while a fetch is in flight is newer than its reply.
-  const turn = { value: 0 }
-  const load = (id: string) => {
-    const current = ++turn.value
-    const directory = context.data.session.get(id)?.location.directory
-    void rpc.get({ sessionID: id }, directory ? { location: { directory } } : undefined).then(
-      (next) => {
-        if (current === turn.value && sessionID() === id) setState(next ?? undefined)
-      },
-      () => undefined,
-    )
-  }
-  onCleanup(
-    rpc.events.on("changed", (event) => {
-      if (event.data.sessionID !== sessionID()) return
-      turn.value++
-      setState(event.data.state)
-    }),
-  )
-  onCleanup(context.data.on("server.connected", () => load(sessionID())))
-  createEffect(
-    on(sessionID, (id) => {
-      setState(undefined)
-      load(id)
-    }),
-  )
-  return state
-}
-
-const paint = (theme: Plugin.Context["theme"], tone: Tone) =>
+export const paint = (theme: Plugin.Context["theme"], tone: Tone) =>
   tone === "muted"
     ? theme.text.muted
     : tone === "success"
@@ -80,7 +49,7 @@ function RunView(props: { context: Plugin.Context; title: string; run: Rift.Run;
 
 export function SidebarRift(props: { context: Plugin.Context; sessionID: string }) {
   const theme = props.context.theme
-  const state = createState(props.context, () => props.sessionID)
+  const state = createRiftState(props.context, () => props.sessionID)
   const counts = createMemo(() => count(state()?.graph ?? []))
   const lines = createMemo(() => layout(state()?.graph ?? []))
   const colour = (tone: Tone) => paint(theme, tone)

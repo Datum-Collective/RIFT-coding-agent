@@ -29,7 +29,6 @@ import { useTuiPaths } from "../../context/runtime"
 import { useConfig, useNewDesigns } from "../../config"
 import { useLocation } from "../../context/location"
 import { useTheme } from "../../context/theme"
-import { FieldList } from "./frame"
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { Locale } from "../../util/locale"
 import type { PromptInfo, PromptPartRef } from "../../prompt/history"
@@ -80,8 +79,8 @@ export function Autocomplete(props: {
   setPrompt: (input: (prompt: PromptInfo) => void) => void
   setExtmark: (part: PromptPartRef, extmarkId: number) => void
   anchor: () => BoxRenderable
-  /** RIFT: the field's ring; the list grows out of the field in the same colour. */
-  ring: RGBA
+  /** RIFT: the composer bar's fill; the list stands on the bar as part of it. */
+  fill: RGBA
   input: () => TextareaRenderable
   ref: (ref: AutocompleteRef) => void
   fileStyleId: number
@@ -877,14 +876,16 @@ export function Autocomplete(props: {
   }
 
   return (
-    <FieldList
+    <box
       visible={store.visible !== false}
+      position="absolute"
       top={position().y - height()}
       left={position().x}
       width={position().width}
-      ring={props.ring}
-      // Under new designs each row draws its own left rail so the selected row can show the selection bar.
-      rowSides={newDesigns()}
+      zIndex={100}
+      backgroundColor={props.fill}
+      paddingLeft={1}
+      paddingRight={1}
     >
       <scrollbox
         ref={(r: ScrollBoxRenderable) => {
@@ -892,8 +893,6 @@ export function Autocomplete(props: {
           scroll = r
           scroll.verticalScrollBar.on("change", syncSelectionWindow)
         }}
-        // Under new designs rows paint the background themselves so the rail cell stays transparent like the border.
-        backgroundColor={newDesigns() ? undefined : theme.background.raised.high}
         height={height()}
         scrollbarOptions={{ visible: false }}
         scrollAcceleration={scrollAcceleration()}
@@ -901,7 +900,7 @@ export function Autocomplete(props: {
         <Index
           each={options()}
           fallback={
-            <AutocompleteRail enabled={newDesigns()} color={props.ring}>
+            <AutocompleteRail enabled={newDesigns()}>
               <box
                 paddingLeft={1}
                 paddingRight={1}
@@ -941,7 +940,7 @@ export function Autocomplete(props: {
                     ? theme.text.feedback.error.base
                     : index === store.selected
                       ? theme.text.formfield.focused
-                      : props.ring
+                      : undefined
                 }
               >
                 <box
@@ -1001,7 +1000,7 @@ export function Autocomplete(props: {
           }}
         </Index>
       </scrollbox>
-    </FieldList>
+    </box>
   )
 }
 
@@ -1013,7 +1012,7 @@ function AutocompleteRail(props: { enabled: boolean; color?: RGBA; children: JSX
     <Show when={props.enabled} fallback={props.children}>
       <box flexDirection="row">
         <text width={1} flexShrink={0} fg={props.color ?? theme.border.base}>
-          ▕
+          ┃
         </text>
         {props.children}
       </box>

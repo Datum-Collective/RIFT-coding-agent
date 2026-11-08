@@ -6,6 +6,7 @@ import SidebarFooter from "../feature-plugins/sidebar/footer"
 import SidebarLimit from "../feature-plugins/sidebar/limit"
 import SidebarMcp from "../feature-plugins/sidebar/mcp"
 import RiftLog from "../feature-plugins/rift/log"
+import RiftStatus from "../feature-plugins/rift/status"
 import SidebarRift from "../feature-plugins/sidebar/rift"
 import SidebarTodo from "../feature-plugins/sidebar/todo"
 import DiffViewer from "../feature-plugins/system/diff-viewer"
@@ -25,6 +26,7 @@ export const builtins = [
   SidebarMcp,
   SidebarRift,
   RiftLog,
+  RiftStatus,
   SidebarTodo,
   SidebarFooter,
   Notifications,
