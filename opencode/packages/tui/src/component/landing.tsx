@@ -41,6 +41,7 @@ export function landingDetail(rows: number, cols: number): LandingDetail {
 export function Landing(props: { onWidth?: (width: number) => void; children?: JSX.Element }) {
   const theme = useTheme()
   const [rows, setRows] = createSignal(0)
+  const [brand, setBrand] = createSignal(0)
   const dimensions = useTerminalDimensions()
   const location = useLocation()
   const data = useData()
@@ -73,12 +74,15 @@ export function Landing(props: { onWidth?: (width: number) => void; children?: J
         queueMicrotask(() => setRows(height))
       }}
     >
-      <box flexGrow={1} minHeight={0} />
+      {/* The same water above the brand as below it; an odd row goes below, where the typing koi swim. */}
+      <box height={Math.max(0, Math.floor((rows() - brand()) / 2))} flexShrink={1} minHeight={0} />
       <box
         flexShrink={0}
         alignItems="center"
         onSizeChange={function () {
           props.onWidth?.(this.width)
+          const height = this.height
+          queueMicrotask(() => setBrand(height))
         }}
       >
         <Switch>

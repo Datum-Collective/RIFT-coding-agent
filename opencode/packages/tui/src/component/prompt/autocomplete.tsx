@@ -30,6 +30,7 @@ import { useConfig, useNewDesigns } from "../../config"
 import { useLocation } from "../../context/location"
 import { useTheme } from "../../context/theme"
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
+import { LIST_PAD } from "./frame"
 import { Locale } from "../../util/locale"
 import type { PromptInfo, PromptPartRef } from "../../prompt/history"
 import { useFrecency } from "../../prompt/frecency"
@@ -884,8 +885,8 @@ export function Autocomplete(props: {
       width={position().width}
       zIndex={100}
       backgroundColor={props.fill}
-      paddingLeft={1}
-      paddingRight={1}
+      paddingLeft={LIST_PAD.left}
+      paddingRight={LIST_PAD.right}
     >
       <scrollbox
         ref={(r: ScrollBoxRenderable) => {
@@ -926,7 +927,7 @@ export function Autocomplete(props: {
             }
             const contentWidth = () => {
               const text = label()
-              return Math.max(1, position().width - 4 - (text ? stringWidth(text) + 2 : 0))
+              return Math.max(1, position().width - 2 - LIST_PAD.left - LIST_PAD.right - (text ? stringWidth(text) + 2 : 0))
             }
             const confirmingAction = () => {
               const action = destructive()

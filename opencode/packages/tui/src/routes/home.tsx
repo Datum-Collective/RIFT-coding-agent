@@ -95,12 +95,18 @@ export function Home() {
         <Landing onWidth={setLogoWidth}>
           <UpdateNotification width={logoWidth()} />
         </Landing>
-        <box ref={setComposer} width="100%" zIndex={1000} paddingTop={1} flexShrink={0} position="relative">
-          <Prompt ref={bind} placeholders={placeholder} disabled={forms().length > 0} />
+        {/* RIFT: plugins' home footer sits above the composer; the composer's own row is the last. */}
+        <box width="100%" flexShrink={0}>
+          <Slot path="home.footer" />
         </box>
-      </box>
-      <box width="100%" flexShrink={0}>
-        <Slot path="home.footer" />
+        <box ref={setComposer} width="100%" zIndex={1000} flexShrink={0} position="relative">
+          <Prompt
+            ref={bind}
+            placeholders={placeholder}
+            disabled={forms().length > 0}
+            aside={<Slot path="home.footer.status" />}
+          />
+        </box>
       </box>
       <Show when={forms()[0]?.id} keyed>
         {(_) => {

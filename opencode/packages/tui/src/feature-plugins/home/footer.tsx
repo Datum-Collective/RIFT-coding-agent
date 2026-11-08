@@ -2,7 +2,6 @@ import { Plugin } from "@opencode/plugin/tui"
 import { createMemo, Match, Show, Switch } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { usePlugin } from "../../plugin/context"
-import { Slot } from "../../plugin/render"
 
 export function homeFooterVisibility(width: number) {
   return {
@@ -29,15 +28,7 @@ function Mcp(props: { context: Plugin.Context }) {
               {failed()} MCP failed
             </Match>
             <Match when={true}>
-              <span
-                style={{
-                  fg:
-                    count() > 0 ? props.context.theme.text.feedback.success.base : props.context.theme.text.muted,
-                }}
-              >
-                ⊙{" "}
-              </span>
-              {count()} MCP
+              <span style={{ fg: props.context.theme.text.muted }}>⊙ {count()} MCP</span>
             </Match>
           </Switch>
         </text>
@@ -74,43 +65,20 @@ function Plugins(props: { context: Plugin.Context }) {
   )
 }
 
+// RIFT: these sit in the row under the composer, after its status; the composer's row shows the version.
 function View(props: { context: Plugin.Context }) {
-  const dimensions = useTerminalDimensions()
-  const visibility = createMemo(() => homeFooterVisibility(dimensions().width))
-
   return (
-    <Show when={dimensions().height >= 14 && dimensions().width >= 44}>
-      <box
-        width="100%"
-        paddingTop={dimensions().height < 16 ? 0 : 1}
-        paddingBottom={dimensions().height < 16 ? 0 : 1}
-        paddingLeft={2}
-        paddingRight={2}
-        flexDirection="row"
-        flexShrink={0}
-        gap={2}
-      >
-        <Mcp context={props.context} />
-        <Plugins context={props.context} />
-        <Slot path="home.footer.status" />
-        <box flexGrow={1} />
-        <Show when={visibility().version}>
-          <box flexShrink={0}>
-            <text fg={props.context.theme.text.muted}>{props.context.app.version}</text>
-          </box>
-        </Show>
-      </box>
-    </Show>
+    <>
+      <Mcp context={props.context} />
+      <Plugins context={props.context} />
+    </>
   )
 }
 
 export default Plugin.define({
   id: "opencode.home.footer",
   setup(context) {
-    // Root takeover: an external plugin replacing home.footer wins (last-
-    // enabled) and this builtin shows as suppressed, not silently gone.
-    // Append keeps the path open to additive plugin claims; an external
-    // replace still takes the boundary over.
-    context.ui.slot({ append: "home.footer", render: () => <View context={context} /> })
+    // RIFT: home.footer.status is the status end of the composer's row on home; home.footer stays free for plugins.
+    context.ui.slot({ append: "home.footer.status", render: () => <View context={context} /> })
   },
 })

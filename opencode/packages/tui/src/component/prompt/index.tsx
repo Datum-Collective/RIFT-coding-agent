@@ -9,13 +9,13 @@ import {
   stripAnsiSequences,
   type KeyEvent,
 } from "@opentui/core"
-import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match, For } from "solid-js"
+import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match, For, type JSX } from "solid-js"
 import path from "path"
 import { useLocal } from "../../context/local"
 import { useTheme, useThemes } from "../../context/theme"
 import { tint } from "../../theme/color"
 import { createAnimatable, tween } from "../../ui/animation"
-import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
+import { useTuiApp, useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { useClipboard } from "../../context/clipboard"
 import { Spinner } from "../spinner"
 import { useClient } from "../../context/client"
@@ -66,9 +66,9 @@ import { DialogImagePreview } from "../dialog-image-preview"
 import { useDirectoryRecents } from "../../prompt/directory-recents"
 import { directoryRecentValue } from "../../prompt/directory-completion"
 import { useWorkingDirectoryActions } from "../../ui/working-directory-actions"
-import { truncateFilePath } from "../../ui/file-path"
 import { PromptMetadataRow } from "./metadata"
-import { barLook, barOutset, barTone, ComposerBar, crestAllowed, TEXT_INSET, useBarFocus } from "./frame"
+import { barLook, barOutset, barTone, ComposerBar, crestAllowed, useBarFocus } from "./frame"
+import { InfoRow } from "./info-row"
 import { limitLabel, useUsageLimits } from "../usage"
 
 export type PromptProps = {
@@ -83,6 +83,8 @@ export type PromptProps = {
     normal?: string[]
     shell?: string[]
   }
+  /** RIFT: more for the status end of the row under the bar, after the footer slots. */
+  aside?: JSX.Element
 }
 
 export type PromptRef = {
@@ -193,6 +195,8 @@ export function Prompt(props: PromptProps) {
   const muted = () => leader() || props.muted
   const local = useLocal()
   const paths = useTuiPaths()
+  const app = useTuiApp()
+  const shortcuts = Keymap.useShortcuts()
   const terminalEnvironment = useTuiTerminalEnvironment()
   const clipboard = useClipboard()
   const client = useClient()
@@ -1637,14 +1641,7 @@ export function Prompt(props: PromptProps) {
     const location = pending ? { directory: pending } : footerLocation()
     if (!location) return
     const directory = abbreviateHome(location.directory, paths.home)
-    const branch = data.location.vcs.info(location)?.branch.current
-    return branch ? `${directory}:${branch}` : directory
-  })
-  const [locationWidth, setLocationWidth] = createSignal(dimensions().width)
-  const locationLabelDisplay = createMemo(() => {
-    const label = locationLabel()
-    if (!label) return
-    return truncateFilePath(label, locationWidth())
+    return { directory, branch: data.location.vcs.info(location)?.branch.current }
   })
   const locationActions = useWorkingDirectoryActions({
     directory: () => footerLocation()?.directory,
@@ -1841,112 +1838,91 @@ export function Prompt(props: PromptProps) {
             />
           </box>
         </ComposerBar>
-        {/* RIFT: under the bar, on the draft's column: who answers and where; then the hint, and what needs attention. */}
-        <box paddingLeft={TEXT_INSET} paddingRight={1} flexShrink={0}>
-          <box
-            flexDirection="row"
-            height={1}
-            gap={1}
-            onSizeChange={function (this: BoxRenderable) {
-              const width = this.width
-              queueMicrotask(() => setLocationWidth(width))
-            }}
-          >
-            <box flexDirection="row" flexShrink={0}>
-              <PromptMetadataRow
-                mode={store.mode}
-                agent={agentLabel()}
-                auto={local.permission.mode === "autoaccept"}
-                model={promptDisplay().modelLabel}
-                provider=""
-                variant={promptDisplay().variant}
-                limit={limit()}
-                muted={!!muted()}
-                highlight={highlight()}
-                agentAlpha={agentMetaAlpha()}
-                modelAlpha={modelMetaAlpha()}
-                variantAlpha={variantMetaAlpha()}
-              />
-            </box>
-            <Show when={locationLabelDisplay()}>
-              {(location) => (
-                <>
-                  <Show when={agentLabel()}>
-                    <text fg={theme.text.muted}>·</text>
-                  </Show>
-                  <text
-                    id="prompt.footer.location"
-                    fg={locationActions.hovered() ? theme.text.base : theme.text.feedback.success.base}
-                    wrapMode="none"
-                    truncate
-                    flexShrink={1}
-                    minWidth={0}
-                    onMouseOver={locationActions.onMouseOver}
-                    onMouseOut={locationActions.onMouseOut}
-                    onMouseUp={locationActions.onMouseUp}
-                  >
-                    {location()}
-                  </text>
-                </>
-              )}
-            </Show>
-          </box>
-          <box flexDirection="row" height={1} gap={2}>
-            <Slot path="prompt.footer" input={footerInput()}>
-              <Slot path="prompt.footer.status" input={footerInput()}>
-                <Switch>
-                  <Match when={status() === "running"}>
-                    <box flexDirection="row" gap={1} flexShrink={0}>
-                      {/* RIFT: the crest along the bar is the spinner; this is for when it cannot move. */}
-                      <Show when={!crestAllowed(animationsEnabled())}>
-                        <text fg={theme.text.muted}>[⋯]</text>
-                      </Show>
-                      <PromptInterruptStatus
-                        armed={store.interrupt > 0}
-                        animations={animationsEnabled()}
-                        text={theme.text.base}
-                        subdued={theme.text.muted}
-                        warning={theme.text.feedback.warning.base}
-                        flash={theme.decrease(theme.text.feedback.warning.base, 2)}
-                      />
-                    </box>
-                  </Match>
-                  <Match when={move.progress()}>
-                    {(progress) => (
-                      <box height={1} minHeight={0} flexShrink={1}>
-                        <Spinner color={theme.hue.accent[500]}>
-                          {progress()}
-                          <span style={{ fg: theme.text.muted }}>{".".repeat(move.creatingDots())}</span>
-                        </Spinner>
+        {/* RIFT: under the bar, one row: who answers and the hints on the draft's column; the status and the folder on the right. */}
+        <InfoRow
+          folder={locationLabel()}
+          folderActions={locationActions}
+          lead={
+            <PromptMetadataRow
+              mode={store.mode}
+              agent={agentLabel()}
+              auto={local.permission.mode === "autoaccept"}
+              model={promptDisplay().modelLabel}
+              provider=""
+              variant={promptDisplay().variant}
+              limit={limit()}
+              muted={!!muted()}
+              highlight={highlight()}
+              agentAlpha={agentMetaAlpha()}
+              modelAlpha={modelMetaAlpha()}
+              variantAlpha={variantMetaAlpha()}
+            />
+          }
+          status={
+            <>
+              <Slot path="prompt.footer" input={footerInput()}>
+                <Slot path="prompt.footer.status" input={footerInput()}>
+                  <Switch>
+                    <Match when={status() === "running"}>
+                      <box flexDirection="row" gap={1} flexShrink={0}>
+                        {/* RIFT: the crest along the bar is the spinner; this is for when it cannot move. */}
+                        <Show when={!crestAllowed(animationsEnabled())}>
+                          <text fg={theme.text.muted}>[⋯]</text>
+                        </Show>
+                        <PromptInterruptStatus
+                          armed={store.interrupt > 0}
+                          animations={animationsEnabled()}
+                          text={theme.text.base}
+                          subdued={theme.text.muted}
+                          warning={theme.text.feedback.warning.base}
+                          flash={theme.decrease(theme.text.feedback.warning.base, 2)}
+                        />
                       </box>
-                    )}
-                  </Match>
-                  <Match when={move.pendingNew()}>
-                    <box height={1} minHeight={0} flexShrink={1}>
-                      <text fg={theme.hue.accent[500]} wrapMode="none" truncate>
-                        (new worktree)
+                    </Match>
+                    <Match when={move.progress()}>
+                      {(progress) => (
+                        <box height={1} minHeight={0} flexShrink={1}>
+                          <Spinner color={theme.hue.accent[500]}>
+                            {progress()}
+                            <span style={{ fg: theme.text.muted }}>{".".repeat(move.creatingDots())}</span>
+                          </Spinner>
+                        </box>
+                      )}
+                    </Match>
+                    <Match when={move.pendingNew()}>
+                      <box height={1} minHeight={0} flexShrink={1}>
+                        <text fg={theme.hue.accent[500]} wrapMode="none" truncate>
+                          (new worktree)
+                        </text>
+                      </box>
+                    </Match>
+                  </Switch>
+                </Slot>
+                <Slot path="prompt.footer.file" input={footerInput()}>
+                  <Show when={editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined}>
+                    {(file) => (
+                      <text
+                        wrapMode="none"
+                        truncate
+                        flexShrink={1}
+                        fg={editorContextLabelState() === "pending" ? theme.hue.accent[500] : theme.text.muted}
+                      >
+                        {file()}
                       </text>
-                    </box>
-                  </Match>
-                </Switch>
+                    )}
+                  </Show>
+                </Slot>
               </Slot>
-              <Slot path="prompt.footer.file" input={footerInput()}>
-                <Show when={editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined}>
-                  {(file) => (
-                    <text
-                      wrapMode="none"
-                      truncate
-                      flexShrink={1}
-                      fg={editorContextLabelState() === "pending" ? theme.hue.accent[500] : theme.text.muted}
-                    >
-                      {file()}
-                    </text>
-                  )}
-                </Show>
-              </Slot>
-            </Slot>
-          </box>
-        </box>
+              {props.aside}
+            </>
+          }
+          hint={
+            store.mode === "shell"
+              ? { key: "esc", label: "exit shell mode" }
+              : { key: shortcuts.get("command.palette.show") ?? "", label: "commands" }
+          }
+          version={app.version}
+        />
       </box>
       <Autocomplete
         sessionID={props.sessionID}

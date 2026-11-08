@@ -1516,7 +1516,6 @@ export function Session(props: {
         <box
           flexGrow={1}
           minHeight={0}
-          paddingBottom={1}
           paddingLeft={dimensions().width < 44 ? 1 : 2}
           paddingRight={dimensions().width < 44 ? 1 : 2}
         >
