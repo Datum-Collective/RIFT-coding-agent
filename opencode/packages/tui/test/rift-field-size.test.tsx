@@ -114,7 +114,7 @@ for (const [width, height] of SIZES) {
     expect({ rows: sizes.session!.rows, left: sizes.session!.left, width: sizes.session!.width }).toEqual({ rows, left, width: span })
   })
 
-  test(`at ${width}x${height} one grid: glyph two in, the draft and the row under the bar on one column, the row ending on its mirror, flush with the bottom`, async () => {
+  test(`at ${width}x${height} one grid: glyph two in, the draft and the row under the bar on one column, the row ending on its mirror, one row above the bottom`, async () => {
     for (const place of ["home", "session"] as const) {
       await using state = await tmpdir()
       await using setup = await open(state.path, width, height, place)
@@ -124,9 +124,10 @@ for (const [width, height] of SIZES) {
       const it = await settled(setup, (frame) => ready(frame) && /›\s+x/.test(frame))
       expect(it.mark).toBe(it.left + 2)
       expect(it.column).toBe(it.left + 4)
-      // One row under the bar, and it is the terminal's last.
-      expect(it.under).toHaveLength(1)
-      expect(it.top + it.rows).toBe(height - 1)
+      // One row under the bar, and a blank row after it: the terminal's last.
+      expect(it.under).toHaveLength(2)
+      expect(it.under[1]!.trim()).toBe("")
+      expect(it.top + it.rows).toBe(height - 2)
       const row = it.under[0]!
       expect(ink(row)).toEqual({ first: it.left + 4, last: it.left + it.width - 3 })
       expect(row.slice(it.left + 4)).toStartWith("Build · Model  ctrl+p commands")
@@ -229,7 +230,7 @@ async function row(width: number) {
   })
   await setup.ready
   const it = await settled(setup, (frame) => frame.includes("›") && /Model {2}ctrl\+p/.test(frame) && /:main\s*$/.test(frame) && frame.includes("MCP"))
-  const line = it.under.at(-1)!
+  const line = it.under[0]!
   expect(ink(line)).toEqual({ first: it.left + 4, last: it.left + it.width - 3 })
   return line.slice(it.left + 4).trimEnd()
 }
