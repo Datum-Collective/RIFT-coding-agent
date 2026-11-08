@@ -89,6 +89,7 @@ export function Home() {
       <box
         flexGrow={1}
         alignItems="center"
+        paddingBottom={1}
         paddingLeft={dimensions().width < 44 ? 1 : 2}
         paddingRight={dimensions().width < 44 ? 1 : 2}
       >
