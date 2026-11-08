@@ -48,7 +48,7 @@ test("the palette is the source artwork's own", () => {
   expect(BANNER_FILL).toEqual({ navy: "#0000AA", silver: "#AAAAAA" })
 })
 
-test("uses only half-block and shade glyphs, so it renders in any monospace font", () => {
+test("the art uses only half blocks and shades, the glyphs its dots are made from", () => {
   const allowed = new Set([" ", "█", "▀", "▄", "▌", "▐", "░", "▒", "▓"])
   const used = new Set(banner.flatMap((row) => row.flatMap((run) => [...run.text])))
   expect([...used].filter((glyph) => !allowed.has(glyph))).toEqual([])

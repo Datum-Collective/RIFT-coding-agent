@@ -26,6 +26,8 @@ export type Idle = {
   dispose: () => void
   /** True between `onIdle` and the next `poke`. */
   isIdle: () => boolean
+  /** Goes idle now, as if the delay had passed. Does nothing if it is idle already. */
+  ignite: () => void
 }
 
 export function createIdle(input: { delay: number; onIdle: () => void; onWake: () => void; clock?: Clock }): Idle {
@@ -65,6 +67,14 @@ export function createIdle(input: { delay: number; onIdle: () => void; onWake: (
       handle = undefined
     },
     isIdle: () => idle,
+    ignite() {
+      if (disposed || idle) return
+      // The armed timer would go idle a second time.
+      if (handle !== undefined) clock.clearTimeout(handle)
+      handle = undefined
+      idle = true
+      input.onIdle()
+    },
   }
 }
 

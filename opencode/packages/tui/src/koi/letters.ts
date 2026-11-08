@@ -7,8 +7,8 @@ import { isInk, type Logo } from "./logo"
 
 export type Lpx = { x: number; y: number }
 
-/** The logo's letter pixels, row by row: its greys, not the backdrop. */
-export const inkMask = (logo: Logo) => logo.pixels.map((pixel) => pixel !== undefined && isInk(pixel))
+/** The logo's letter cells, row by row: its greys, not the backdrop. */
+export const inkMask = (logo: Logo) => logo.cells.map((cell) => cell !== undefined && isInk(cell.colour))
 
 /**
  * Splits a bitmap into its letters, left to right: the pieces whose pixels touch. A dot, an accent
