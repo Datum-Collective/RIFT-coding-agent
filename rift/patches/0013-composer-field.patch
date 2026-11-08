@@ -78,7 +78,7 @@ index 444297a..62ee444 100644
          {props.children}
        </box>
 diff --git a/opencode/packages/tui/src/component/prompt/index.tsx b/opencode/packages/tui/src/component/prompt/index.tsx
-index 075f037..28ed559 100644
+index 075f037..c59c2d9 100644
 --- a/opencode/packages/tui/src/component/prompt/index.tsx
 +++ b/opencode/packages/tui/src/component/prompt/index.tsx
 @@ -15,7 +15,6 @@ import { useLocal } from "../../context/local"
@@ -101,7 +101,7 @@ index 075f037..28ed559 100644
  import { useWorkingDirectoryActions } from "../../ui/working-directory-actions"
  import { truncateFilePath } from "../../ui/file-path"
  import { PromptMetadataRow } from "./metadata"
-+import { ComposerFrame, crestAllowed, FIELD_WIDTH, fieldTone, ringColour } from "./frame"
++import { ComposerFrame, crestAllowed, FIELD_ROWS, FIELD_WIDTH, fieldTone, ringColour } from "./frame"
  import { limitLabel, useUsageLimits } from "../usage"
  
  export type PromptProps = {
@@ -131,11 +131,11 @@ index 075f037..28ed559 100644
      })()
      if (!value) return undefined
 -    const width = dimensions().width < 44 ? dimensions().width - 5 : Math.min(75, dimensions().width - 4) - 5
-+    const width = dimensions().width < 44 ? dimensions().width - 5 : Math.min(FIELD_WIDTH, dimensions().width) - 7
++    const width = dimensions().width < 44 ? dimensions().width - 9 : Math.min(FIELD_WIDTH, dimensions().width - 4) - 7
      return Locale.takeWidth(value, Math.max(1, width)).trimEnd()
    })
    const footerLocation = createMemo(() => {
-@@ -1654,50 +1652,35 @@ export function Prompt(props: PromptProps) {
+@@ -1654,50 +1652,41 @@ export function Prompt(props: PromptProps) {
      onMove: () => void move.open(),
    })
  
@@ -175,7 +175,7 @@ index 075f037..28ed559 100644
  
    return (
      <>
-       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
+-      <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
 -        <box
 -          width="100%"
 -          border={["left"]}
@@ -184,6 +184,13 @@ index 075f037..28ed559 100644
 -            ...SplitBorder.customBorderChars,
 -            bottomLeft: "╹",
 -          }}
++      <box
++        ref={(r: BoxRenderable) => (anchor = r)}
++        visible={props.visible !== false}
++        width="100%"
++        maxWidth={FIELD_WIDTH}
++        alignSelf="center"
++      >
 +        {/* RIFT: a hairline field; its top edge is the waterline the typing koi swim down to. */}
 +        <ComposerFrame
 +          ring={ring()}
@@ -207,7 +214,16 @@ index 075f037..28ed559 100644
              <Show when={config.prompt?.image_preview && visibleImageAttachments().length > 0}>
                <box
                  width="100%"
-@@ -1853,51 +1836,10 @@ export function Prompt(props: PromptProps) {
+@@ -1772,7 +1761,7 @@ export function Prompt(props: PromptProps) {
+               placeholderColor={theme.text.muted}
+               textColor={muted() ? theme.text.muted : theme.text.base}
+               focusedTextColor={muted() ? theme.text.muted : theme.text.base}
+-              minHeight={1}
++              minHeight={FIELD_ROWS}
+               maxHeight={maxHeight()}
+               cursorStyle={cursorStyle()}
+               onContentChange={() => {
+@@ -1853,51 +1842,10 @@ export function Prompt(props: PromptProps) {
                cursorColor={disabled() ? theme.background.raised.base : theme.text.base}
                syntaxStyle={syntax()}
              />
@@ -262,7 +278,7 @@ index 075f037..28ed559 100644
            <Slot path="prompt.footer" input={footerInput()}>
              <Slot path="prompt.footer.status" input={footerInput()}>
                <box
-@@ -1912,11 +1854,10 @@ export function Prompt(props: PromptProps) {
+@@ -1912,11 +1860,10 @@ export function Prompt(props: PromptProps) {
                  <Switch>
                    <Match when={status() === "running"}>
                      <box flexDirection="row" gap={1} flexGrow={1} justifyContent="flex-start">
@@ -278,7 +294,7 @@ index 075f037..28ed559 100644
                        <PromptInterruptStatus
                          armed={store.interrupt > 0}
                          animations={animationsEnabled()}
-@@ -1945,23 +1886,41 @@ export function Prompt(props: PromptProps) {
+@@ -1945,23 +1892,41 @@ export function Prompt(props: PromptProps) {
                      </box>
                    </Match>
                    <Match when={true}>
@@ -337,7 +353,7 @@ index 075f037..28ed559 100644
                    </Match>
                  </Switch>
                </box>
-@@ -2013,6 +1972,7 @@ export function Prompt(props: PromptProps) {
+@@ -2013,6 +1978,7 @@ export function Prompt(props: PromptProps) {
            setAuto(() => r)
          }}
          anchor={() => anchor}
