@@ -8,9 +8,9 @@
  * square and a circle of dots is round on screen. A cell shows one colour, the intensity-weighted
  * mix of the light that lands in it.
  *
- * The physics is a Schwarzschild hole in geometrised units (G = c = M = 1), ported from the web
- * version at singularity-warp/index.html, which the user approved: an exact bending table for the
- * lensed disk (Luminet's method), Keplerian shear, Doppler beaming and a thermal colour ramp.
+ * The physics is faked wherever a fake looks right: the disk is bent into an arch and a far arc by a
+ * closed-form formula, inner dots orbit faster than outer ones by a power law, the side turning toward
+ * the viewer is brighter, and the colour runs white-hot to crimson from the inner edge to the rim.
  * Every per-frame structure is a typed array made once, so a frame allocates nothing.
  */
 import { DOT_BIT, type Logo } from "./logo"
@@ -36,8 +36,8 @@ export const OMEGA_ISCO = TAU / ISCO_PERIOD_S
 /** Each disk particle is drawn as the arc it swept in this long, so the disk reads as motion. */
 const STREAK_S = 0.15
 
-/* Brightness: Doppler beaming I ∝ δ^3, δ = 1 / (γ (1 − β_los)), times gravitational dimming g^3,
-   g = √(1 − 2M/r). The colour shift is damped to δ^0.3 so the radial thermal grading stays readable. */
+/* Brightness: the side moving toward the viewer is brighter, I ∝ δ^3 with δ = 1 / (1 − β_los), and the
+   inner edge dims by g^3, g = √(1 − 2M/r). The colour shift is damped to δ^0.3 so the radial thermal grading stays readable. */
 const DISK_EXPOSURE = 1.3
 const DISK_FLARE = 0.02
 const COLOR_SHIFT_EXP = 0.3
@@ -175,113 +175,38 @@ export function thermal(t: number) {
   return (k < 0 ? 0 : k >= LUT_N ? LUT_N - 1 : k) * 3
 }
 
-// --- exact Schwarzschild bending -------------------------------------------------------------------
+// --- bending, by two cheap tricks ---------------------------------------------------------------------
 
-/* Tabulated once, the first time a scene is made (Luminet 1979). Traced back from the observer, a
-   photon with impact parameter b sweeps an azimuth Φ = ∫ du / √(1/b² − u² + 2u³), u = 1/r, around the
-   hole before it reaches radius r. Along the path b = 0 → b_max(r) (before periapsis) → b_c (after
-   periapsis) the sweep grows monotonically, so each (r, Φ) has exactly one b. A particle at angle ψ from
-   the line of sight has its primary image at Φ = ψ and its secondary image, on the far side of the
-   hole, at Φ = 2π − ψ. The thin-lens formula puts the inner disk's secondary image inside the shadow,
-   where it vanishes; this table puts it in the thin ring just outside b_c where it belongs. */
-const BEND_NR = 48
-const BEND_NPHI = 256
-const BEND_R0 = 5
-const BEND_R1 = 24
-let bendB: Float32Array | undefined
-let bendSlope: Float32Array | undefined
-/** What `bend` found: the image's impact parameter b and ∂b/∂r. */
+/* Where the disk's light lands on screen, as a distance b from the centre, is faked in closed form.
+   The near image of a particle at angle psi from the line of sight is lifted over the hole by
+   cos(a) = 1 - (1 - cos(psi))(1 - 2/r), which is what makes the disk arch above the disc. The far image,
+   the dimmer arc under it, hugs the shadow: it sits a hair outside it for particles in front of the hole
+   and moves out as they go behind it, further for orbits further out. */
+const FAR_BASE = 0.35
+const FAR_REACH = 0.65
+const FAR_HEAT = 0.8
+const FAR_FLOOR = 0.85
+/** What `bend` found: the image's distance b from the centre and how fast b grows with r. */
 const BEND = new Float64Array(2)
 
-function sweep(b: number, ua: number, ub: number) {
-  // u = ub − (ub − ua) t² removes the integrable singularity when ub is the periapsis root.
-  const ib2 = 1 / (b * b)
-  const d = ub - ua
-  const n = 160
-  let s = 0
-  for (let k = 0; k < n; k++) {
-    const t = (k + 0.5) / n
-    const u = ub - d * t * t
-    const g = ib2 - u * u + 2 * u * u * u
-    s += t / Math.sqrt(g > 1e-300 ? g : 1e-300)
-  }
-  return (2 * d * s) / n
+function near(r: number, psi: number) {
+  const f = 1 - 2 / r
+  const c = 1 - (1 - Math.cos(psi)) * f
+  return (r * Math.sqrt(Math.max(0, 1 - c * c))) / Math.sqrt(f)
 }
 
-function periapsisU(b: number) {
-  const ib2 = 1 / (b * b)
-  let lo = 0
-  let hi = 1 / 3
-  for (let k = 0; k < 64; k++) {
-    const m = 0.5 * (lo + hi)
-    if (ib2 - m * m + 2 * m * m * m > 0) lo = m
-    else hi = m
-  }
-  return lo
-}
-
-function buildBendTable() {
-  const b = new Float32Array(BEND_NR * BEND_NPHI)
-  const slope = new Float32Array(BEND_NR * BEND_NPHI)
-  const na = 96
-  const nb = 96
-  const phis = new Float64Array(na + nb)
-  const bs = new Float64Array(na + nb)
-  for (let ir = 0; ir < BEND_NR; ir++) {
-    const r = BEND_R0 + ((BEND_R1 - BEND_R0) * ir) / (BEND_NR - 1)
-    const us = 1 / r
-    const bMax = r / Math.sqrt(1 - 2 / r)
-    let n = 0
-    for (let k = 0; k < na; k++) {
-      const bk = (bMax * k) / (na - 1)
-      phis[n] = bk === 0 ? 0 : sweep(bk, 0, us)
-      bs[n++] = bk
-    }
-    for (let k = 1; k < nb; k++) {
-      const bk = R_SHADOW + (bMax - R_SHADOW) * Math.exp((-12 * k) / (nb - 1))
-      phis[n] = 2 * sweep(bk, 0, periapsisU(bk)) - sweep(bk, 0, us)
-      bs[n++] = bk
-    }
-    let j = 0
-    for (let ip = 0; ip < BEND_NPHI; ip++) {
-      const target = (TAU * ip) / (BEND_NPHI - 1)
-      while (j < n - 2 && phis[j + 1] < target) j++
-      const f = Math.max(0, Math.min(1, (target - phis[j]) / (phis[j + 1] - phis[j])))
-      b[ir * BEND_NPHI + ip] = bs[j] + (bs[j + 1] - bs[j]) * f
-    }
-  }
-  const dr = (BEND_R1 - BEND_R0) / (BEND_NR - 1)
-  for (let ir = 0; ir < BEND_NR; ir++) {
-    const a = ir > 0 ? ir - 1 : 0
-    const c = ir < BEND_NR - 1 ? ir + 1 : BEND_NR - 1
-    for (let ip = 0; ip < BEND_NPHI; ip++) slope[ir * BEND_NPHI + ip] = (b[c * BEND_NPHI + ip] - b[a * BEND_NPHI + ip]) / ((c - a) * dr)
-  }
-  bendB = b
-  bendSlope = slope
-}
-
-/** Bilinear lookup of the image b(r, Φ) and ∂b/∂r into BEND. */
+/** The image of a particle at radius r. phi in [0, pi] is the near image at angle phi; above pi it is the far image of angle 2 pi - phi. */
 export function bend(r: number, phi: number) {
-  if (!bendB) buildBendTable()
-  const tb = bendB!
-  const ts = bendSlope!
-  let fr = (r - BEND_R0) * ((BEND_NR - 1) / (BEND_R1 - BEND_R0))
-  let fp = phi * ((BEND_NPHI - 1) / TAU)
-  if (fr < 0) fr = 0
-  else if (fr > BEND_NR - 1.001) fr = BEND_NR - 1.001
-  if (fp < 0) fp = 0
-  else if (fp > BEND_NPHI - 1.001) fp = BEND_NPHI - 1.001
-  const ir = fr | 0
-  const ip = fp | 0
-  const ar = fr - ir
-  const ap = fp - ip
-  const k = ir * BEND_NPHI + ip
-  const w00 = (1 - ar) * (1 - ap)
-  const w01 = (1 - ar) * ap
-  const w10 = ar * (1 - ap)
-  const w11 = ar * ap
-  BEND[0] = tb[k] * w00 + tb[k + 1] * w01 + tb[k + BEND_NPHI] * w10 + tb[k + BEND_NPHI + 1] * w11
-  BEND[1] = ts[k] * w00 + ts[k + 1] * w01 + ts[k + BEND_NPHI] * w10 + ts[k + BEND_NPHI + 1] * w11
+  if (phi <= Math.PI) {
+    BEND[0] = near(r, phi)
+    BEND[1] = (near(r + 0.05, phi) - near(r - 0.05, phi)) * 10
+  } else {
+    const e = (1 - Math.cos(phi)) / 2
+    const g = 1 / (1 - FAR_HEAT * e) - FAR_FLOOR
+    const k = Math.min(1, Math.max(0, (r - R_ISCO) / (R_DISK_OUT - R_ISCO)))
+    BEND[0] = R_SHADOW + (FAR_BASE + FAR_REACH * k) * g
+    BEND[1] = (FAR_REACH / (R_DISK_OUT - R_ISCO)) * g
+  }
   return BEND
 }
 
@@ -365,7 +290,6 @@ export class Singularity {
   readonly dPhi = new Float32Array(DISK_MAX)
   private readonly dOmega = new Float32Array(DISK_MAX)
   private readonly dV = new Float32Array(DISK_MAX)
-  private readonly dGamma = new Float32Array(DISK_MAX)
   private readonly dLum = new Float32Array(DISK_MAX)
   private readonly dTemp = new Float32Array(DISK_MAX)
   diskN = 0
@@ -433,10 +357,9 @@ export class Singularity {
       this.dR3[i] = Math.sqrt(r * r + h * h)
       this.dPhi[i] = rng.float() * TAU
       this.dOmega[i] = OMEGA_ISCO * Math.pow(r / R_ISCO, -1.5)
-      // Orbital speed measured by a static observer in Schwarzschild: v = √(M / (r − 2M)), 0.5c at the ISCO.
+      // Orbital speed as a fraction of the speed of light, fastest at the inner edge.
       const v = Math.sqrt(1 / (r - 2))
       this.dV[i] = v
-      this.dGamma[i] = 1 / Math.sqrt(1 - v * v)
       const g = Math.sqrt(1 - 2 / r)
       const t = Math.pow(r / R_ISCO, -0.75)
       const ripple = 0.5 + 0.5 * Math.sin(r * 2.9 + 1.8 * Math.sin(r * 0.71))
@@ -823,9 +746,8 @@ export class Singularity {
       // Approaching (left) side: β_los > 0. The secondary image leaves the particle heading away from the
       // observer before it wraps around the hole, so its line-of-sight speed flips sign.
       const betaLos = -this.dV[i] * c * SIN_I
-      const gam = this.dGamma[i]
-      const delta = 1 / (gam * (1 - betaLos))
-      const deltaBack = 1 / (gam * (1 + betaLos))
+      const delta = 1 / (1 - betaLos)
+      const deltaBack = 1 / (1 + betaLos)
       const lum = this.dLum[i] * bright
 
       // Point flux scales with magnification. A streak's drawn length already carries the tangential
