@@ -7,9 +7,9 @@ RIFT includes code adapted from the projects below. Each is used under its own l
 - Source: https://github.com/erikrjohansson/koi-screensaver
 - Author: Erik Johansson (erikrjohansson)
 - Licence: MIT
-- Used in: `opencode/packages/tui/src/koi/`, the koi pond that fades in behind the home screen after ten quiet seconds.
+- Used in: `opencode/packages/tui/src/koi/`, the koi that swim through a strip of water above the composer while the user types.
 
-What was adapted: how koi swim (wandering, turning back from the banks, keeping apart, bursts of speed, a spine that only bends so far), how a koi is drawn from signed distances (tapering body, fins and tail grown out with soft joins, patches, sheen, eyes), the lily pads, flowers, loose petals and ripples, the koi chase scene with its tail-flick swirls, the intro in which a logo breaks into motes that fly to the koi and build them, and the idea of fitting each terminal cell with the best two colours. The code was ported from Go to TypeScript, redrawn on 2x2 quadrant pixels instead of 2x3 sextants, scaled for terminal cells, and recoloured to RIFT's palette (the canvas, neutral greys and the azure accent). The intro reads RIFT's own banner instead of a wordmark file, and starts from the banner as it is already on the screen.
+What was adapted: a koi's spine that only bends so far, how a koi is drawn from signed distances (tapering body, fins and tail grown out with soft joins, patches, sheen, eyes), the ripples, and the idea of fitting each terminal cell with the best two colours. The code was ported from Go to TypeScript, redrawn on 2x2 quadrant pixels instead of 2x3 sextants, scaled for terminal cells, and recoloured to RIFT's palette (the canvas, neutral greys and the azure accent). RIFT once also adapted the screensaver's wandering koi, lily pads, flowers, petals, chase scene and logo intro for an idle pond on the home screen; that pond has since been replaced and its code removed.
 
 Each adapted file says so at its top.
 

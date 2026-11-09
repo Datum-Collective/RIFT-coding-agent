@@ -1,7 +1,7 @@
 /**
- * The pond's colours, in RIFT's own: the canvas, neutral greys, and the azure accent, and nothing
- * else. Everything in the pond is one flat colour, a "tag", except the water, which is the
- * canvas itself and is only ever lightened by ripples or darkened by shadows.
+ * The koi's colours, in RIFT's own: the canvas, neutral greys, and the azure accent, and nothing
+ * else. Every part of a koi is one flat colour, a "tag", and the water is the canvas itself, only
+ * ever lightened by ripples or darkened by shadows.
  *
  * Adapted from koi-screensaver by Erik Johansson (MIT licence), whose palette is built from the
  * desktop theme's red, yellow, green and magenta. See THIRD_PARTY_NOTICES.md.
@@ -21,18 +21,8 @@ export const Tag = {
   gold: 6,
   /** The light down a metallic koi's back. */
   sheen: 7,
-  // on the surface
-  pad: 8,
-  padRim: 9,
-  padVein: 10,
-  petal: 11,
-  petalInner: 12,
-  stamen: 13,
-  count: 14,
+  count: 8,
 } as const
-
-/** Tags from here up float on the surface, above every koi. */
-export const FIRST_SURFACE = Tag.pad
 
 export type Palette = {
   tags: Rgb[]
@@ -83,17 +73,6 @@ export function riftPalette(input: { background: Rgb; text: Rgb; muted: Rgb; pri
   tags[Tag.orange] = mix(primary, fg, 0.45)
   tags[Tag.gold] = mix(muted, fg, 0.25)
   tags[Tag.sheen] = mix(tags[Tag.gold]!, lightest, dark ? 0.6 : 0.4)
-
-  // The pad is the canvas with a little grey and a little azure washed into it, a thin darker
-  // edge and paler veins.
-  const pad = mix(mix(bg, muted, dark ? 0.22 : 0.3), primary, 0.14)
-  tags[Tag.pad] = pad
-  tags[Tag.padRim] = mix(pad, darkest, 0.22)
-  tags[Tag.padVein] = mix(pad, lightest, 0.2)
-
-  tags[Tag.petal] = mix(primary, lightest, 0.55)
-  tags[Tag.petalInner] = mix(primary, lightest, 0.82)
-  tags[Tag.stamen] = fg
 
   return {
     tags,

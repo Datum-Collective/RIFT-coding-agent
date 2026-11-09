@@ -1,5 +1,5 @@
 /**
- * Small maths helpers the pond leans on.
+ * Small maths helpers the koi lean on.
  *
  * Adapted from koi-screensaver by Erik Johansson (MIT licence). See THIRD_PARTY_NOTICES.md.
  */
