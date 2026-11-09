@@ -54,7 +54,7 @@ export function paintCells(buffer: OptimizedBuffer, cells: readonly Placed[], pa
       eligible.push(cell)
     }
   })
-  for (const cell of eligible) buffer.setCell(cell.col, cell.row, quadrant(cell.mask), colour(cell.fg), colour(cell.bg))
+  for (const cell of eligible) buffer.setCell(cell.col, cell.row, cell.char ?? quadrant(cell.mask), colour(cell.fg), colour(cell.bg))
   const drawn = eligible.length
   eligible.length = 0
   return drawn

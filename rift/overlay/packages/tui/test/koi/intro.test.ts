@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { createPond, type Pond } from "../../src/koi/pond"
-import { isInk, riftLogo } from "../../src/koi/logo"
+import { braille, ditherBanner, DOT_BIT, isInk } from "../../src/koi/logo"
+import { banner } from "../../src/banner"
 import { riftPalette, Tag } from "../../src/koi/palette"
 import { INTRO_HOLD, landing, moteAt, moteColour, revealMask } from "../../src/koi/intro"
 import { JOINTS } from "../../src/koi/koi"
-import type { Rgb } from "../../src/koi/colour"
+import { to8, type Rgb } from "../../src/koi/colour"
+
+const riftLogo = ditherBanner(banner)
 
 const palette = riftPalette({
   background: { r: 0, g: 0, b: 0 },
@@ -35,11 +38,21 @@ const run = (pond: Pond, seconds: number, each: () => void = () => {}) => {
   }
 }
 
-const inkCount = riftLogo.pixels.filter((p) => p && isInk(p)).length
-const backdropCount = riftLogo.pixels.filter((p) => p && !isInk(p)).length
+const dotsIn = (bits: number) => [...bits.toString(2)].filter((bit) => bit === "1").length
+const inkCount = riftLogo.cells.reduce((n, cell) => n + (cell && isInk(cell.colour) ? dotsIn(cell.bits) : 0), 0)
+const backdropCount = riftLogo.cells.filter((cell) => cell && !isInk(cell.colour)).length
+
+/** What the pond draws now in the cell a logo cell is in. */
+function drawnAt(pond: Pond, cell: number) {
+  const { at, cols } = pond.intro!
+  const col = at.col + (cell % cols)
+  const row = at.row + Math.floor(cell / cols)
+  pond.draw()
+  return pond.cells().find((placed) => placed.col === col && placed.row === row)
+}
 
 describe("starting the intro", () => {
-  test("every grey pixel of the logo becomes a mote, and the blue behind them is the backdrop", () => {
+  test("every lit dot of the letters becomes a mote, and the blue cells behind them are the backdrop", () => {
     const pond = withLogo()
     expect(pond.intro).toBeDefined()
     expect(pond.intro!.motes.length).toBe(inkCount)
@@ -72,15 +85,21 @@ describe("starting the intro", () => {
     })
   })
 
-  test("motes begin exactly where the logo's pixels are on the screen", () => {
+  test("each mote begins on a dot of its own in the logo's letters, where the banner draws it", () => {
     const pond = withLogo()
-    const origin = pond.intro!.origin
-    const first = pond.intro!.motes[0]!
-    // A pixel is a cell wide, so two of the pond's pixels, and half a cell tall.
-    const x = Math.round((first.hx - 1 - origin.x) / 2)
-    expect(Number.isInteger((first.hx - 1 - origin.x) / 2)).toBe(true)
-    expect(x).toBeGreaterThanOrEqual(0)
-    expect(x).toBeLessThan(riftLogo.w)
+    const { at, motes } = pond.intro!
+    const seen = new Set<string>()
+    for (const mote of motes) {
+      // A dot is one of the pond's pixels across and half of one down.
+      const x = mote.hx - 0.5 - at.col * 2
+      const y = (mote.hy / pond.aspect - at.row * 2) * 2 - 0.5
+      expect(Number.isInteger(x) && Number.isInteger(y)).toBe(true)
+      const cell = riftLogo.cells[Math.floor(y / 4) * riftLogo.cols + Math.floor(x / 2)]
+      expect(cell !== undefined && isInk(cell.colour)).toBe(true)
+      expect(cell!.bits & DOT_BIT[y % 4]![x % 2]!).not.toBe(0)
+      seen.add(`${x},${y}`)
+    }
+    expect(seen.size).toBe(motes.length)
   })
 
   test("no logo means no intro, and the pond is as it was", () => {
@@ -97,59 +116,39 @@ describe("starting the intro", () => {
 })
 
 describe("the logo on the water", () => {
-  const colourOf = (pond: Pond, x: number, y: number) => pond.colourAt(y * pond.pw + x)
-  const at = (pond: Pond, px: number, py: number) => {
-    const origin = pond.intro!.origin
-    return colourOf(pond, origin.x + px * 2, origin.y + py)
-  }
-
-  test("at the start it is the banner, pixel for pixel, in the banner's own colours", () => {
+  test("at the start the pond draws the logo exactly as the banner does: the same dots, in the same colours", () => {
     const pond = withLogo()
-    pond.draw()
     let checked = 0
-    for (let y = 0; y < riftLogo.h; y++) {
-      for (let x = 0; x < riftLogo.w; x++) {
-        const want = riftLogo.pixels[y * riftLogo.w + x]
-        const got = at(pond, x, y)
-        if (!want) continue
-        expect(got).toBeDefined()
-        expect(Math.abs(got!.r - want.r) + Math.abs(got!.g - want.g) + Math.abs(got!.b - want.b)).toBeLessThan(1e-6)
-        checked++
-      }
-    }
-    expect(checked).toBe(inkCount + backdropCount)
+    riftLogo.cells.forEach((cell, index) => {
+      if (!cell) return
+      const placed = drawnAt(pond, index)
+      expect(placed?.char).toBe(braille(cell.bits))
+      expect(placed?.fg).toEqual(to8(cell.colour))
+      checked++
+    })
+    expect(checked).toBeGreaterThan(600)
   })
 
-  test("the logo's pixels are two of the pond's across, and one down", () => {
+  test("a mote that sets off takes its dot with it, and is drawn in the water where it is now", () => {
     const pond = withLogo()
-    pond.draw()
-    const origin = pond.intro!.origin
-    let y = 0
-    let x = 0
-    outer: for (y = 0; y < riftLogo.h; y++) {
-      for (x = 0; x < riftLogo.w; x++) if (riftLogo.pixels[y * riftLogo.w + x]) break outer
-    }
-    const a = colourOf(pond, origin.x + x * 2, origin.y + y)!
-    const b = colourOf(pond, origin.x + x * 2 + 1, origin.y + y)!
-    expect(a).toEqual(b)
+    const mote = pond.intro!.motes[40]!
+    run(pond, mote.start + mote.dur * 0.3)
+    const left = drawnAt(pond, mote.cell)
+    const bits = left?.char ? left.char.codePointAt(0)! - 0x2800 : 0
+    expect(bits & mote.bit).toBe(0)
+    const now = moteAt(pond, mote)
+    expect(pond.colourAt(Math.floor(now.y / pond.aspect) * pond.pw + Math.floor(now.x))).toBeDefined()
   })
 
   test("the blue backdrop fades away while the logo rests, and the letters stay until they break up", () => {
     const pond = withLogo()
-    const i = (px: number, py: number) => Math.floor(py / pond.aspect) * pond.pw + Math.floor(px)
-    pond.draw()
-    // A bit of backdrop over open water, so only the logo's own drawing is being looked at.
-    const backdrop = pond.intro!.backdrop.find((b) => pond.tag[i(b.hx, b.hy)] === Tag.water && pond.shade[i(b.hx, b.hy)] === Infinity)!
-    expect(backdrop).toBeDefined()
-    expect(pond.colourAt(i(backdrop.hx, backdrop.hy))).toBeDefined()
-    run(pond, INTRO_HOLD - 0.3)
-    pond.draw()
-    const stillThere = pond.colourAt(i(backdrop.hx, backdrop.hy))
-    // By now it is gone, or almost: nothing of the artwork's blue is left to see.
-    expect(stillThere === undefined || stillThere.b - stillThere.r < 8).toBe(true)
+    const backdrop = pond.intro!.backdrop[0]!
+    expect(drawnAt(pond, backdrop.cell)?.char).toBe(braille(backdrop.bits))
+    run(pond, INTRO_HOLD - 0.2)
+    expect(drawnAt(pond, backdrop.cell)?.char).toBeUndefined()
 
     const letter = pond.intro!.motes[0]!
-    expect(pond.colourAt(i(letter.hx, letter.hy))).toBeDefined()
+    expect(drawnAt(pond, letter.cell)?.char).toBeDefined()
   })
 })
 
@@ -180,13 +179,13 @@ describe("the letters become koi", () => {
     expect(Math.hypot(end.x - land.x, end.y - land.y)).toBeLessThan(1e-6)
   })
 
-  test("motes are small and square at first, and about as big as a koi's scales on landing", () => {
+  test("motes set off as one of the pond's pixels, the smallest thing it draws, and are about as big as a koi's scales on landing", () => {
     const pond = withLogo()
     const mote = pond.intro!.motes[40]!
     const before = moteAt(pond, mote)
     run(pond, mote.start + mote.dur + 0.1)
     const after = moteAt(pond, mote)
-    expect(before.hw).toBeCloseTo(pond.intro!.hw, 9)
+    expect([2 * before.hw, 2 * before.hh]).toEqual([1, pond.aspect])
     expect(after.hw).toBeGreaterThan(0.4)
     expect(after.hw).toBeLessThan(2 * pond.size + 1)
   })

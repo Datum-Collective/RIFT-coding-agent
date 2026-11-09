@@ -1,13 +1,15 @@
 /**
- * The home screen's idle mode: after ten seconds without typing, the logo turns into koi in a pond
- * that fades in behind the interface (koi drifting between lily pads, or two koi circling a pad),
- * and the first key or paste sends it away. The mouse does neither: it can be moved, clicked and
- * scrolled while the pond is out and while it is waiting.
+ * The home screen's idle mode: after ten seconds without typing, or at once when the logo is
+ * clicked, the logo turns into koi in a pond that fades in behind the interface (koi drifting
+ * between lily pads, or two koi circling a pad), and the first key or paste sends it away. Nothing
+ * else the mouse does starts or ends it: it can be moved, clicked and scrolled while the pond is
+ * out and while it is waiting.
  *
  * It draws nothing of its own into the layout. While the pond is out, a hook on the finished frame
  * paints it into cells the interface left empty (see `koi/paint`), so text, the composer and
  * panels are never covered. The renderer only runs continuously while the pond is out, and not at
- * all while the terminal is in the background; the rest of the time this costs one timer.
+ * all while the terminal is in the background, where the pond waits to start until the terminal
+ * comes back; the rest of the time this costs one timer.
  *
  * Mount it and it is on; unmount it and it is gone. It is also off for anyone who turned
  * animations off (the /background toggle or the project's `animations` config) or set RIFT_NO_ANIMATION.
@@ -19,9 +21,8 @@ import { useKoiEnabled } from "./koi-enabled"
 import { useTheme } from "../context/theme"
 import { createIdle, isTyping, type Clock } from "../util/idle"
 import { logoAnchor } from "./banner-anchor"
-import { logoFromBanner } from "../koi/logo"
-import { bannerColours } from "../banner"
-import { banner } from "../banner"
+import { ditherBanner } from "../koi/logo"
+import { banner, bannerColours } from "../banner"
 import { koiAccent, riftPalette } from "../koi/palette"
 import { createPond, sceneFor, type Pond, type Scene } from "../koi/pond"
 import { paintCells } from "../koi/paint"
@@ -114,8 +115,8 @@ export function IdleKoi(props: {
     /** The banner is the logo the koi are made from, wherever it is on the screen now. */
     const logoAt = (intro: boolean) => {
       const at = logoAnchor.read()
-      // Drawn over the page it is on, so the shades blend as the terminal blends them.
-      return at ? { logo: logoFromBanner(banner, channels(theme.background.base), bannerColours(channels(theme.hue.accent[400]))), col: at.col, row: at.row, intro } : undefined
+      // The same dots the banner draws, so the pond takes over the logo without a change.
+      return at ? { logo: ditherBanner(banner, bannerColours(channels(theme.hue.accent[400]))), col: at.col, row: at.row, intro } : undefined
     }
 
     const build = (width: number, height: number, intro: boolean) => {
@@ -159,7 +160,9 @@ export function IdleKoi(props: {
     }
 
     const begin = () => {
-      if (broken) return
+      // In the background the pond would be one frame that never moves, and the logo would be
+      // gone: it starts when the terminal comes back instead.
+      if (broken || blurred) return
       const { width, height } = untrack(dimensions)
       // Too small for a pond: stay as it is. If the terminal grows while the user is still away,
       // `fit` starts it then.
@@ -172,7 +175,7 @@ export function IdleKoi(props: {
       }
       shownAt = last = now()
       renderer.addPostProcessFn(draw)
-      if (!blurred) hold()
+      hold()
       // The logo has become the koi: the banner draws nothing while the pond is out.
       logoAnchor.hide(pond.logoAt !== undefined)
     }
@@ -190,6 +193,8 @@ export function IdleKoi(props: {
     }
 
     const idle = createIdle({ delay: props.delay ?? IDLE_MS, onIdle: begin, onWake: end, clock })
+    // A click on the logo starts the pond now. Clicked again while the pond is out, it is idle already.
+    const stopClicks = logoAnchor.onClick(idle.ignite)
 
     /** Makes the pond again at the size the terminal is now, as far into the fade as the last one was. */
     const remake = () => {
@@ -241,6 +246,7 @@ export function IdleKoi(props: {
     const onFocus = () => {
       blurred = false
       if (pond) hold()
+      else if (idle.isIdle()) begin()
     }
     renderer.on("blur", onBlur)
     renderer.on("focus", onFocus)
@@ -248,6 +254,7 @@ export function IdleKoi(props: {
     onCleanup(() => {
       fit = undefined
       refresh = undefined
+      stopClicks()
       idle.dispose()
       end()
       renderer.removeInputHandler(input)

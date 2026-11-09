@@ -1,17 +1,17 @@
 /**
  * The intro: the logo, which is on the screen already, rests a moment while the pond fades in
- * round it and the blue behind the letters fades away. Then each letter breaks into motes that
- * stream over to a koi, body, fins and tail. Where each mote lands, the koi grows out from under it
- * in the same colour while the mote melts into it, so the koi is built up from the letters' pieces,
- * and swims away.
+ * round it and the blue behind the letters fades away. Then each letter breaks up, dot by dot,
+ * into motes that stream over to a koi, body, fins and tail. Where each mote lands, the koi grows
+ * out from under it in the same colour while the mote melts into it, so the koi is built up from
+ * the letters' pieces, and swims away.
  *
  * Adapted from koi-screensaver by Erik Johansson (MIT licence), whose wordmark is painted on to the
  * water first; here the logo is already there. See THIRD_PARTY_NOTICES.md.
  */
 import { clamp, mix, type Rgb } from "./colour"
 import { JOINTS, RADII, SEG, type Koi, type Pt } from "./koi"
-import { inkMask, letters, shareOut } from "./letters"
-import { isInk, type Logo } from "./logo"
+import { inkMask, letters, shareOut, type Lpx } from "./letters"
+import { DOT_BIT, isInk, type Logo } from "./logo"
 import { smooth } from "./math"
 import { Tag } from "./palette"
 import type { Pond } from "./pond"
@@ -49,15 +49,14 @@ export const RELEASE_EASE = 2.2
 const BACKDROP_FROM = 0.9
 const BACKDROP_FOR = 1.3
 
-/** A logo pixel is a cell wide and half a cell tall: this many pond pixels across and down. */
-const ACROSS = 2
-const DOWN = 1
-
-/** One pixel of a letter, on its way to a point on a koi. */
+/** One dot of a letter, on its way to a point on a koi. */
 export type Mote = {
   /** Its place in the logo. */
   hx: number
   hy: number
+  /** The logo cell it is a dot of, and which of the cell's dots. */
+  cell: number
+  bit: number
   /** The koi it becomes part of. */
   k: number
   /** The joint it flows to, how far on towards the next one (0 to 1), and how far across the body there (-1 to 1). */
@@ -79,18 +78,25 @@ export type Mote = {
   curl: number
 }
 
-/** A pixel of the artwork behind the letters. */
-export type Backdrop = { hx: number; hy: number; color: Rgb }
+/** A cell of the artwork behind the letters: its dots and their colour. */
+export type Backdrop = { cell: number; bits: number; color: Rgb }
 
 export type Intro = {
   t: number
-  /** Half a logo pixel, across and down, in world units. */
+  /** Half a mote as it sets off, across and down, in world units. */
   hw: number
   hh: number
-  /** Where the logo's top left pixel is, in the pond's pixels. */
-  origin: { x: number; y: number }
+  /** The cell the logo's top left corner is in, and the logo's size in cells. */
+  at: { col: number; row: number }
+  cols: number
+  rows: number
   motes: Mote[]
   backdrop: Backdrop[]
+  /**
+   * The dots of each logo cell that have not set off yet, with their colour and opacity, as the
+   * intro was last drawn. They are drawn as dots, the way the banner draws them.
+   */
+  rest: { bits: Uint8Array; colour: Rgb[]; alpha: Float32Array }
   /** When each koi starts to swim. */
   release: number[]
   /** Where each koi's letters were. */
@@ -129,21 +135,30 @@ function bodyPoint(k: Koi, n: number, f: number, u: number, size: number): Pt {
 export const logoFits = (p: Pond, logo: Logo, at: { col: number; row: number }) =>
   at.col >= 0 && at.row >= 0 && at.col + logo.cols <= p.cols && at.row + logo.rows <= p.rows
 
+/** The lit dots of a logo cell, each where it is in the logo: two dots across a cell and four down. */
+function dotsIn(logo: Logo, col: number, row: number): Lpx[] {
+  const bits = logo.cells[row * logo.cols + col]?.bits ?? 0
+  const dots: Lpx[] = []
+  for (let y = 0; y < 4; y++) for (let x = 0; x < 2; x++) if (bits & DOT_BIT[y]![x]!) dots.push({ x: col * 2 + x, y: row * 4 + y })
+  return dots
+}
+
 /**
  * Lays the logo's letters over a pond and hides each koi inside its letters, to be gathered up out
  * of them. Does nothing if the logo has no letters or does not fit on the pond.
  */
 export function startIntro(p: Pond, logo: Logo, at: { col: number; row: number }) {
   if (!logoFits(p, logo, at)) return
-  const mask = inkMask(logo)
-  const ls = letters(mask, logo.w, logo.h)
+  // The letters are found among the cells; each is then the dots lit in its cells.
+  const ls = letters(inkMask(logo), logo.cols, logo.rows).map((cells) => cells.flatMap((q) => dotsIn(logo, q.x, q.y)))
   if (ls.length === 0) return
 
-  const hw = ACROSS / 2
-  const hh = (DOWN * p.aspect) / 2
-  const origin = { x: at.col * 2, y: at.row * 2 }
-  const home = (q: { x: number; y: number }): Pt => ({ x: origin.x + q.x * ACROSS + hw, y: (origin.y + q.y * DOWN) * p.aspect + hh })
-  const colourOf = (q: { x: number; y: number }) => logo.pixels[q.y * logo.w + q.x]!
+  // A dot is one of the pond's pixels across and half of one down. It sets off as a whole pixel,
+  // the smallest thing the pond can draw.
+  const hw = 0.5
+  const hh = p.aspect / 2
+  const home = (q: Lpx): Pt => ({ x: at.col * 2 + q.x + 0.5, y: (at.row * 2 + (q.y + 0.5) / 2) * p.aspect })
+  const cellOf = (q: Lpx) => Math.floor(q.y / 4) * logo.cols + Math.floor(q.x / 2)
 
   const groups = shareOut(ls, p.koi.length)
   const n = groups.length
@@ -151,9 +166,12 @@ export function startIntro(p: Pond, logo: Logo, at: { col: number; row: number }
     t: 0,
     hw,
     hh,
-    origin,
+    at,
+    cols: logo.cols,
+    rows: logo.rows,
     motes: [],
     backdrop: [],
+    rest: { bits: new Uint8Array(logo.cells.length), colour: new Array<Rgb>(logo.cells.length), alpha: new Float32Array(logo.cells.length) },
     release: new Array<number>(n).fill(0),
     centre: Array.from({ length: n }, () => ({ x: 0, y: 0 })),
     splashed: new Array<boolean>(n).fill(false),
@@ -164,14 +182,9 @@ export function startIntro(p: Pond, logo: Logo, at: { col: number; row: number }
   }
 
   // The artwork behind the letters: drawn as it is, then faded away.
-  for (let y = 0; y < logo.h; y++) {
-    for (let x = 0; x < logo.w; x++) {
-      const colour = logo.pixels[y * logo.w + x]
-      if (!colour || isInk(colour)) continue
-      const h = home({ x, y })
-      intro.backdrop.push({ hx: h.x, hy: h.y, color: colour })
-    }
-  }
+  logo.cells.forEach((cell, index) => {
+    if (cell && !isInk(cell.colour)) intro.backdrop.push({ cell: index, bits: cell.bits, color: cell.colour })
+  })
 
   const cum: number[] = []
   let total = 0
@@ -258,9 +271,12 @@ export function startIntro(p: Pond, logo: Logo, at: { col: number; row: number }
         const h = home(q)
         const target = t[index]!
         const tag = target.fin > 0 ? k.pat.body : tagAt(k, target.j, target.u)
+        const cell = cellOf(q)
         const mote: Mote = {
           hx: h.x,
           hy: h.y,
+          cell,
+          bit: DOT_BIT[q.y % 4]![q.x % 2]!,
           k: i,
           n: target.j,
           f: target.f,
@@ -269,7 +285,7 @@ export function startIntro(p: Pond, logo: Logo, at: { col: number; row: number }
           ft: target.ft,
           fo: target.fo,
           tag,
-          color: colourOf(q),
+          color: logo.cells[cell]!.colour,
           start: start + (SPREAD * band) / bands + 0.3 * p.rng.float(),
           dur: FLIGHT + FLIGHT_EXTRA * p.rng.float(),
           curl: curl * (0.7 + 0.6 * p.rng.float()),
@@ -380,14 +396,15 @@ export function moteAt(p: Pond, m: Mote) {
 }
 
 /**
- * Everything about how a mote looks now, worked out once: where it is, how big, its colour (its own
- * in the logo, turning into its koi's colour as it flies) and how opaque (fully, until it lands,
- * then it melts into the koi growing out from under it).
+ * Everything about how a mote looks now, worked out once: whether it is still a dot of the logo,
+ * where it is, how big, its colour (its own in the logo, turning into its koi's colour as it flies)
+ * and how opaque (fully, until it lands, then it melts into the koi growing out from under it).
  */
 export function moteLook(p: Pond, m: Mote) {
   const at = moteAt(p, m)
-  if (at.progress === 0) return { x: at.x, y: at.y, hw: at.hw, hh: at.hh, colour: m.color, alpha: 1 }
+  if (at.progress === 0) return { resting: true, x: at.x, y: at.y, hw: at.hw, hh: at.hh, colour: m.color, alpha: 1 }
   return {
+    resting: false,
     x: at.x,
     y: at.y,
     hw: at.hw,
@@ -439,16 +456,40 @@ export function revealMask(p: Pond, i: number, s: KoiShape): Uint8Array | undefi
   return mask
 }
 
-/** Draws the logo's backdrop and the motes over the finished pond. */
+/**
+ * Draws the motes in flight over the finished pond, and works out the dots of the logo still at
+ * rest, the backdrop's fading as it goes, for the pond to draw as dots.
+ */
 export function drawIntro(p: Pond) {
   const intro = p.intro!
+  const { bits, colour, alpha } = intro.rest
+  bits.fill(0)
   const fade = backdropAlpha(intro)
   if (fade > 0) {
-    for (const b of intro.backdrop) p.rect(b.hx, b.hy, intro.hw, intro.hh, (i) => p.composite(i, b.color, fade))
+    for (const b of intro.backdrop) {
+      bits[b.cell] = b.bits
+      colour[b.cell] = b.color
+      alpha[b.cell] = fade
+    }
   }
   for (const m of intro.motes) {
     const look = moteLook(p, m)
     if (look.alpha <= 0) continue
+    if (look.resting) {
+      bits[m.cell] = bits[m.cell]! | m.bit
+      colour[m.cell] = m.color
+      alpha[m.cell] = 1
+      continue
+    }
     p.rect(look.x, look.y, look.hw, look.hh, (i) => p.composite(i, look.colour, look.alpha))
   }
+}
+
+/** Which logo cell is at this cell of the pond, if any of its dots are at rest; otherwise -1. */
+export function restingAt(intro: Intro, col: number, row: number) {
+  const x = col - intro.at.col
+  const y = row - intro.at.row
+  if (x < 0 || y < 0 || x >= intro.cols || y >= intro.rows) return -1
+  const index = y * intro.cols + x
+  return intro.rest.bits[index] ? index : -1
 }

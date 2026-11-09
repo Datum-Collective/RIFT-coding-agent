@@ -8,15 +8,16 @@
 import path from "path"
 import { TextAttributes } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
-import { createMemo, createSignal, For, Match, Switch, type JSX } from "solid-js"
+import { createMemo, createSignal, Match, Switch, type JSX } from "solid-js"
 import { BANNER_WIDTH, banner } from "../banner"
 import { useTheme } from "../context/theme"
 import { useLocation } from "../context/location"
 import { useData } from "../context/data"
 import { Locale } from "../util/locale"
-import { Banner } from "./banner"
+import { dither } from "../koi/logo"
+import { Banner, Dots } from "./banner"
 
-/** RIFT in half blocks, for a terminal too narrow or short for the banner. */
+/** RIFT in half blocks, for a terminal too narrow or short for the banner. It is shown as dots, like the banner. */
 export const WORDMARK = ["█▀▀▄ █ █▀▀▀ ▀▀█▀▀", "█▀█  █ █▀▀    █  ", "█  █ █ █      █  "]
 
 export type LandingDetail = "full" | "banner" | "wordmark" | "heading" | "none"
@@ -46,6 +47,10 @@ export function Landing(props: { onWidth?: (width: number) => void; children?: J
   const location = useLocation()
   const data = useData()
   const detail = createMemo(() => landingDetail(rows(), dimensions().width))
+  const wordmark = createMemo(() => {
+    const accent = theme.hue.accent[400]
+    return dither(WORDMARK.map((row) => [{ text: row, fg: { r: accent.r * 255, g: accent.g * 255, b: accent.b * 255 } }]))
+  })
   const project = createMemo(() => {
     const directory = (location.ref ?? data.location.default())?.directory
     const name = directory ? path.basename(directory) : ""
@@ -91,13 +96,7 @@ export function Landing(props: { onWidth?: (width: number) => void; children?: J
             <box height={1} flexShrink={0} />
           </Match>
           <Match when={detail() === "wordmark"}>
-            <For each={WORDMARK}>
-              {(row) => (
-                <text fg={theme.hue.accent[400]} selectable={false} wrapMode="none">
-                  {row}
-                </text>
-              )}
-            </For>
+            <Dots logo={wordmark()} />
             <box height={1} flexShrink={0} />
           </Match>
         </Switch>

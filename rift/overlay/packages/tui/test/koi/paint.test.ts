@@ -38,6 +38,13 @@ describe("paintCells", () => {
     expect(charAt(buffer, 4, 1)).toBe(" ")
   })
 
+  test("a cell with a glyph of its own, the logo's dots at rest, is drawn with that glyph in its colours", () => {
+    const buffer = screen()
+    expect(paintCells(buffer, [{ ...cell(3, 1, 0, [170, 170, 170], [0, 0, 0]), char: "⣿" }])).toBe(1)
+    expect(charAt(buffer, 3, 1)).toBe("⣿")
+    expect(word(buffer.withBuffers((cells) => cells.fg.slice()), buffer, 3, 1)).toEqual([170, 170, 170])
+  })
+
   test("goes behind text: a cell that already has a character is left alone", () => {
     const buffer = screen()
     buffer.setCell(3, 1, "X", WHITE, PAGE)

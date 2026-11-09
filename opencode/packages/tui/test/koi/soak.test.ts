@@ -3,7 +3,8 @@ import { OptimizedBuffer, RGBA, ResourceContext } from "@opentui/core"
 import { createPond, type Scene } from "../../src/koi/pond"
 import { paintCells } from "../../src/koi/paint"
 import { riftPalette } from "../../src/koi/palette"
-import { riftLogo } from "../../src/koi/logo"
+import { banner } from "../../src/banner"
+import { ditherBanner } from "../../src/koi/logo"
 import { stirStream } from "../../src/koi/stream"
 
 const palette = riftPalette({
@@ -93,14 +94,12 @@ describe("a long idle", () => {
   test("the intro, the logo breaking into koi, costs about the same as swimming, all the way through", () => {
     const col = 34
     const row = 8
-    const pond = createPond({ cols: 140, rows: 40, aspect: 2, palette, seed: 4, scene: "pond", logo: { logo: riftLogo, col, row } })
+    const pond = createPond({ cols: 140, rows: 40, aspect: 2, palette, seed: 4, scene: "pond", logo: { logo: ditherBanner(banner), col, row } })
     const buffer = OptimizedBuffer.create(140, 40, "wcwidth", { respectAlpha: true, owner: new ResourceContext({ objectCapacity: 8, renderCellsMax: 100_000 }) })
-    const white = RGBA.fromValues(1, 1, 1, 1)
     let frames = 0
     const started = cpu()
     while (pond.intro && frames < 60 * 40) {
       buffer.clear(RGBA.fromInts(0, 0, 0, 255))
-      riftLogo.glyphs.forEach((line, y) => buffer.drawText(line, col, row + y, white))
       pond.fade = Math.min(1, frames / 180)
       pond.step(1 / 60)
       pond.draw()

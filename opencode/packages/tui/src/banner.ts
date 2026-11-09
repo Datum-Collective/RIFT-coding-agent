@@ -1,5 +1,5 @@
 /**
- * The RIFT banner shown on the home screen.
+ * The art of the RIFT banner. The home screen shows it as dots (see `koi/logo.ts`).
  *
  * Generated from the source art, which is a fixed-palette pixel drawing: the five inks and two
  * fills below are the artwork's own colours and are reproduced exactly. Mapping them onto theme

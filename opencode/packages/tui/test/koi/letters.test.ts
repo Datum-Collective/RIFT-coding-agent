@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { inkMask, letters, shareOut, type Lpx } from "../../src/koi/letters"
-import { riftLogo } from "../../src/koi/logo"
+import { banner } from "../../src/banner"
+import { ditherBanner } from "../../src/koi/logo"
 
 /** Draws a bitmap from rows of text: anything but a space is a pixel. */
 function bits(...rows: string[]) {
@@ -51,12 +52,13 @@ describe("letters", () => {
     expect(letters([false, false, false, false], 2, 2)).toEqual([])
   })
 
-  test("RIFT's logo comes out as a few letters, every grey pixel in one, left to right", () => {
-    const mask = inkMask(riftLogo)
-    const found = letters(mask, riftLogo.w, riftLogo.h)
+  test("RIFT's logo comes out as a few letters, every grey cell in one, left to right", () => {
+    const logo = ditherBanner(banner)
+    const mask = inkMask(logo)
+    const found = letters(mask, logo.cols, logo.rows)
     expect(found.length).toBeGreaterThanOrEqual(1)
     expect(found.length).toBeLessThanOrEqual(8)
-    const expected = mask.flatMap((on, i) => (on ? [`${i % riftLogo.w},${Math.floor(i / riftLogo.w)}`] : [])).sort()
+    const expected = mask.flatMap((on, i) => (on ? [`${i % logo.cols},${Math.floor(i / logo.cols)}`] : [])).sort()
     expect(flat(found)).toEqual(expected)
     const lefts = found.map((part) => Math.min(...part.map((q) => q.x)))
     expect(lefts).toEqual([...lefts].sort((a, b) => a - b))

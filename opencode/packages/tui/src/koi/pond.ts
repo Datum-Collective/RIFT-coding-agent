@@ -8,8 +8,8 @@
  */
 import { clamp, lum, mix, to8, type Rgb } from "./colour"
 import { fit, type Fitted } from "./fit"
-import { drawIntro, logoFits, revealMask, startIntro, stepIntro, type Intro } from "./intro"
-import type { Logo } from "./logo"
+import { drawIntro, logoFits, restingAt, revealMask, startIntro, stepIntro, type Intro } from "./intro"
+import { braille, type Logo } from "./logo"
 import { PATTERNS, newKoi, swim, type Habitat, type Koi } from "./koi"
 import { remainder, smooth } from "./math"
 import { FIRST_SURFACE, Tag, type Palette } from "./palette"
@@ -18,8 +18,11 @@ import { random, type Random } from "./random"
 import { shapeKoi, type KoiShape } from "./shape"
 import { setupStream, stepStream, streamSwim, type StreamState } from "./stream"
 
-/** A cell of the finished picture, and where it goes. */
-export type Placed = Fitted & { col: number; row: number }
+/**
+ * A cell of the finished picture, and where it goes. `char` is a glyph of its own in place of the
+ * quadrant: the logo's dots, while they rest in it.
+ */
+export type Placed = Fitted & { col: number; row: number; char?: string }
 
 /** How finely a ripple's height is tabled, in world units. */
 const RING_STEP = 0.05
@@ -579,7 +582,8 @@ export class Pond implements Habitat {
 
   /**
    * The terminal cells the drawn scene comes to: each a quadrant glyph with a foreground and a
-   * background. Cells with nothing in them, which is most of the pond, are left out.
+   * background, or the logo's dots that are still at rest over what the pond has under them. Cells
+   * with nothing in them, which is most of the pond, are left out.
    */
   cells(): Placed[] {
     const out: Placed[] = []
@@ -594,6 +598,18 @@ export class Pond implements Habitat {
         const c1 = this.colourAt(i0 + 1)
         const c2 = this.colourAt(i0 + pw)
         const c3 = this.colourAt(i0 + pw + 1)
+        const dots = this.intro ? restingAt(this.intro, col, row) : -1
+        if (dots >= 0) {
+          const rest = this.intro!.rest
+          const under = {
+            r: ((c0 ?? bg).r + (c1 ?? bg).r + (c2 ?? bg).r + (c3 ?? bg).r) / 4,
+            g: ((c0 ?? bg).g + (c1 ?? bg).g + (c2 ?? bg).g + (c3 ?? bg).g) / 4,
+            b: ((c0 ?? bg).b + (c1 ?? bg).b + (c2 ?? bg).b + (c3 ?? bg).b) / 4,
+          }
+          const ink = to8(mix(under, rest.colour[dots]!, rest.alpha[dots]!))
+          out.push({ col, row, mask: 0, char: braille(rest.bits[dots]!), fg: ink, bg: to8(under) })
+          continue
+        }
         if (!c0 && !c1 && !c2 && !c3) continue
         px[0] = c0 ?? bg
         px[1] = c1 ?? bg
