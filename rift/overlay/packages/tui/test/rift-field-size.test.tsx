@@ -198,7 +198,7 @@ test("home has no row of its own under the composer: the version lives in the co
   await setup.ready
   await settled(setup, ready)
   const lines = setup.captureCharFrame().trimEnd().split("\n")
-  expect(lines.filter((line) => line.includes("test"))).toHaveLength(1)
+  expect(lines.filter((line) => /\btest\b/.test(line))).toHaveLength(1)
   expect(lines.at(-1)).toContain("ctrl+p commands  test")
 })
 
