@@ -1,0 +1,86 @@
+# Where the app names itself to the user, it says RIFT. Applied by rift/rebrand.py after rift/patches.
+# One rule per line: <path under opencode/> :: <exact find text> => <replacement>
+# A rule replaces every occurrence of its find text in that one file, and must match at least once.
+# Kept on purpose: identifiers, OpenCode Zen/Go/Console product names, the "opencode" provider's display name,
+# the winget id Anomaly.OpenCode, comments, and log-only messages.
+
+# Terminal title, full TUI
+packages/tui/src/app.tsx :: setTerminalTitle(renderer, "OpenCode") => setTerminalTitle(renderer, "RIFT")
+packages/tui/src/app.tsx :: setTerminalTitle(renderer, `OC | => setTerminalTitle(renderer, `RIFT |
+
+# Terminal title, mini
+packages/tui/src/mini/runtime.lifecycle.ts :: setTerminalTitle(renderer, "OpenCode") => setTerminalTitle(renderer, "RIFT")
+packages/tui/src/mini/runtime.lifecycle.ts :: setTerminalTitle(renderer, `OC | => setTerminalTitle(renderer, `RIFT |
+
+# Desktop notification title
+packages/tui/src/attention.ts :: const DEFAULT_TITLE = "OpenCode" => const DEFAULT_TITLE = "RIFT"
+
+# Command palette
+packages/tui/src/app.tsx :: title: "Update OpenCode" => title: "Update RIFT"
+
+# Update dialog
+packages/tui/src/component/dialog-update.tsx :: "Updating OpenCode" => "Updating RIFT"
+packages/tui/src/component/dialog-update.tsx :: prompted to restart OpenCode. => prompted to restart RIFT.
+packages/tui/src/component/dialog-update.tsx :: `Installing OpenCode ${ => `Installing RIFT ${
+packages/tui/src/component/dialog-update.tsx :: Restart closes OpenCode, then run opencode to => Restart closes RIFT, then run rift to
+packages/tui/src/component/dialog-update.tsx :: OpenCode is already up to date. => RIFT is already up to date.
+
+# Crash screen and the bug report it pre-fills
+packages/tui/src/component/error-component.tsx :: OpenCode crashed => RIFT crashed
+packages/tui/src/component/error-component.tsx :: >OpenCode {app.version}< => >RIFT {app.version}<
+packages/tui/src/component/error-component.tsx :: from the OpenCode crash screen => from the RIFT crash screen
+packages/tui/src/component/error-component.tsx :: The OpenCode TUI crashed => The RIFT TUI crashed
+
+# Permission prompts
+packages/tui/src/routes/session/permission.tsx :: Tell OpenCode what to do differently => Tell RIFT what to do differently
+packages/tui/src/mini/footer.permission.tsx :: Tell OpenCode what to do differently => Tell RIFT what to do differently
+
+# Mini slash command
+packages/tui/src/mini/footer.prompt.tsx :: description: "close OpenCode" => description: "close RIFT"
+
+# TUI config descriptions
+packages/tui/src/config/index.tsx :: once after OpenCode updates => once after RIFT updates
+
+# Persistent terminal pane
+packages/tui/src/component/terminal-pane.tsx :: out of date; restart OpenCode" => out of date; restart RIFT"
+
+# Sidebar footer
+packages/tui/src/feature-plugins/sidebar/footer.tsx :: >OpenCode includes free models => >RIFT includes free models
+
+# CLI help
+packages/cli/src/commands/commands.ts :: "OpenCode command line interface" => "RIFT command line interface"
+packages/cli/src/commands/commands.ts :: "Directory to start OpenCode in" => "Directory to start RIFT in"
+packages/cli/src/commands/commands.ts :: "Upgrade OpenCode to the latest => "Upgrade RIFT to the latest
+packages/cli/src/commands/commands.ts :: "Uninstall OpenCode, keeping => "Uninstall RIFT, keeping
+packages/cli/src/commands/commands.ts :: "Run OpenCode with a message" => "Run RIFT with a message"
+
+# rift upgrade
+packages/cli/src/commands/handlers/upgrade.ts :: how to upgrade OpenCode. => how to upgrade RIFT.
+packages/cli/src/commands/handlers/upgrade.ts :: `OpenCode upgrade skipped: => `RIFT upgrade skipped:
+
+# rift uninstall
+packages/cli/src/commands/handlers/uninstall.ts :: intro("Uninstall OpenCode") => intro("Uninstall RIFT")
+packages/cli/src/commands/handlers/uninstall.ts :: (shared by OpenCode versions and channels) => (shared by RIFT versions and channels)
+
+# Updater errors and install names
+packages/cli/src/services/updater.ts :: The OpenCode installer => The RIFT installer
+packages/cli/src/services/updater.ts :: the OpenCode installer => the RIFT installer
+packages/cli/src/services/updater.ts :: required to update OpenCode" => required to update RIFT"
+packages/cli/src/services/updater.ts :: check for OpenCode updates => check for RIFT updates
+packages/cli/src/services/updater.ts :: read the OpenCode update information => read the RIFT update information
+packages/cli/src/services/updater.ts :: could not install OpenCode` => could not install RIFT`
+packages/cli/src/services/updater.ts :: prepare the OpenCode upgrade => prepare the RIFT upgrade
+packages/cli/src/services/updater.ts :: Use an installed OpenCode release => Use an installed RIFT release
+
+# Update preflight screen
+packages/cli/src/services/update-preflight.tsx :: "Loading OpenCode" => "Loading RIFT"
+packages/cli/src/services/update-preflight.tsx :: ["OpenCode", colors.muted, true] => ["RIFT", colors.muted, true]
+packages/cli/src/commands/handlers/default.ts :: "OpenCode update could not start => "RIFT update could not start
+
+# rift pair --remote warning
+packages/cli/src/commands/handlers/pair.ts :: "This will expose your OpenCode server => "This will expose your RIFT server
+
+# ACP, as editors show it
+packages/cli/src/acp/service.ts :: agentInfo: { name: "OpenCode", => agentInfo: { name: "RIFT",
+packages/cli/src/acp/translate.ts :: "OpenCode prompt failed" => "RIFT prompt failed"
+packages/cli/src/acp/error.ts :: "OpenCode server is unavailable" => "RIFT server is unavailable"
