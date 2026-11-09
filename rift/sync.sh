@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Rebuilds opencode/ from an upstream release: the release, then rift/overlay, then rift/patches.
+# Rebuilds opencode/ from an upstream release: the release, then rift/overlay, then rift/patches, then rift/rebrand.txt.
 # opencode/ is generated. Change RIFT in rift/, never in opencode/.
 #
 # usage: rift/sync.sh [version]     version defaults to rift/upstream.json
-# exit:  0 done, 2 a patch did not apply, 3 an overlay file collides with an upstream file
+# exit:  0 done, 2 a patch did not apply, 3 an overlay file collides with an upstream file,
+#        5 a rift/rebrand.txt rule no longer matches upstream
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 cd "$root"
@@ -49,6 +50,11 @@ done
 if [ ${#failed[@]} -gt 0 ]; then
   printf 'did not apply: %s\n' "${failed[@]}" >&2
   exit 2
+fi
+
+if ! python3 rift/rebrand.py; then
+  echo "a rift/rebrand.txt rule no longer matches upstream; restate it against upstream's new wording" >&2
+  exit 5
 fi
 
 python3 - "$version" <<'PY'

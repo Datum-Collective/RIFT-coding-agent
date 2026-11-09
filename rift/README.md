@@ -5,6 +5,8 @@
 - `overlay/`: files only RIFT has, laid over `opencode/` at the same paths. New RIFT work goes here.
 - `patches/`: the few edits to upstream's own files, one concern each. Keep them small. Every line here is a line
   an upstream release can conflict with, so prefer a plugin hook or an overlay file.
+- `rebrand.txt`: the strings where the app names itself to the user, rewritten to RIFT by `rebrand.py` after the
+  patches. A rule that matches nothing fails the sync, so upstream rewording cannot quietly bring "OpenCode" back.
 - `upstream.json`: the release `opencode/` was built from.
 - `regress.py`: run by the gate. Compares upstream's full suites on the pristine release and on RIFT.
 - `known-differences.txt`: upstream tests RIFT fails on purpose, each with a reason. Reviewed by hand; the repair agent may not change it.
