@@ -2,7 +2,7 @@
 
 Release notes for RIFT versions, newest first. Entries for v0.1.10 to v0.1.13 are only on the Releases page. Full notes and downloads: https://github.com/Datum-Collective/RIFT-coding-agent/releases
 
-## v0.7.0 (2026-11-09)
+## v0.7.0 (2026-11-10)
 
 Not all those who wander are lost. RIFT gets a new face: a dotted logo that opens into a black hole when you click it, a long input bar that keeps its place, and the free model working again. Built on OpenCode v2.2.6. Full notes: https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v0.7.0
 
