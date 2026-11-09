@@ -103,9 +103,10 @@ export function IdleSingularity(props: {
     const roomFor = (width: number, height: number) => width >= MIN_COLS && height >= MIN_ROWS
 
     /** The banner is the logo the hole tears apart, wherever it is on the screen now, in the same dots it draws. */
+    const colours = () => bannerColours(channels(theme.hue.accent[400]))
     const logoAt = () => {
       const at = logoAnchor.read()
-      return at ? { logo: ditherBanner(banner, bannerColours(channels(theme.hue.accent[400]))), col: at.col, row: at.row } : undefined
+      return at ? { logo: ditherBanner(banner, colours()), col: at.col, row: at.row } : undefined
     }
 
     /** A theme with a see-through background has no colour to name, so the painter reads the page off the screen instead. */
@@ -154,7 +155,7 @@ export function IdleSingularity(props: {
       // Called again while the last one is still fading out, it starts over from the logo.
       const running = scene !== undefined
       try {
-        scene = createSingularity({ cols: width, rows: height, seed: props.seed ?? Date.now() % 1_000_000, logo: logoAt(), ink: ink() })
+        scene = createSingularity({ cols: width, rows: height, seed: props.seed ?? Date.now() % 1_000_000, logo: logoAt(), ink: ink(), colours: colours() })
       } catch (error) {
         return fail(error)
       }
@@ -193,6 +194,7 @@ export function IdleSingularity(props: {
       try {
         scene.place(width, height, logoAt())
         scene.ink = ink()
+        scene.recolour(colours())
       } catch (error) {
         return fail(error)
       }

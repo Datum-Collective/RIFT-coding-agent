@@ -8,7 +8,7 @@
 import path from "path"
 import { TextAttributes } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
-import { createMemo, createSignal, Match, Switch, type JSX } from "solid-js"
+import { createMemo, createSignal, Match, Show, Switch, type JSX } from "solid-js"
 import { BANNER_WIDTH, banner } from "../banner"
 import { useTheme } from "../context/theme"
 import { useLocation } from "../context/location"
@@ -16,6 +16,7 @@ import { useData } from "../context/data"
 import { Locale } from "../util/locale"
 import { dither } from "../koi/logo"
 import { Banner, Dots } from "./banner"
+import { logoAnchor } from "./banner-anchor"
 
 /** RIFT in half blocks, for a terminal too narrow or short for the banner. It is shown as dots, like the banner. */
 export const WORDMARK = ["█▀▀▄ █ █▀▀▀ ▀▀█▀▀", "█▀█  █ █▀▀    █  ", "█  █ █ █      █  "]
@@ -57,12 +58,21 @@ export function Landing(props: { onWidth?: (width: number) => void; children?: J
     return name ? Locale.truncate(name, Math.max(8, dimensions().width - 30)) : undefined
   })
 
+  const question = () => (project() ? `What should change in ${project()}?` : "What should change?")
+  const PROMISE = "RIFT makes the change, then runs your checks to prove it."
+
+  /** While the black hole is out the words are gone, and an empty box the size of the words keeps everything where it was. */
   const heading = () => (
-    <text fg={theme.text.base} attributes={TextAttributes.BOLD} wrapMode="none" flexShrink={0}>
-      {project() ? "What should change in " : "What should change?"}
-      {project() ? <span style={{ fg: theme.hue.accent[400] }}>{project()}</span> : undefined}
-      {project() ? "?" : undefined}
-    </text>
+    <Show
+      when={!logoAnchor.hidden()}
+      fallback={<box width={question().length} height={1} flexShrink={0} />}
+    >
+      <text fg={theme.text.base} attributes={TextAttributes.BOLD} wrapMode="none" flexShrink={0}>
+        {project() ? "What should change in " : "What should change?"}
+        {project() ? <span style={{ fg: theme.hue.accent[400] }}>{project()}</span> : undefined}
+        {project() ? "?" : undefined}
+      </text>
+    </Show>
   )
 
   return (
@@ -102,9 +112,11 @@ export function Landing(props: { onWidth?: (width: number) => void; children?: J
         </Switch>
         {detail() === "none" ? null : heading()}
         {detail() === "full" ? (
-          <text fg={theme.text.muted} wrapMode="none" flexShrink={0}>
-            RIFT makes the change, then runs your checks to prove it.
-          </text>
+          <Show when={!logoAnchor.hidden()} fallback={<box width={PROMISE.length} height={1} flexShrink={0} />}>
+            <text fg={theme.text.muted} wrapMode="none" flexShrink={0}>
+              {PROMISE}
+            </text>
+          </Show>
         ) : null}
       </box>
       {props.children}
