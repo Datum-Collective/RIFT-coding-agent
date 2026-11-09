@@ -24,7 +24,7 @@ function logo(app: App, at?: { col: number; row: number }) {
  */
 function opened(app: App) {
   const lines = app.captureCharFrame().split("\n")
-  return lines.slice(16, 20).every((line) => [...line].slice(56, 64).join("").trim() === "")
+  return lines.slice(17, 20).every((line) => [...line].slice(56, 64).join("").trim() === "")
 }
 
 async function home(animations: boolean) {
@@ -99,6 +99,22 @@ test("the mouse alone does not send the hole away; a key does, the logo comes ba
   await until(app, () => logo(app, before.at).rows.join("\n") === before.rows.join("\n"))
   await app.renderOnce()
   expect(app.renderer.liveRequestCount).toBe(0)
+}, 30000)
+
+test("while the hole is out the question and its promise are gone, and a key brings them back", async () => {
+  await using app = await home(true)
+  const before = logo(app)
+  expect(app.captureCharFrame()).toContain("RIFT makes the change")
+  await app.mockMouse.click(before.at.col + 20, before.at.row + 5)
+  await until(app, () => opened(app))
+  expect(app.captureCharFrame()).not.toContain("What should change")
+  expect(app.captureCharFrame()).not.toContain("RIFT makes the change")
+
+  app.mockInput.pressEscape()
+  await until(app, () => logo(app, before.at).rows.join("\n") === before.rows.join("\n"))
+  await app.renderOnce()
+  expect(app.captureCharFrame()).toContain("What should change")
+  expect(app.captureCharFrame()).toContain("RIFT makes the change")
 }, 30000)
 
 test("with animations turned off a click does nothing", async () => {

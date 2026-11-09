@@ -133,7 +133,7 @@ describe("the hole", () => {
     expect(left).toBeGreaterThan(right * 1.3)
   })
 
-  test("the disk is hottest at its inner edge and cools outward: white near the hole, red at the rim", () => {
+  test("the disk is hottest at its inner edge and cools outward: white near the hole, navy at the rim", () => {
     const s = run(createSingularity({ cols: 200, rows: 50, seed: 1 }), 3)
     // Along the disk's plane on the approaching side, where all of it is bright enough to see.
     const warmth = (from: number, to: number) => {
@@ -144,8 +144,8 @@ describe("the hole", () => {
         for (const r of [row - 1, row, row + 1]) {
           const c = r * s.cols + col
           if (!s.bits[c]) continue
-          // Blue and green over red: high for white and blue-white, low for orange and red.
-          sum += (s.rgb[c * 3 + 1] + s.rgb[c * 3 + 2]) / (2 * Math.max(1, s.rgb[c * 3]))
+          // How bright it is: high for white, lower for azure, lowest for navy.
+          sum += s.rgb[c * 3] + s.rgb[c * 3 + 1] + s.rgb[c * 3 + 2]
           n++
         }
       }
@@ -156,8 +156,8 @@ describe("the hole", () => {
     const outer = warmth(16, R_DISK_OUT)
     expect(inner).toBeGreaterThan(middle)
     expect(middle).toBeGreaterThan(outer)
-    expect(inner).toBeGreaterThan(0.7)
-    expect(outer).toBeLessThan(0.2)
+    expect(inner).toBeGreaterThan(450)
+    expect(outer).toBeLessThan(260)
   })
 
   test("on a light page it is drawn in ink: the shadow a disc of dark dots, nothing as light as the paper", () => {

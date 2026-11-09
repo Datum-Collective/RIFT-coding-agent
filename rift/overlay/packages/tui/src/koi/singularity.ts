@@ -15,6 +15,7 @@
  */
 import { DOT_BIT, type Logo } from "./logo"
 import { random } from "./random"
+import { bannerColours, type BannerColours } from "../banner"
 
 const TAU = Math.PI * 2
 
@@ -52,9 +53,10 @@ const DISK_MIN = 1500
 export const DISK_MAX = 6000
 const DISK_PER_PPM = 735
 
-/** The scene is scaled so the disk's rim spans the width and the lensed arch fits above the centre. */
+/** The scene is scaled so the disk's rim would span the width and the lensed arch fit above the centre, then shrunk to this share of that: a hole in the middle of the screen, not the whole screen. */
 const FIT_HALF_WIDTH = R_DISK_OUT
 const FIT_HALF_HEIGHT = 13.5
+const SCENE_SHARE = 0.6
 
 /* The photon ring: the stacked higher-order images of the whole disk, which pile up just outside b_c.
    It is drawn one dot outside the shadow so it stays a crisp line, brightest on the approaching side. */
@@ -65,7 +67,8 @@ const RING_T = 1.02
    speed, so every orbit decays inward as a spiral; and two points per fragment, so the gravity
    difference between head and tail is the tidal gradient (radial stretch 2K/r³ per unit separation),
    amplified by TIDAL_GAIN so the tear reads within seconds instead of an orbital time. */
-const K_GRAV = 1000
+/** Grows with the cube of the shrink: the logo is that much further from a smaller hole in M, and a fall from d under K/r² lasts d^1.5 / √K, so this keeps it as long as it was. */
+const K_GRAV = 1000 / SCENE_SHARE ** 3
 const SOFTENING2 = 1
 const SWIRL_RATE = 4
 const SWIRL_RAMP_S = 0.6
@@ -123,22 +126,12 @@ function smooth(x: number) {
   return t * t * (3 - 2 * t)
 }
 
-// --- the thermal colour ramp ---------------------------------------------------------------------
+// --- the colour ramp -------------------------------------------------------------------------------------
 
-/* Thin-disk temperature T ∝ r^(−3/4), normalised to about 1 at the ISCO, mapped through a blackbody-like
-   ramp: dim crimson at the rim, neon orange, white, and blue-white past the inner edge. */
-const THERMAL_STOPS = [
-  [0.26, 72, 6, 14],
-  [0.38, 150, 14, 26],
-  [0.5, 226, 34, 22],
-  [0.6, 255, 86, 18],
-  [0.68, 255, 127, 30],
-  [0.78, 255, 178, 72],
-  [0.88, 255, 226, 176],
-  [0.98, 255, 248, 240],
-  [1.1, 228, 237, 255],
-  [1.3, 185, 208, 255],
-] as const
+/* Temperature T ∝ r^(−3/4), normalised to about 1 at the ISCO, mapped through the RIFT banner's own inks:
+   dim navy at the rim, navy, azure, then pale blue and white at the inner edge. A theme's accent
+   recolours the blues exactly as it does the logo, so the hole and the logo are one family. */
+const T_STOPS = [0.26, 0.4, 0.54, 0.68, 0.8, 0.9, 0.98, 1.1, 1.3] as const
 const LUT_N = 64
 const T_MIN = 0.26
 const T_MAX = 1.3
@@ -146,27 +139,37 @@ const LUT_SCALE = LUT_N / (T_MAX - T_MIN)
 const INK_DARKEN = 0.7
 /** On a light page the shadow is drawn, a disc of dots in this. */
 const SHADOW_INK = [16, 16, 20] as const
-/** The ramp, three channels an entry, from T_MIN to T_MAX. */
-export const THERMAL = new Float32Array(LUT_N * 3)
-for (let k = 0; k < LUT_N; k++) {
-  const t = T_MIN + (k + 0.5) / LUT_SCALE
-  let s = 0
-  while (s < THERMAL_STOPS.length - 2 && t > THERMAL_STOPS[s + 1][0]) s++
-  const a = THERMAL_STOPS[s]
-  const b = THERMAL_STOPS[s + 1]
-  const f = Math.max(0, Math.min(1, (t - a[0]) / (b[0] - a[0])))
-  for (let c = 0; c < 3; c++) THERMAL[k * 3 + c] = a[c + 1] + (b[c + 1] - a[c + 1]) * f
-}
 
-/*
- * The ramp for a light page, where light cannot be drawn brighter than the paper: each colour is
- * darkened by its own brightness, so white-hot turns dark grey, orange turns burnt orange and crimson
- * stays crimson. Brightness then reads as how much ink there is, as in a drawing.
- */
-export const THERMAL_INK = new Float32Array(LUT_N * 3)
-for (let k = 0; k < LUT_N; k++) {
-  const luminance = (0.2126 * THERMAL[k * 3] + 0.7152 * THERMAL[k * 3 + 1] + 0.0722 * THERMAL[k * 3 + 2]) / 255
-  for (let c = 0; c < 3; c++) THERMAL_INK[k * 3 + c] = THERMAL[k * 3 + c] * (1 - INK_DARKEN * luminance)
+const hex = (colour: string) => [parseInt(colour.slice(1, 3), 16), parseInt(colour.slice(3, 5), 16), parseInt(colour.slice(5, 7), 16)]
+const mix = (a: number[], b: number[], f: number) => a.map((v, i) => v + (b[i] - v) * f)
+
+/** The ramp, three channels an entry from T_MIN to T_MAX, in the banner's inks. On a light page each entry is darkened by its own brightness: white-hot turns dark grey, so brightness reads as how much ink there is. */
+function buildRamp(colours: BannerColours, ink: boolean) {
+  const navy = hex(colours.ink.navy)
+  const azure = hex(colours.ink.azure)
+  const white = hex(colours.ink.white)
+  const stops = [
+    navy.map((v) => v * 0.4),
+    navy,
+    mix(navy, azure, 0.55),
+    azure,
+    mix(azure, white, 0.45),
+    mix(azure, white, 0.8),
+    white,
+    white,
+    mix(white, azure, 0.3),
+  ]
+  const ramp = new Float32Array(LUT_N * 3)
+  for (let k = 0; k < LUT_N; k++) {
+    const t = T_MIN + (k + 0.5) / LUT_SCALE
+    let i = 0
+    while (i < T_STOPS.length - 2 && t > T_STOPS[i + 1]) i++
+    const f = Math.max(0, Math.min(1, (t - T_STOPS[i]) / (T_STOPS[i + 1] - T_STOPS[i])))
+    const c = mix(stops[i], stops[i + 1], f)
+    const luminance = (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255
+    for (let j = 0; j < 3; j++) ramp[k * 3 + j] = ink ? c[j] * (1 - INK_DARKEN * luminance) : c[j]
+  }
+  return ramp
 }
 
 /** The ramp's entry for a temperature. */
@@ -237,6 +240,8 @@ export type Options = {
   logo?: LogoAt
   /** Drawn on a light page: in ink, as `ink` says. */
   ink?: boolean
+  /** The banner's inks, in the theme's accent. The hole is drawn in them. */
+  colours?: BannerColours
 }
 
 export class Singularity {
@@ -260,6 +265,9 @@ export class Singularity {
    * towards the paper rather than towards black.
    */
   ink = false
+  /** The colour ramp the light is drawn in, and the same darkened for a light page. */
+  private ramp = new Float32Array(0)
+  private rampInk = new Float32Array(0)
 
   // The view: dots across and down, the hole's centre in dots, and dots per M.
   private pw = 0
@@ -339,6 +347,7 @@ export class Singularity {
   constructor(options: Options) {
     this.rng = random(options.seed)
     this.ink = options.ink ?? false
+    this.recolour(options.colours ?? bannerColours())
     this.initDisk()
     this.place(options.cols, options.rows, options.logo)
   }
@@ -374,6 +383,12 @@ export class Singularity {
    * scene is made, and again when the terminal is resized, the logo moves, or its colours change: the
    * hole and anything already falling into it carry on where they are.
    */
+  /** Draws the hole in these inks from the next frame. */
+  recolour(colours: BannerColours) {
+    this.ramp = buildRamp(colours, false)
+    this.rampInk = buildRamp(colours, true)
+  }
+
   place(cols: number, rows: number, logo?: LogoAt) {
     if (cols !== this.cols || rows !== this.rows) {
       this.cols = cols
@@ -391,7 +406,7 @@ export class Singularity {
       this.cellW = new Float32Array(cols * rows)
       this.cx = cols
       this.cy = rows * 2
-      this.ppm = Math.min(this.pw / 2 / FIT_HALF_WIDTH, this.ph / 2 / FIT_HALF_HEIGHT)
+      this.ppm = SCENE_SHARE * Math.min(this.pw / 2 / FIT_HALF_WIDTH, this.ph / 2 / FIT_HALF_HEIGHT)
       this.diskN = Math.round(Math.max(DISK_MIN, Math.min(DISK_MAX, this.ppm * DISK_PER_PPM)))
       this.layShadow()
     }
@@ -773,7 +788,7 @@ export class Singularity {
     const s = this.ppm
     const cx = this.cx
     const cy = this.cy
-    const ramp = this.ink ? THERMAL_INK : THERMAL
+    const ramp = this.ink ? this.rampInk : this.ramp
     const r = ramp[lut]
     const g = ramp[lut + 1]
     const b = ramp[lut + 2]
@@ -809,7 +824,7 @@ export class Singularity {
   /** The photon ring: the dots just outside the shadow's edge. */
   private drawRing() {
     const lut = thermal(RING_T)
-    const ramp = this.ink ? THERMAL_INK : THERMAL
+    const ramp = this.ink ? this.rampInk : this.ramp
     const r = ramp[lut]
     const g = ramp[lut + 1]
     const b = ramp[lut + 2]
@@ -840,7 +855,7 @@ export class Singularity {
     const tearing = this.phase === "tearing"
     const reform = this.phase === "reform"
     const span = HEAT_FROM_R - R_SHADOW
-    const lut = this.ink ? THERMAL_INK : THERMAL
+    const lut = this.ink ? this.rampInk : this.ramp
     for (let i = 0; i < this.logoN; i++) {
       if (!this.lAlive[i]) continue
       const rr = this.restR[i]
