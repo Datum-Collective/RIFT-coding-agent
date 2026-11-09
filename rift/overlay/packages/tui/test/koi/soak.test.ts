@@ -6,6 +6,8 @@ import { riftPalette } from "../../src/koi/palette"
 import { banner } from "../../src/banner"
 import { ditherBanner } from "../../src/koi/logo"
 import { stirStream } from "../../src/koi/stream"
+import { paintDots } from "../../src/koi/paint"
+import { createSingularity } from "../../src/koi/singularity"
 
 const palette = riftPalette({
   background: { r: 0, g: 0, b: 0 },
@@ -113,4 +115,37 @@ describe("a long idle", () => {
     expect(frames).toBeLessThan(60 * 16)
     expect(perFrame).toBeLessThan(8)
   }, 60000)
+
+  for (const [cols, rows] of [
+    [120, 40],
+    [200, 50],
+  ]) {
+    test(`the singularity at ${cols}x${rows}, from the logo through the tearing to the spinning hole: a frame is cheap and the heap does not grow`, () => {
+      const buffer = OptimizedBuffer.create(cols, rows, "wcwidth", { respectAlpha: true, owner: new ResourceContext({ objectCapacity: 8, renderCellsMax: 100_000 }) })
+      const scene = createSingularity({ cols, rows, seed: 3, logo: { logo: ditherBanner(banner), col: Math.floor((cols - 72) / 2), row: Math.floor(rows / 2) - 10 } })
+      const frame = () => {
+        buffer.clear(RGBA.fromInts(0, 0, 0, 255))
+        scene.step(1 / 30)
+        scene.render()
+        return paintDots(buffer, scene, { r: 0, g: 0, b: 0 })
+      }
+      for (let index = 0; index < 60; index++) frame()
+
+      Bun.gc(true)
+      const before = process.memoryUsage().heapUsed
+      const frames = 900
+      const started = cpu()
+      let drawn = 0
+      for (let index = 0; index < frames; index++) drawn += frame()
+      const perFrame = (cpu() - started) / frames
+      Bun.gc(true)
+      const grown = process.memoryUsage().heapUsed - before
+
+      expect(scene.phase).toBe("steady")
+      expect(drawn / frames).toBeGreaterThan(300)
+      // The budget is 8 ms a frame at 30 frames a second; it measures under 2 ms, so this leaves room for a slow CI machine.
+      expect(perFrame).toBeLessThan(8)
+      expect(grown).toBeLessThan(8 * 1024 * 1024)
+    }, 60000)
+  }
 })

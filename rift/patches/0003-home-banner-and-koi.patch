@@ -7,7 +7,7 @@ index 71e7b64..6994c5f 100644
  import { createEffect, createMemo, createSignal, onMount, Show, untrack } from "solid-js"
 -import { Logo } from "../component/logo"
 +import { Landing } from "../component/landing"
-+import { IdleKoi } from "../component/idle-koi"
++import { IdleSingularity } from "../component/idle-singularity"
 +import { TypingKoi } from "../component/typing-koi"
 +import type { BoxRenderable } from "@opentui/core"
  import { useArgs } from "../context/args"
@@ -25,7 +25,7 @@ index 71e7b64..6994c5f 100644
  
    return (
      <>
-+      <IdleKoi />
++      <IdleSingularity />
 +      <TypingKoi composer={composer} />
        <box
          flexGrow={1}
