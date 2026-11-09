@@ -1,0 +1,22 @@
+diff --git a/opencode/packages/core/src/app.ts b/opencode/packages/core/src/app.ts
+index 2b3df29..9a2b907 100644
+--- a/opencode/packages/core/src/app.ts
++++ b/opencode/packages/core/src/app.ts
+@@ -2,6 +2,7 @@ export * as App from "./app.js"
+ 
+ import { Context, Layer } from "effect"
+ import { makeGlobalNode } from "@opencode/util/effect/app-node"
++import { UPSTREAM_VERSION } from "./rift-upstream.js"
+ 
+ export interface Info {
+   readonly name: string
+@@ -22,7 +23,8 @@ export function make(input: Partial<Info> = {}): Info {
+ }
+ 
+ export function useragent(app: Info) {
+-  return `opencode/${app.channel}/${app.version}/${app.name}`
++  // RIFT: the hosted services gate on this engine version (the free tier wants 1.18 or newer), not on RIFT's own.
++  return `opencode/${app.channel}/${UPSTREAM_VERSION}/${app.name}`
+ }
+ 
+ export const layer = (input?: Partial<Info>) => Layer.succeed(Metadata, make(input))
