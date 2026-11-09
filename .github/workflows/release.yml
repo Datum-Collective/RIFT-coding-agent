@@ -102,11 +102,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
         run: |
+          # The title and notes come from the version's CHANGELOG.md entry; a version without one stops here.
+          title=$(cd .. && python3 .github/release-notes.py "$TAG" "$RUNNER_TEMP/notes.md")
           # gh release upload needs the release to exist. Creating it as a draft keeps a
           # half-uploaded release out of releases/latest, which is what the installers read.
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
-            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
-                 --title "$TAG" --generate-notes --draft
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$title" --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "$title" --notes-file "$RUNNER_TEMP/notes.md" --draft
+          fi
 
       - name: Build every target and upload the archives
         run: |
