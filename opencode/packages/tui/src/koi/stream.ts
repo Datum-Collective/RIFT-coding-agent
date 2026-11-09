@@ -8,8 +8,8 @@
  * Typing urges them on, so the bouts come quicker, with faster, wider beats and shorter glides;
  * each koi hears the urge a moment late, so the school never beats as one.
  *
- * The koi are the pond's own (spine, sway, fins and tail); only the steering is different, since a
- * strip a few rows tall has no room for the pond's wide turns.
+ * The koi are drawn as koi-screensaver draws them (spine, sway, fins and tail); only the steering
+ * is the stream's own, since a strip a few rows tall has no room for wide turns.
  */
 import { clamp } from "./colour"
 import { JOINTS, PATTERNS, SEG, follow, newKoi, type Koi } from "./koi"

@@ -9,7 +9,7 @@ export function animationOff(env: Record<string, string | undefined>) {
 
 /**
  * Combines every source that turns the koi off: the project/user `animations` config (which upstream's own test
- * fixtures set to `false` by default, so a render can settle without the pond mid-animation), the `/background`
+ * fixtures set to `false` by default, so a render can settle without an animation running), the `/background`
  * koi toggle, and RIFT_NO_ANIMATION. Koi is on by default; any one of these can turn it off.
  */
 export function koiEnabled(input: { animations: boolean | undefined; koi: boolean; env: Record<string, string | undefined> }) {

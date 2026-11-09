@@ -1,7 +1,7 @@
 import { Prompt, type PromptRef } from "../component/prompt"
 import { createEffect, createMemo, createSignal, onMount, Show, untrack } from "solid-js"
 import { Landing } from "../component/landing"
-import { IdleKoi } from "../component/idle-koi"
+import { IdleSingularity } from "../component/idle-singularity"
 import { TypingKoi } from "../component/typing-koi"
 import type { BoxRenderable } from "@opentui/core"
 import { useArgs } from "../context/args"
@@ -84,7 +84,7 @@ export function Home() {
 
   return (
     <>
-      <IdleKoi />
+      <IdleSingularity />
       <TypingKoi composer={composer} />
       <box
         flexGrow={1}

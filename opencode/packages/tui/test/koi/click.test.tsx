@@ -18,6 +18,15 @@ function logo(app: App, at?: { col: number; row: number }) {
   return { at: where, rows, dots: rows.join("").split("").filter(isDot).length }
 }
 
+/**
+ * Whether the hole has opened: the cells just above the middle of the screen, which the logo's I and F
+ * cover, are empty. The shadow is there, and nothing passes in front of it above its middle.
+ */
+function opened(app: App) {
+  const lines = app.captureCharFrame().split("\n")
+  return lines.slice(16, 20).every((line) => [...line].slice(56, 64).join("").trim() === "")
+}
+
 async function home(animations: boolean) {
   const app = await createAppFixture({ width: 120, height: 40, config: { animations } })
   await app.ready
@@ -28,7 +37,7 @@ async function home(animations: boolean) {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/** Renders until `done` holds, for up to `ms`. The pond moves on with the frames drawn, so a busy machine only makes this slower. */
+/** Renders until `done` holds, for up to `ms`. The scene moves on with the frames drawn, so a busy machine only makes this slower. */
 async function until(app: App, done: () => boolean, ms = 15000) {
   const end = Date.now() + ms
   while (!done()) {
@@ -38,45 +47,43 @@ async function until(app: App, done: () => boolean, ms = 15000) {
   }
 }
 
-/** The logo has started breaking up: the blue behind the letters has faded and fewer dots are left. */
-const fading = (app: App, before: ReturnType<typeof logo>) => () => logo(app, before.at).dots < before.dots * 0.8
-
 afterEach(() => {
   delete process.env.RIFT_NO_ANIMATION
 })
 
-test("a click on the logo starts the pond at once, from the logo exactly as it was drawn", async () => {
+test("a click on the logo opens the hole at once, from the logo exactly as it was drawn", async () => {
   await using app = await home(true)
   const before = logo(app)
   expect(before.dots).toBeGreaterThan(500)
+  expect(opened(app)).toBe(false)
   expect(app.renderer.liveRequestCount).toBe(0)
 
   await app.mockMouse.click(before.at.col + 20, before.at.row + 5)
   await app.renderOnce()
-  // Running: the renderer draws continuously, and the first frame of the pond is the logo, dot for dot.
+  // Running: the renderer draws continuously, and the first frame is the logo, dot for dot.
   expect(app.renderer.liveRequestCount).toBe(1)
   expect(logo(app, before.at).rows).toEqual(before.rows)
 
-  // A couple of seconds in, the blue behind the letters has faded away and fewer dots are left.
-  await until(app, fading(app, before))
+  // Within a couple of seconds the shadow has opened in the middle of the logo.
+  await until(app, () => opened(app))
 }, 30000)
 
-test("a second click while the pond is out does not start it again", async () => {
+test("a second click while the hole is out does not start it again", async () => {
   await using app = await home(true)
   const before = logo(app)
   await app.mockMouse.click(before.at.col + 20, before.at.row + 5)
-  await until(app, fading(app, before))
+  await until(app, () => opened(app))
   await app.mockMouse.click(before.at.col + 20, before.at.row + 5)
   // Started again, the whole logo would be back on the next frame.
   for (let frame = 0; frame < 5; frame++) {
     await app.renderOnce()
-    expect(fading(app, before)()).toBe(true)
+    expect(opened(app)).toBe(true)
     await wait(50)
   }
   expect(app.renderer.liveRequestCount).toBe(1)
 }, 30000)
 
-test("the mouse alone does not send the pond away, and the first key does", async () => {
+test("the mouse alone does not send the hole away; a key does, the logo comes back, and drawing stops", async () => {
   await using app = await home(true)
   const before = logo(app)
   await app.mockMouse.click(before.at.col + 20, before.at.row + 5)
@@ -84,11 +91,14 @@ test("the mouse alone does not send the pond away, and the first key does", asyn
   await app.mockMouse.moveTo(5, 35)
   await app.mockMouse.click(5, 2)
   await app.mockMouse.scroll(5, 35, "down")
-  // Still out: the backdrop fades as it does when nothing is touched.
-  await until(app, fading(app, before))
+  // Still out: the shadow opens as it does when nothing is touched.
+  await until(app, () => opened(app))
 
-  app.mockInput.pressKey("a")
+  // Escape is a key to the hole but not typing to the koi above the composer, so nothing else draws after.
+  app.mockInput.pressEscape()
   await until(app, () => logo(app, before.at).rows.join("\n") === before.rows.join("\n"))
+  await app.renderOnce()
+  expect(app.renderer.liveRequestCount).toBe(0)
 }, 30000)
 
 test("with animations turned off a click does nothing", async () => {

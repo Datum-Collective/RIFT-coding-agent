@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { BANNER_FILL, BANNER_INK, BANNER_WIDTH, banner, bannerColours } from "../../src/banner"
-import { dither, ditherBanner, isInk, logoRows, type Logo } from "../../src/koi/logo"
+import { dither, ditherBanner, logoRows, type Logo } from "../../src/koi/logo"
 import { lum, mix, type Rgb } from "../../src/koi/colour"
 
 const hex = (value: string): Rgb => ({ r: parseInt(value.slice(1, 3), 16), g: parseInt(value.slice(3, 5), 16), b: parseInt(value.slice(5, 7), 16) })
@@ -8,6 +8,9 @@ const WHITE = hex(BANNER_INK.white)
 const NAVY = hex(BANNER_INK.navy)
 const SHADOW = hex(BANNER_INK.shadow)
 const SILVER = hex(BANNER_FILL.silver)
+
+/** The letters are the greys of the artwork; the blues behind them are its backdrop. */
+const grey = (c: Rgb) => Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b) <= 48 && lum(c) >= 0.12
 
 /** How many dots a braille character shows. */
 const dotCount = (char: string) => [...(char.codePointAt(0)! - 0x2800).toString(2)].filter((bit) => bit === "1").length
@@ -107,31 +110,16 @@ describe("RIFT's banner as dots", () => {
     logo.cells.forEach((cell, i) => {
       if (!cell) return
       const other = green.cells[i]!
-      if (isInk(cell.colour)) expect(other.colour).toEqual(cell.colour)
+      if (grey(cell.colour)) expect(other.colour).toEqual(cell.colour)
       else expect(other.colour.g).toBeGreaterThan(other.colour.b)
     })
   })
 
   test("has plenty of dots in it, and the letters, the grey ones, are a good part of them", () => {
     const drawn = logo.cells.filter((cell) => cell !== undefined)
-    const letters = drawn.filter((cell) => isInk(cell!.colour))
+    const letters = drawn.filter((cell) => grey(cell!.colour))
     expect(drawn.length).toBeGreaterThan(600)
     expect(letters.length).toBeGreaterThan(250)
     expect(letters.length).toBeLessThan(drawn.length)
-  })
-})
-
-describe("what is a letter", () => {
-  test("the greys are, and the blues behind them are not", () => {
-    expect(isInk(hex(BANNER_INK.white))).toBe(true)
-    expect(isInk(hex(BANNER_INK.silver))).toBe(true)
-    expect(isInk(hex(BANNER_INK.shadow))).toBe(true)
-    expect(isInk(hex(BANNER_INK.navy))).toBe(false)
-    expect(isInk(hex(BANNER_INK.azure))).toBe(false)
-  })
-
-  test("a grey too dark to see is not", () => {
-    expect(isInk({ r: 10, g: 10, b: 10 })).toBe(false)
-    expect(lum(hex(BANNER_INK.shadow))).toBeGreaterThan(0.12)
   })
 })

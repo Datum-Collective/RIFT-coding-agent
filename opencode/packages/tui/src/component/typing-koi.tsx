@@ -7,7 +7,7 @@
  * Only typing brings them: the mouse neither calls them nor sends them off, and neither do
  * shortcuts, arrows or Enter.
  *
- * Like the idle pond it draws nothing into the layout. A hook on the finished frame paints the
+ * It draws nothing into the layout. A hook on the finished frame paints the
  * strip into cells the interface left empty (see `koi/paint`), so the logo, the tagline and the
  * composer stay on top and the koi pass behind them. The renderer only runs continuously while
  * koi are in the strip. Off for anyone who turned animations off or set RIFT_NO_ANIMATION.
@@ -122,7 +122,6 @@ export function TypingKoi(props: {
           primary: koiAccent(channels(theme.hue.accent[400]), channels(theme.text.base)),
         }),
         seed: props.seed ?? Date.now() % 1_000_000,
-        scene: "stream",
       })
       top = place.top
       last = now()

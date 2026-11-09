@@ -80,7 +80,7 @@ export function createIdle(input: { delay: number; onIdle: () => void; onWake: (
 
 /**
  * What does not count as typing. The raw input stream also carries the mouse, the terminal's own
- * replies to questions RIFT asked it, and its focus reports. The pond answers to the keyboard
+ * replies to questions RIFT asked it, and its focus reports. The singularity answers to the keyboard
  * alone: moving the mouse neither ends it nor holds it back, and a terminal that talks to RIFT
  * would otherwise keep a quiet one from ever going idle.
  */
