@@ -25,11 +25,6 @@ describe("random", () => {
     const seen = new Set(Array.from({ length: 500 }, () => next.int(5)))
     expect([...seen].sort()).toEqual([0, 1, 2, 3, 4])
   })
-
-  test("a permutation holds every number once", () => {
-    const order = random(9).perm(8)
-    expect([...order].sort((x, y) => x - y)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
-  })
 })
 
 describe("colour", () => {

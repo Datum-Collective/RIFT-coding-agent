@@ -1,12 +1,12 @@
 /**
- * Where the banner is on the screen, for the idle koi pond: the logo breaks up into koi starting
- * from the cells it is actually in, wherever the layout has put it.
+ * Where the banner is on the screen, for the singularity: the black hole tears the logo apart
+ * starting from the cells it is actually in, wherever the layout has put it.
  *
- * The pond also hides the banner while it is out, since the logo has become the koi. The banner
- * does that itself: it stops drawing its rows but keeps its size, so nothing round it moves, and
- * nothing on the screen has to be recognised and cleared afterwards.
+ * The singularity also hides the banner while it is out, since it draws the logo's dots itself. The
+ * banner does that itself: it stops drawing its rows but keeps its size, so nothing round it moves,
+ * and nothing on the screen has to be recognised and cleared afterwards.
  *
- * And a click on the banner is passed to the pond, which starts at once rather than waiting.
+ * And a click on the banner is passed to the singularity, which starts at once rather than waiting.
  */
 import { createSignal } from "solid-js"
 
@@ -37,7 +37,7 @@ export const logoAnchor = {
   read(): { col: number; row: number } | undefined {
     return current ? { col: Math.round(current.x), row: Math.round(current.y) } : undefined
   },
-  /** The banner was clicked. Nothing happens unless the pond is listening. */
+  /** The banner was clicked. Nothing happens unless the singularity is listening. */
   click() {
     clicked?.()
   },

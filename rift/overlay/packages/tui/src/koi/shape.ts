@@ -27,13 +27,9 @@ export type KoiShape = {
   hasSheen: boolean
   patchTag: number
   eyes: [Pt, Pt]
-  /** 0 while the koi is too small for eyes. */
   eyeR: number
   /** The spine as swayed this frame. */
   joints: Pt[]
-  /** In the intro, the part of the shape uncovered so far; only read when `masked`. */
-  mask: Uint8Array
-  masked: boolean
 }
 
 const FAR = 1e9
@@ -65,8 +61,6 @@ function blank(): KoiShape {
     ],
     eyeR: 0,
     joints: Array.from({ length: JOINTS }, () => ({ x: 0, y: 0 })),
-    mask: new Uint8Array(0),
-    masked: false,
   }
 }
 
@@ -82,7 +76,7 @@ let fins: Floats = new Float32Array(0)
 /** Works out koi `k` as drawn this frame, swaying with its stroke. Reuses the koi's own buffers. */
 export function shapeKoi(grid: Grid, k: Koi): KoiShape {
   const s = (k.shape ??= blank())
-  const sz = grid.size * k.grow
+  const sz = grid.size
   const j = s.joints
   for (let i = 0; i < JOINTS; i++) {
     j[i]!.x = k.j[i]!.x
@@ -193,16 +187,13 @@ export function shapeKoi(grid: Grid, k: Koi): KoiShape {
     s.sheen = cleared(s.sheen, n)
     for (let i = 1; i < 9; i++) segment(grid, s, s.sheen, j[i]!, j[i + 1]!, RADII[i]! * sz * 0.3, RADII[i + 1]! * sz * 0.3)
   }
-  s.eyeR = 0
-  if (k.grow >= 0.6) {
-    const r = RADII[0]! * sz * 0.72
-    s.eyeR = Math.max(0.55, 0.3 * sz)
-    ;[-1, 1].forEach((side, e) => {
-      const a = head + side * 1.1
-      s.eyes[e]!.x = j[0]!.x + Math.cos(a) * r
-      s.eyes[e]!.y = j[0]!.y + Math.sin(a) * r
-    })
-  }
+  const r = RADII[0]! * sz * 0.72
+  s.eyeR = Math.max(0.55, 0.3 * sz)
+  ;[-1, 1].forEach((side, e) => {
+    const a = head + side * 1.1
+    s.eyes[e]!.x = j[0]!.x + Math.cos(a) * r
+    s.eyes[e]!.y = j[0]!.y + Math.sin(a) * r
+  })
   return s
 }
 

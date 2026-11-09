@@ -1,6 +1,6 @@
 /**
- * RIFT's banner as dots, the way it is shown: on the home screen, and in the pond's intro, where
- * the dots break up into koi.
+ * RIFT's banner as dots, the way it is shown: on the home screen, and in the singularity, where a
+ * black hole tears the dots apart.
  *
  * The banner's art (`src/banner.ts`) is drawn in half blocks and shades. Each of its cells is shown
  * as a braille character instead, two dots across and four down, so half a cell is four dots and a
@@ -10,7 +10,7 @@
  * are drawn in the colour of the art under them.
  */
 import { BANNER_FILL, BANNER_INK, type BannerColours, type BannerRun } from "../banner"
-import { lum, type Rgb } from "./colour"
+import type { Rgb } from "./colour"
 
 /** The lit dots of one cell, as the braille character's bits, and the colour they are drawn in. */
 export type DotCell = { bits: number; colour: Rgb }
@@ -45,7 +45,7 @@ export const DOT_BIT = [
   [0x40, 0x80],
 ] as const
 
-export const braille = (bits: number) => String.fromCharCode(0x2800 + bits)
+const braille = (bits: number) => String.fromCharCode(0x2800 + bits)
 
 const SHADE: Record<string, number> = { "░": 0.25, "▒": 0.5, "▓": 0.75 }
 
@@ -129,10 +129,4 @@ export function logoRows(logo: Logo): DotRun[][] {
     }
     return runs
   })
-}
-
-/** The letters are the greys of the artwork; the blues behind them are its backdrop. */
-export function isInk(c: Rgb) {
-  const chroma = Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b)
-  return chroma <= 48 && lum(c) >= 0.12
 }

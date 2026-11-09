@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { JOINTS, SEG } from "../../src/koi/koi"
+import { PATTERNS, newKoi } from "../../src/koi/koi"
 import { Tag, riftPalette } from "../../src/koi/palette"
 import { createPond, type Pond } from "../../src/koi/pond"
 import { mix, to8, type Rgb } from "../../src/koi/colour"
@@ -13,14 +13,7 @@ const palette = riftPalette({
 })
 
 function empty(options: { fade?: number } = {}) {
-  const pond = createPond({ cols: 120, rows: 36, aspect: 2, palette, seed: 1, scene: "pond" })
-  pond.koi.forEach((koi, index) => {
-    koi.ease = 0
-    for (let n = 0; n < JOINTS; n++) koi.j[n] = { x: 3000 + index * 100 - SEG * n, y: 3000 }
-  })
-  pond.pads = []
-  pond.petals = []
-  pond.rings = []
+  const pond = createPond({ cols: 120, rows: 36, aspect: 2, palette, seed: 1 })
   pond.fade = options.fade ?? 1
   // A drawn, empty pond: nothing on any pixel, and no shadow anywhere.
   pond.draw()
@@ -101,37 +94,31 @@ describe("shading", () => {
     expect(near(pond.colourAt(i)!, mix(palette.tags[Tag.red]!, palette.ripple, 0.42))).toBe(true)
   })
 
-  test("things on the surface are their own flat colour, whatever is below", () => {
-    const pond = empty()
-    const i = at(pond, 100, 60)
-    pond.tag[i] = Tag.pad
-    pond.shade[i] = -1
-    pond.height[i] = 1
-    expect(near(pond.colourAt(i)!, palette.tags[Tag.pad]!)).toBe(true)
-  })
-
   test("fading in mixes everything with the canvas, gently at first", () => {
     const pond = empty({ fade: 0.5 })
     const i = at(pond, 100, 60)
-    pond.tag[i] = Tag.pad
+    pond.tag[i] = Tag.red
     const smooth = 0.5 * 0.5 * (3 - 2 * 0.5)
-    expect(near(pond.colourAt(i)!, mix(palette.bg, palette.tags[Tag.pad]!, smooth))).toBe(true)
+    expect(near(pond.colourAt(i)!, mix(palette.bg, palette.tags[Tag.red]!, smooth))).toBe(true)
     pond.fade = 0
     expect(near(pond.colourAt(i)!, palette.bg)).toBe(true)
   })
 })
 
 describe("cells", () => {
+  /** Water with a few koi in it, and a ring. */
   const full = () => {
-    const pond = createPond({ cols: 120, rows: 36, aspect: 2, palette: riftPalette({ background: { r: 0, g: 0, b: 0 }, text: { r: 238, g: 238, b: 238 }, muted: { r: 128, g: 128, b: 138 }, primary: { r: 47, g: 129, b: 247 } }), seed: 1, scene: "pond" })
+    const pond = createPond({ cols: 120, rows: 36, aspect: 2, palette: riftPalette({ background: { r: 0, g: 0, b: 0 }, text: { r: 238, g: 238, b: 238 }, muted: { r: 128, g: 128, b: 138 }, primary: { r: 47, g: 129, b: 247 } }), seed: 1 })
+    for (let index = 0; index < 4; index++) pond.koi.push(newKoi(pond, PATTERNS[index]!))
+    pond.addRing(60, 40, 6, 0, 0.8, 5, 1.5)
     pond.draw()
     return pond
   }
 
-  test("the koi, pads and petals come out as cells, and the open water does not", () => {
+  test("the koi come out as cells, and the open water does not", () => {
     const pond = full()
     const cells = pond.cells()
-    expect(cells.length).toBeGreaterThan(200)
+    expect(cells.length).toBeGreaterThan(100)
     expect(cells.length).toBeLessThan(pond.cols * pond.rows * 0.5)
   })
 
