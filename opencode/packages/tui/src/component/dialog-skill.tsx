@@ -9,7 +9,10 @@ import type { LocationRef } from "@opencode/client"
 
 export type DialogSkillProps = {
   location?: LocationRef
+  /** IDs of skills already selected, so they aren't re-added. */
+  selected?: readonly string[]
   onSelect: (skill: string) => void
+  onDone: () => void
 }
 
 export function DialogSkill(props: DialogSkillProps) {
@@ -37,6 +40,12 @@ export function DialogSkill(props: DialogSkillProps) {
   )
 
   const showError = createMemo(() => Boolean(loadError()))
+  const selected = new Set(props.selected ?? [])
+
+  const handleDone = () => {
+    props.onDone()
+    dialog.clear()
+  }
 
   const options = createMemo<DialogSelectOption<string>[]>(() => {
     if (showError()) return []
@@ -46,9 +55,10 @@ export function DialogSkill(props: DialogSkillProps) {
       title: skill.name.padEnd(maxWidth),
       description: skill.description?.replace(/\s+/g, " ").trim(),
       value: skill.id,
+      selected: selected.has(skill.id),
       onSelect: () => {
         props.onSelect(skill.id)
-        dialog.clear()
+        // Keep the dialog open so the user can pick more skills.
       },
     }))
   })
@@ -59,6 +69,7 @@ export function DialogSkill(props: DialogSkillProps) {
       options={options()}
       renderFilter={!showError() && !skills.loading}
       locked={showError() || skills.loading}
+      onCancel={handleDone}
       emptyView={
         <Switch
           fallback={

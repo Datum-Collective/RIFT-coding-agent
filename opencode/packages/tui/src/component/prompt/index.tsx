@@ -592,6 +592,7 @@ export function Prompt(props: PromptProps) {
           dialog.replace(() => (
             <DialogSkill
               location={currentLocation.ref}
+              selected={store.prompt.skills?.map((item) => item.id) ?? []}
               onSelect={(skill) => {
                 if (store.prompt.skills?.some((item) => item.id === skill)) return
                 const text = `@${skill}`
@@ -617,6 +618,9 @@ export function Prompt(props: PromptProps) {
                     draft.extmarkToPart.set(extmarkId, { type: "skill", index })
                   }),
                 )
+              }}
+              onDone={() => {
+                dialog.clear()
               }}
             />
           ))

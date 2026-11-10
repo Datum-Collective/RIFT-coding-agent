@@ -2,6 +2,19 @@
 
 Release notes for RIFT versions, newest first. Entries for v0.1.10 to v0.1.13 are only on the Releases page. Full notes and downloads: https://github.com/Datum-Collective/RIFT-coding-agent/releases
 
+## v7.0.1 (2026-11-10)
+
+RIFT now builds and publishes itself whenever `main` advances, and clients install updates automatically.
+
+### Added
+- **Auto-release on main push.** A new GitHub workflow (`auto-release.yml`) syncs `opencode/` from the `rift/` overlay, bumps the patch version, tags the commit, and pushes it. The existing release workflow builds and publishes all 12 platforms (macOS/Linux/Windows, x64/arm64/baseline/musl).
+- **Auto-update by default.** RIFT clients now check for updates every 10 minutes and install them silently instead of just notifying. Set `"update": "notify"` in your config to only be told about updates, or `"update": "disable"` to never check.
+
+### Fixed
+- **Verification file extraction.** The `edit` tool's input uses `path`, not `files`, so edits were never picked up by continuous verification. Fixed to read the correct field.
+- **Verification sidebar visibility.** The sidebar now always shows verification status — with a "No verification yet" hint when idle — instead of staying blank until a run completes.
+- **Multi-select skills.** The Skills dialog stays open after each selection so you can pick multiple skills at once; press Escape when done.
+
 ## v7.0.0 (2026-11-10)
 
 Verification now runs continuously while you write code, not just when you ask. Every time the model finishes editing a source file, RIFT debounces briefly, then re-runs the project's own checks on just what changed — in a private snapshot, compared against the last verified tree — and publishes the result live to the sidebar. `✓ verified` appears green as soon as the checks pass; `✗ failing` appears red the moment they break, with the failing stage named. The model still gets the full failure report and can run `/verify fix` to have RIFT repair it automatically. Built on OpenCode v2.2.6.
