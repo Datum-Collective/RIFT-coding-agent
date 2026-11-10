@@ -5,7 +5,7 @@ import path from "node:path"
 import { define } from "@opencode/plugin/effect/plugin"
 import { Session } from "@opencode/schema/session"
 import { ToolFailure } from "@opencode/ai/effect"
-import { Cause, Effect, FiberMap, Option, Schema } from "effect"
+import { Cause, Duration, Effect, FiberMap, Option, Schema } from "effect"
 import { Agent } from "@opencode/schema/agent"
 import { Rift } from "@opencode/schema/rift"
 import { Permission } from "../permission.js"
@@ -19,6 +19,16 @@ import DESCRIPTION from "./rift-verify/graph.txt"
 
 export const ID = "rift.verify"
 export const MAX_ROUNDS = 3
+
+/** How long to wait after the last edit before running continuous verification. */
+const DEBOUNCE = Duration.millis(2000)
+/** File extensions RIFT treats as source worth checking while the model writes. */
+const SOURCE = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs|go|rs|py|java|kt|kts|rb|ex|exs)$/
+/** Directories whose edits are never worth verifying continuously. */
+const IGNORE = /(^|\/)(node_modules|\.git|dist|build|out|target|\.next|coverage|\.expo)\//
+
+/** One session's pending edits awaiting the debounce. */
+const editSessions = new Map<string, { generation: number; files: Set<string> }>()
 
 const GraphInput = Schema.Struct({
   nodes: Schema.Array(RiftGraph.Node).annotate({ description: "The full node list" }),
@@ -165,6 +175,96 @@ export const Plugin = define({
               Effect.mapError((error) => new ToolFailure({ message: "Unable to update the graph", error })),
             ),
         })
+      })
+      .pipe(Effect.orDie)
+
+    /** Run the change tier on the files the model just edited and publish to the sidebar. */
+    const runEditVerification = Effect.fn("RiftVerify.runEditVerification")(function* (
+      sessionID: Session.ID,
+      files: readonly string[],
+    ) {
+      const snapshot = yield* RiftWorkspace.snapshot(root)
+      if (!snapshot) return
+      const current = loop(sessionID)
+      const baseline = current.verified ?? snapshot.headTree
+      if (!baseline || snapshot.tree === baseline) return
+      const result = yield* pipeline.run({
+        sessionID,
+        agent: (yield* ctx.session.get({ sessionID })).agent ?? Agent.ID.make("build"),
+        tier: "change",
+        candidate: snapshot,
+        baseline,
+        scope: { kind: "files", files },
+        mutate: false,
+      })
+      current.verified = snapshot.tree
+      if (result.kind === "empty") {
+        yield* changed(sessionID)
+        return
+      }
+      // emit("done") during the run already wrote the final view to storage; re-emit so clients see it.
+      yield* changed(sessionID)
+    })
+
+    /** Debounced verification for one session: after the model stops editing source files for a moment,
+     * run the change tier on what changed and publish so the sidebar shows verified / failing live.
+     * A fresh loop is forked on every edit; only the newest generation actually runs, so rapid edits
+     * never lose work and never run stale checks. */
+    const verifyEdits = Effect.fn("RiftVerify.verifyEdits")(function* (sessionID: Session.ID) {
+      const entry = editSessions.get(sessionID)
+      if (!entry) return
+      const generation = entry.generation
+      const files = [...entry.files]
+      // Do not clear files yet: a newer edit may still be adding them. Clear only once this generation
+      // is confirmed stable after the debounce.
+      yield* Effect.sleep(DEBOUNCE)
+      const current = editSessions.get(sessionID)
+      if (!current || current.generation !== generation) return // a newer edit took over
+      editSessions.delete(sessionID)
+      entry.files.clear()
+      if (files.length > 0) {
+        yield* runEditVerification(sessionID, files).pipe(
+          Effect.catchCause((cause) => Effect.logWarning("continuous verification failed", { sessionID, cause })),
+        )
+      }
+    })
+
+    // Continuous verification while the model writes code: after write/edit/patch on a source file,
+    // debounce briefly, then run the change tier on what changed and publish so the sidebar shows
+    // verified / failing live as the session progresses.
+    yield* ctx.tool
+      .hook("execute.after", (event) => {
+        if (event.tool !== "write" && event.tool !== "edit" && event.tool !== "patch") return Effect.void
+        if (event.status !== "completed") return Effect.void
+        const files: string[] = []
+        if (event.tool === "write") {
+          const p = (event.input as { readonly path?: string }).path
+          if (typeof p === "string") files.push(p)
+        } else if (event.tool === "edit") {
+          const f = (event.input as { readonly files?: unknown })?.files
+          if (Array.isArray(f))
+            for (const item of f) {
+              const r = (item as { readonly resource?: string }).resource
+              if (typeof r === "string") files.push(r)
+            }
+        } else {
+          const a = (event.result as { readonly applied?: unknown })?.applied
+          if (Array.isArray(a))
+            for (const item of a) {
+              const r = (item as { readonly resource?: string }).resource
+              if (typeof r === "string") files.push(r)
+            }
+        }
+        const code = files.filter((file) => SOURCE.test(file) && !IGNORE.test(file))
+        if (code.length === 0) return Effect.void
+        const entry = editSessions.get(event.sessionID) ?? { generation: 0, files: new Set<string>() }
+        entry.generation++
+        for (const file of code) entry.files.add(file)
+        editSessions.set(event.sessionID, entry)
+        return verifyEdits(event.sessionID).pipe(
+          Effect.forkIn(scope, { startImmediately: true }),
+          Effect.asVoid,
+        )
       })
       .pipe(Effect.orDie)
 
