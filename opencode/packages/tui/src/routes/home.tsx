@@ -1,9 +1,6 @@
 import { Prompt, type PromptRef } from "../component/prompt"
 import { createEffect, createMemo, createSignal, onMount, Show, untrack } from "solid-js"
 import { Landing } from "../component/landing"
-import { IdleSingularity } from "../component/idle-singularity"
-import { TypingKoi } from "../component/typing-koi"
-import type { BoxRenderable } from "@opentui/core"
 import { useArgs } from "../context/args"
 import { useRouteData } from "../context/route"
 import { usePromptRef } from "../context/prompt"
@@ -36,7 +33,6 @@ export function Home() {
   const location = useLocation()
   const dimensions = useTerminalDimensions()
   const [logoWidth, setLogoWidth] = createSignal(0)
-  const [composer, setComposer] = createSignal<BoxRenderable>()
   // Global MCP elicitations can arrive without a session route, so keep them reachable from Home.
   const currentLocation = () => route.location ?? data.location.default()
   const forms = createMemo(() => data.session.form.list("global", currentLocation()) ?? [])
@@ -84,8 +80,6 @@ export function Home() {
 
   return (
     <>
-      <IdleSingularity />
-      <TypingKoi composer={composer} />
       <box
         flexGrow={1}
         alignItems="center"
@@ -100,7 +94,7 @@ export function Home() {
         <box width="100%" flexShrink={0}>
           <Slot path="home.footer" />
         </box>
-        <box ref={setComposer} width="100%" zIndex={1000} flexShrink={0} position="relative">
+        <box width="100%" zIndex={1000} flexShrink={0} position="relative">
           <Prompt
             ref={bind}
             placeholders={placeholder}
