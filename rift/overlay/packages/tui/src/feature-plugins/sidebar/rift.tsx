@@ -54,25 +54,24 @@ export function SidebarRift(props: { context: Plugin.Context; sessionID: string 
   const lines = createMemo(() => layout(state()?.graph ?? []))
   const colour = (tone: Tone) => paint(theme, tone)
 
-  const current = state()
-  const changeRun = current?.change
-  const projectRun = current?.project
-  const graph = current?.graph ?? []
+  const changeRun = createMemo(() => state()?.change)
+  const projectRun = createMemo(() => state()?.project)
+  const graph = createMemo(() => state()?.graph ?? [])
 
   return (
     <>
-      <Show when={changeRun}>
+      <Show when={changeRun()}>
         {(change) => <RunView context={props.context} title="Verification" run={change().run} round={change().round} />}
       </Show>
-      <Show when={projectRun}>
+      <Show when={projectRun()}>
         {(project) => <RunView context={props.context} title="Full verify" run={project()} />}
       </Show>
-      <Show when={!changeRun && !projectRun}>
+      <Show when={!changeRun() && !projectRun()}>
         <text fg={theme.text.muted} wrapMode="none">
           No verification yet. Edit a file to start continuous checks, or run <b>/verify</b> for a full check.
         </text>
       </Show>
-      <Show when={graph.length > 0}>
+      <Show when={graph().length > 0}>
         <text fg={theme.text.base}>
           <b>Engineering graph</b>
           <span style={{ fg: theme.text.muted }}>
