@@ -54,62 +54,68 @@ export function SidebarRift(props: { context: Plugin.Context; sessionID: string 
   const lines = createMemo(() => layout(state()?.graph ?? []))
   const colour = (tone: Tone) => paint(theme, tone)
 
+  const current = state()
+  const changeRun = current?.change
+  const projectRun = current?.project
+  const graph = current?.graph ?? []
+
   return (
-    <Show when={state()}>
-      {(current) => (
-        <box>
-          <Show when={current().change}>
-            {(change) => <RunView context={props.context} title="Verification" run={change().run} round={change().round} />}
+    <>
+      <Show when={changeRun}>
+        {(change) => <RunView context={props.context} title="Verification" run={change().run} round={change().round} />}
+      </Show>
+      <Show when={projectRun}>
+        {(project) => <RunView context={props.context} title="Full verify" run={project()} />}
+      </Show>
+      <Show when={!changeRun && !projectRun}>
+        <text fg={theme.text.muted} wrapMode="none">
+          No verification yet. Edit a file to start continuous checks, or run <b>/verify</b> for a full check.
+        </text>
+      </Show>
+      <Show when={graph.length > 0}>
+        <text fg={theme.text.base}>
+          <b>Engineering graph</b>
+          <span style={{ fg: theme.text.muted }}>
+            {" "}
+            {counts().proven}/{counts().total} proven
+          </span>
+        </text>
+        <text fg={theme.text.muted} wrapMode="none">
+          <span style={{ fg: colour(counts().failed + counts().at_risk + counts().stale > 0 ? "warning" : "success") }}>
+            {bar(counts())}
+          </span>
+          <Show when={counts().failed > 0}>
+            <span style={{ fg: colour("error") }}> ✗{counts().failed}</span>
           </Show>
-          <Show when={current().project}>
-            {(project) => <RunView context={props.context} title="Full verify" run={project()} />}
+          <Show when={counts().stale > 0}>
+            <span style={{ fg: colour("warning") }}> ⟳{counts().stale}</span>
           </Show>
-          <Show when={current().graph.length > 0}>
-            <text fg={theme.text.base}>
-              <b>Engineering graph</b>
-              <span style={{ fg: theme.text.muted }}>
-                {" "}
-                {counts().proven}/{counts().total} proven
-              </span>
-            </text>
-            <text fg={theme.text.muted} wrapMode="none">
-              <span style={{ fg: colour(counts().failed + counts().at_risk + counts().stale > 0 ? "warning" : "success") }}>
-                {bar(counts())}
-              </span>
-              <Show when={counts().failed > 0}>
-                <span style={{ fg: colour("error") }}> ✗{counts().failed}</span>
-              </Show>
-              <Show when={counts().stale > 0}>
-                <span style={{ fg: colour("warning") }}> ⟳{counts().stale}</span>
-              </Show>
-              <Show when={counts().at_risk > 0}>
-                <span style={{ fg: colour("warning") }}> ⚠{counts().at_risk}</span>
-              </Show>
-            </text>
-            <For each={lines()}>
-              {(line) => (
-                <>
-                  <text fg={theme.text.muted} wrapMode="none">
-                    {line.prefix}
-                    <span style={{ fg: colour(VERDICT[line.node.verdict].tone) }}>{VERDICT[line.node.verdict].glyph}</span>{" "}
-                    <span style={{ fg: line.node.verdict === "proven" ? theme.text.muted : theme.text.base }}>{line.node.title}</span>
-                    <Show when={line.node.verdict !== "proven"}> · {VERDICT[line.node.verdict].label}</Show>
-                    <Show when={line.folded > 0}> (+{line.folded} proven)</Show>
-                  </text>
-                  <Show when={line.waiting.length > 0}>
-                    <text fg={theme.text.muted} wrapMode="none">
-                      {line.prefix.replace(/[├└]─ $/, (m) => (m.startsWith("├") ? "│  " : "   "))}
-                      {"  ↳ waiting on "}
-                      {line.waiting.join(", ")}
-                    </text>
-                  </Show>
-                </>
-              )}
-            </For>
+          <Show when={counts().at_risk > 0}>
+            <span style={{ fg: colour("warning") }}> ⚠{counts().at_risk}</span>
           </Show>
-        </box>
-      )}
-    </Show>
+        </text>
+        <For each={lines()}>
+          {(line) => (
+            <>
+              <text fg={theme.text.muted} wrapMode="none">
+                {line.prefix}
+                <span style={{ fg: colour(VERDICT[line.node.verdict].tone) }}>{VERDICT[line.node.verdict].glyph}</span>{" "}
+                <span style={{ fg: line.node.verdict === "proven" ? theme.text.muted : theme.text.base }}>{line.node.title}</span>
+                <Show when={line.node.verdict !== "proven"}> · {VERDICT[line.node.verdict].label}</Show>
+                <Show when={line.folded > 0}> (+{line.folded} proven)</Show>
+              </text>
+              <Show when={line.waiting.length > 0}>
+                <text fg={theme.text.muted} wrapMode="none">
+                  {line.prefix.replace(/[├└]─ $/, (m) => (m.startsWith("├") ? "│  " : "   "))}
+                  {"  ↳ waiting on "}
+                  {line.waiting.join(", ")}
+                </text>
+              </Show>
+            </>
+          )}
+        </For>
+      </Show>
+    </>
   )
 }
 

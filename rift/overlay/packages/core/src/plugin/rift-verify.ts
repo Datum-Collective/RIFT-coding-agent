@@ -238,15 +238,11 @@ export const Plugin = define({
         if (event.status !== "completed") return Effect.void
         const files: string[] = []
         if (event.tool === "write") {
+          const r = (event.result as { readonly resource?: string }).resource
+          if (typeof r === "string") files.push(r)
+        } else if (event.tool === "edit") {
           const p = (event.input as { readonly path?: string }).path
           if (typeof p === "string") files.push(p)
-        } else if (event.tool === "edit") {
-          const f = (event.input as { readonly files?: unknown })?.files
-          if (Array.isArray(f))
-            for (const item of f) {
-              const r = (item as { readonly resource?: string }).resource
-              if (typeof r === "string") files.push(r)
-            }
         } else {
           const a = (event.result as { readonly applied?: unknown })?.applied
           if (Array.isArray(a))
