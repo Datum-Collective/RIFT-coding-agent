@@ -2,31 +2,25 @@ diff --git a/opencode/packages/tui/src/routes/home.tsx b/opencode/packages/tui/s
 index 71e7b64..6994c5f 100644
 --- a/opencode/packages/tui/src/routes/home.tsx
 +++ b/opencode/packages/tui/src/routes/home.tsx
-@@ -1,6 +1,9 @@
+@@ -1,6 +1,6 @@
  import { Prompt, type PromptRef } from "../component/prompt"
  import { createEffect, createMemo, createSignal, onMount, Show, untrack } from "solid-js"
 -import { Logo } from "../component/logo"
 +import { Landing } from "../component/landing"
-+import { IdleSingularity } from "../component/idle-singularity"
-+import { TypingKoi } from "../component/typing-koi"
-+import type { BoxRenderable } from "@opentui/core"
  import { useArgs } from "../context/args"
  import { useRouteData } from "../context/route"
  import { usePromptRef } from "../context/prompt"
-@@ -33,6 +36,7 @@ export function Home() {
+@@ -33,6 +33,6 @@ export function Home() {
    const location = useLocation()
    const dimensions = useTerminalDimensions()
    const [logoWidth, setLogoWidth] = createSignal(0)
-+  const [composer, setComposer] = createSignal<BoxRenderable>()
    // Global MCP elicitations can arrive without a session route, so keep them reachable from Home.
    const currentLocation = () => route.location ?? data.location.default()
    const forms = createMemo(() => data.session.form.list("global", currentLocation()) ?? [])
-@@ -80,31 +84,30 @@ export function Home() {
+@@ -80,31 +79,28 @@ export function Home() {
  
    return (
      <>
-+      <IdleSingularity />
-+      <TypingKoi composer={composer} />
        <box
          flexGrow={1}
          alignItems="center"
@@ -54,7 +48,7 @@ index 71e7b64..6994c5f 100644
 -        <UpdateNotification width={logoWidth()} />
 -        <box width="100%" maxWidth={75} zIndex={1000} paddingTop={1} flexShrink={0} position="relative">
 -          <Prompt ref={bind} placeholders={placeholder} disabled={forms().length > 0} />
-+        <box ref={setComposer} width="100%" zIndex={1000} flexShrink={0} position="relative">
++        <box width="100%" zIndex={1000} flexShrink={0} position="relative">
 +          <Prompt
 +            ref={bind}
 +            placeholders={placeholder}
