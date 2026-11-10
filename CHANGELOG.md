@@ -2,6 +2,14 @@
 
 Release notes for RIFT versions, newest first. Entries for v0.1.10 to v0.1.13 are only on the Releases page. Full notes and downloads: https://github.com/Datum-Collective/RIFT-coding-agent/releases
 
+## v7.0.0 (2026-11-10)
+
+Verification now runs continuously while you write code, not just when you ask. Every time the model finishes editing a source file, RIFT debounces briefly, then re-runs the project's own checks on just what changed — in a private snapshot, compared against the last verified tree — and publishes the result live to the sidebar. `✓ verified` appears green as soon as the checks pass; `✗ failing` appears red the moment they break, with the failing stage named. The model still gets the full failure report and can run `/verify fix` to have RIFT repair it automatically. Built on OpenCode v2.2.6.
+
+### Added
+- **Continuous verification while you write.** After `write`/`edit`/`patch` on a source file (`.ts`, `.js`, `.go`, `.rs`, `.py`, etc.), RIFT debounces 2 seconds, then runs the change tier on the edited files and shows `verified`/`failing`/`unproven` in the sidebar live — no `/verify` command needed.
+- **Sidebar verification status.** The row under the composer and the sidebar show how the newest run stands, with stage-by-stage glyphs (`✓` passed, `✗` failed/timed out, `~` flaky, `⊘` skipped, `○` not run, `◌` running) and passes folded into one line once the list is long.
+
 ## v0.7.0 (2026-11-10)
 
 Not all those who wander are lost. RIFT gets a new face: a dotted logo that opens into a black hole when you click it, a long input bar that keeps its place, and the free model working again. Built on OpenCode v2.2.6. Full notes: https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v0.7.0
