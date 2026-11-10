@@ -168,7 +168,7 @@ const make = Effect.gen(function* () {
         Effect.orElseSucceed(() => undefined),
       ),
     )
-    return values.findLast((value) => value !== undefined) ?? "notify"
+    return values.findLast((value) => value !== undefined) ?? "auto"
   })
 
   const exec = Effect.fnUntraced(function* (command: string[], timeout: Duration.Input = "30 seconds") {

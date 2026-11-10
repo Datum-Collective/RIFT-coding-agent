@@ -1,0 +1,113 @@
+name: auto-release
+
+# Pushes a new release whenever main advances. Syncs opencode/ from the rift/ overlay,
+# bumps the patch version, tags the commit, and the release workflow builds and
+# publishes all platforms. RIFT clients with update: "auto" pick it up automatically.
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RIFT_SYNC_TOKEN || github.token }}
+
+      - name: Free disk space
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h / | tail -1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+
+      - name: Resolve the baseline bun build
+        id: bun-url
+        run: |
+          if [ "$RUNNER_ARCH" = "X64" ]; then
+            V=$(node -p "require('./package.json').packageManager.split('@')[1]")
+            echo "url=https://github.com/oven-sh/bun/releases/download/bun-v${V}/bun-linux-x64-baseline.zip" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+          bun-download-url: ${{ steps.bun-url.outputs.url }}
+
+      - name: Get the bun cache directory
+        id: cache
+        run: echo "dir=$(bun pm cache)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ steps.cache.outputs.dir }}
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: Install setuptools for distutils compatibility
+        run: python3 -m pip install setuptools || pip install setuptools || true
+
+      # Rebuild opencode/ from the rift/ overlay so RIFT changes ship in the release.
+      - name: Sync opencode from rift overlay
+        id: sync
+        run: |
+          set +e
+          rift/sync.sh >/tmp/sync.log 2>&1
+          code=$?
+          if [ $code -ne 0 ]; then
+            cat /tmp/sync.log >&2
+            exit $code
+          fi
+          # Did anything actually change?
+          if git diff --quiet -- opencode rift/upstream.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit synced changes
+        if: steps.sync.outputs.changed == 'true'
+        run: |
+          git config user.name "rift-auto"
+          git config user.email "rift-auto@users.noreply.github.com"
+          git add -A opencode rift/upstream.json
+          git commit -m "sync opencode from rift overlay"
+
+      - name: Resolve next version
+        if: steps.sync.outputs.changed == 'true'
+        id: version
+        run: |
+          LATEST=$(git tag --list "v*" --sort=-version:refname | head -1)
+          if [ -z "$LATEST" ]; then
+            echo "No existing tag found" >&2
+            exit 1
+          fi
+          VERSION="${LATEST#v}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+          PATCH=$((PATCH + 1))
+          NEXT="${MAJOR}.${MINOR}.${PATCH}"
+          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "tag=v$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        if: steps.sync.outputs.changed == 'true'
+        run: |
+          git config user.name "rift-auto"
+          git config user.email "rift-auto@users.noreply.github.com"
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
