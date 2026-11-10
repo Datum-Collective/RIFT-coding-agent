@@ -11,7 +11,7 @@ const palette = riftPalette({
   primary: { r: 47, g: 129, b: 247 },
 })
 
-const stream = (seed = 1) => createPond({ cols: 100, rows: 7, aspect: 2, palette, seed, scene: "stream" })
+const stream = (seed = 1) => createPond({ cols: 100, rows: 7, aspect: 2, palette, seed })
 
 const run = (pond: Pond, seconds: number, each: () => void = () => {}) => {
   for (let i = 0; i < seconds * 30; i++) {
@@ -66,11 +66,9 @@ const meanSpeed = (pond: Pond, go: (each: () => void) => void) => {
 const SEEDS = [1, 2, 3, 4, 5, 6]
 
 describe("the koi stream above the composer", () => {
-  test("it starts as empty water, with no pads or petals, and the first koi comes in at once", () => {
+  test("it starts as empty water, and the first koi comes in at once", () => {
     const pond = stream()
     expect(pond.koi).toEqual([])
-    expect(pond.pads).toEqual([])
-    expect(pond.petals).toEqual([])
     run(pond, 1 / 30)
     expect(pond.koi.length).toBe(1)
   })

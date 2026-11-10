@@ -250,8 +250,9 @@ The mode belongs to the session. Plan mode keeps its read-only limits in every m
 
 Type `/background` (or `/bg`) for one list of everything that animates behind your text:
 
-- **Fish**: the koi pond that appears when you go quiet, and the koi that swim while you type. Switch
-  them off and on from the list, or type `/disable fish` and `/enable fish`.
+- **Fish**: the black hole that opens behind the logo and swallows it when you go quiet or click the
+  logo, and the koi that swim while you type. Switch them off and on from the list, or type
+  `/disable fish` and `/enable fish`.
 - **Wallpapers**: Rift (RIFT's own: a seam of azure light that widens while the agent works and runs green when it finishes), Matrix, City, Megacity, Dome, Rider, Space, 3D Pipes and Mystify, drawn in the terminal's own cells behind the text, dimmed
   so the text stays readable. They speed up while RIFT is working and bring a visitor when it finishes. Pick
   **None** to turn the wallpaper off. The settings below the list set how much happens, the time of day

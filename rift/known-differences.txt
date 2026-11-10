@@ -18,3 +18,27 @@ tui: test/app-lifecycle.test.tsx::::execution failure keeps the empty session co
 
 # Waits for "commands" at 44 columns (label dropped there), and the home status now sits in the composer's row, which measures it one frame before showing it.
 tui: test/app-lifecycle.test.tsx::::server plugin failures are visible at width %s (already failed: %s)
+# Waits for upstream's terminal titles "OpenCode" and "OC | <session>". RIFT titles the terminal "RIFT" (rift/rebrand.txt).
+tui: test/app-lifecycle.test.tsx::::SIGHUP clears title and disposes scoped resources once
+tui: test/app-lifecycle.test.tsx::::session lifecycle updates the terminal title and prints the epilogue after cleanup
+tui: test/app-lifecycle.test.tsx::::session title generated while an untitled session is loading remains visible
+
+# Waits for "Updating OpenCode". RIFT's update dialog says "Updating RIFT" (rift/rebrand.txt).
+tui: test/component/dialog-update.test.tsx::::installation progress replaces checking while the update job is still pending
+
+# Asserts "OpenCode includes free models". RIFT's sidebar says "RIFT includes free models" (rift/rebrand.txt).
+tui: test/feature-plugins/sidebar-footer.test.tsx::::sidebar shows onboarding without a connected integration
+
+# Asserts "Tell OpenCode what to do differently". RIFT says "Tell RIFT what to do differently" (rift/rebrand.txt).
+tui: test/mini/blocker.responsive.test.tsx::::roomy rejection keeps the editor and confirmation hints inline
+
+# These assert the User-Agent carries the app's own version. RIFT sends the OpenCode release it is built on instead (patch 0015),
+# because OpenCode's free tier refuses a version below 1.18.0. rift-useragent.test.ts covers the new behaviour.
+core: test/app.test.ts::::formats app metadata as a user agent
+core: test/plugin/provider-github-copilot.test.ts::GithubCopilotPlugin::adds Copilot authentication and request metadata headers
+core: test/plugin/provider-opencode.test.ts::OpencodePlugin::persists rotated credentials for null
+core: test/plugin/provider-opencode.test.ts::OpencodePlugin::persists rotated credentials for org-a with discovery unavailable
+core: test/plugin/provider-opencode.test.ts::OpencodePlugin::persists rotated credentials for org-missing
+core: test/plugin/provider-opencode.test.ts::OpencodePlugin::persists rotated credentials for org-z
+core: test/plugin/provider-opencode.test.ts::OpencodePlugin::persists rotated credentials for org-z with discovery unavailable
+core: test/plugin/provider-opencode.test.ts::OpencodePlugin::persists rotated credentials for undefined

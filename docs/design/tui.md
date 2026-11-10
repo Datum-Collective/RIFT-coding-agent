@@ -137,13 +137,16 @@ reasoning. No all-caps headings; section labels are lowercase muted words (`plan
 One spinner (braille, 80 ms, accent) for anything in progress. No pulses, gradients or
 background animation. Respect the `animations_enabled` setting: a static `…` when off.
 
-One exception: after ten seconds without typing, the home screen (and only the home screen) fades in a koi pond behind the interface (`component/idle-koi`, `koi/`). It is
-painted only into cells the interface left empty, so nothing is ever covered, and the first key or
-paste removes it on the next frame; the mouse does not, so it can be moved, clicked and scrolled
-while the pond plays. The one thing it takes over is the banner: each time the pond
-appears, the logo breaks into pieces that become the koi, and while the pond is out the banner
-draws nothing (it keeps its size, so nothing moves); the next frame after the first key or paste it is back
-exactly as it was. The pond uses the palette above and nothing else: the canvas, neutral greys and
-the azure accent. It stops while the terminal is in the background. It follows the
+One exception: after ten seconds without typing, or at once when the logo is clicked, the home
+screen (and only the home screen) opens a black hole behind the interface
+(`component/idle-singularity`, `koi/singularity`). It is drawn in braille dots, painted only into
+cells the interface left empty, so nothing is ever covered. Its shadow opens out of the logo, the
+rest of the logo is torn into strands and swallowed, and the hole spins with its accretion disk
+until the first key or paste, when it fades out and the logo comes back exactly as it was, in about
+a second; the mouse neither starts nor ends it, so it can be moved, clicked and scrolled while the
+hole is out. While it is out the banner draws nothing (it keeps its size, so nothing moves) and the
+hole draws the logo's dots itself. It is the one place outside the palette above: the disk has its
+own thermal colours, white at its inner edge through orange to dim red at its rim, and the logo
+keeps the banner's. It stops while the terminal is in the background. It follows the
 `animations_enabled` setting and also `RIFT_NO_ANIMATION` (the spinner and the prompt follow the
 setting only).

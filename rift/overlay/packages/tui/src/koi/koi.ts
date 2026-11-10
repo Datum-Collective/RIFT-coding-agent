@@ -1,6 +1,6 @@
 /**
- * A koi: a spine of thirteen joints, dragged along behind a head that wanders, turns back from the
- * banks, keeps clear of the others, and now and then puts on a burst of speed.
+ * A koi: a spine of thirteen joints, dragged along behind its head. Where the head goes is the
+ * stream's to decide (see `stream`).
  *
  * Adapted from koi-screensaver by Erik Johansson (MIT licence). See THIRD_PARTY_NOTICES.md.
  */
@@ -48,23 +48,11 @@ export type Koi = {
   heading: number
   speed: number
   cruise: number
-  burst: number
-  burstT: number
-  wander: number
-  wanderT: number
   phase: number
   stroke: number
   /** How deep it swims, 0 at the surface to 1 at the bottom; it keeps to it. */
   depth: number
   pat: Pattern
-  /** 1 when whole; less while a scene gathers it up. */
-  grow: number
-  /** 1 when swimming freely; less while it starts to. */
-  ease: number
-  /** The chase: its place on the circle, behind the leader. */
-  slot: number
-  /** The chase: seconds into a tail flick, 0 for none. */
-  flick: number
   shape?: KoiShape
 }
 
@@ -75,7 +63,6 @@ export type Habitat = {
   /** Koi scale; a koi is 18*size long. */
   size: number
   rng: Random
-  koi: Koi[]
 }
 
 /** A koi glides about a fifth of its length each second. */
@@ -88,7 +75,8 @@ export function newKoi(home: Habitat, pat: Pattern): Koi {
   const heading = home.rng.float() * 2 * Math.PI
   const cruise = 0.75 + 0.35 * home.rng.float()
   const phase = home.rng.float() * 6.28
-  const burstT = 4 + home.rng.float() * 12
+  // Drawn and unused since the wandering koi went, so a seed still makes exactly the stream it did.
+  home.rng.float()
   return {
     j: Array.from({ length: JOINTS }, (_, n) => {
       const d = SEG * home.size * n
@@ -97,92 +85,11 @@ export function newKoi(home: Habitat, pat: Pattern): Koi {
     heading,
     speed: cruise * baseSpeed(home.size),
     cruise,
-    burst: 0,
-    burstT,
-    wander: heading,
-    wanderT: 0,
     phase,
     stroke: 0,
     depth: 0,
     pat,
-    grow: 1,
-    ease: 1,
-    slot: 0,
-    flick: 0,
   }
-}
-
-export function swim(home: Habitat, k: Koi, dt: number) {
-  const length = 18 * home.size
-  const base = baseSpeed(home.size)
-  const head = k.j[0]!
-
-  // Wander: every few seconds pick a new heading to drift towards.
-  k.wanderT -= dt
-  if (k.wanderT <= 0) {
-    k.wander = k.heading + (home.rng.float() - 0.5) * 2.4
-    k.wanderT = 4 + home.rng.float() * 7
-  }
-  let sx = Math.cos(k.wander)
-  let sy = Math.sin(k.wander)
-
-  // Turn back from the banks.
-  const margin = length * 1.1
-  const push = (v: number, lo: number, hi: number) => {
-    if (v < lo + margin) return (lo + margin - v) / margin
-    if (v > hi - margin) return -(v - (hi - margin)) / margin
-    return 0
-  }
-  sx += 3 * push(head.x, 0, home.w)
-  sy += 3 * push(head.y, 0, home.h)
-
-  // Drift back towards the open water in the middle, once they stray past a third of the way to
-  // the edge.
-  const nx = (head.x / home.w) * 2 - 1
-  const ny = (head.y / home.h) * 2 - 1
-  const r = Math.hypot(nx, ny)
-  if (r > 0.3) {
-    const f = (3.0 * (r - 0.3)) / r
-    sx -= nx * f
-    sy -= ny * f
-  }
-
-  // Keep a little apart from the others.
-  for (const other of home.koi) {
-    if (other === k) continue
-    for (const n of [0, 4, 8]) {
-      const dx = head.x - other.j[n]!.x
-      const dy = head.y - other.j[n]!.y
-      const d = Math.hypot(dx, dy)
-      if (d > 0 && d < length * 1.1) {
-        const f = 2.6 * (1 - d / (length * 1.1))
-        sx += (dx / d) * f
-        sy += (dy / d) * f
-      }
-    }
-  }
-
-  const want = Math.atan2(sy, sx)
-  // Turning radius never tighter than about half a body length.
-  const maxTurn = k.speed / (0.5 * length)
-  k.heading += clamp(angleTo(k.heading, want) * 1.3, -maxTurn, maxTurn) * dt
-
-  // Now and then a few strong strokes, then a long glide.
-  k.burstT -= dt
-  if (k.burstT <= 0) {
-    k.burst = 0.6 + 0.6 * home.rng.float()
-    k.burstT = 9 + home.rng.float() * 16
-  }
-  k.burst *= Math.exp(-dt / 1.6)
-  const goal = base * (k.cruise + k.burst)
-  k.speed += (goal - k.speed) * Math.min(1, dt * 0.9)
-  const effort = k.speed / base - 0.4 + 2 * k.burst
-  k.stroke += (clamp(effort, 0.35, 1.2) - k.stroke) * Math.min(1, dt * 2)
-  k.phase += dt * (2.6 + 3.4 * k.stroke)
-
-  head.x += Math.cos(k.heading) * k.speed * dt
-  head.y += Math.sin(k.heading) * k.speed * dt
-  follow(home, k)
 }
 
 /** Drags the body after the head, but a koi's spine only bends so far. */

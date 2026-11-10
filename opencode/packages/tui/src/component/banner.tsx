@@ -44,7 +44,7 @@ export function Banner() {
         width={BANNER_WIDTH}
         height={banner.length}
         ref={(box) => {
-          // The idle koi pond starts from where the banner really is.
+          // The singularity starts from where the banner really is.
           logoAnchor.set(box)
           onCleanup(() => logoAnchor.clear(box))
         }}
@@ -52,7 +52,7 @@ export function Banner() {
           if (event.button === 0) logoAnchor.click()
         }}
       >
-        {/* Hidden, it keeps its size and draws nothing: the logo has become koi. */}
+        {/* Hidden, it keeps its size and draws nothing: the singularity is drawing the logo. */}
         <Show when={!logoAnchor.hidden()}>
           <Dots logo={logo()} />
         </Show>

@@ -2,9 +2,27 @@
 
 Release notes for RIFT versions, newest first. Entries for v0.1.10 to v0.1.13 are only on the Releases page. Full notes and downloads: https://github.com/Datum-Collective/RIFT-coding-agent/releases
 
+## v0.7.0 (2026-11-10)
+
+Not all those who wander are lost. RIFT gets a new face: a dotted logo that opens into a black hole when you click it, a long input bar that keeps its place, and the free model working again. Built on OpenCode v2.2.6. Full notes: https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v0.7.0
+
+### Added
+- **A logo drawn in dots.** The RIFT banner is now a calm grid of small dots, with the same letters and colours. The short-terminal wordmark is dotted too.
+- **A black hole on the home screen.** Click the logo, or leave the screen idle for about 10 seconds, and a black hole opens in it. The logo's dots are torn off letter by letter, stretched into filaments, spiralled in and swallowed. It is drawn in the logo's own blues and white and follows your theme. Press a key and the dots come back. It replaces the koi pond. The koi that swim above the input while you type are still there.
+- **A centred home screen.** The logo and "What should change in <project>?" sit in the middle, and the input is docked at the bottom with space for the koi between.
+- **One long input bar.** A tinted bar across the full width, three rows tall, the same size on the home screen and in a session. Under it, one row carries the agent, the model, the hint and the version on the left, and the status and the working folder on the right. A long draft grows it upward. The slash and file menu sits directly above it.
+
+### Changed
+- **The koi swim like fish.** They push with a few tail beats, then glide. Faster typing means quicker, stronger beats and shorter glides, and each koi reacts a moment apart from the others.
+- **RIFT says RIFT.** The terminal title, the update dialog, the crash screen, shell mode, the command help and the upgrade and uninstall messages now name RIFT, not OpenCode. The hosted services OpenCode Zen, Go and Console keep their names.
+
+### Fixed
+- **The free model works again.** The error "OpenCode 1.18.0 or newer is required to use the free tier" is gone. RIFT now reports the OpenCode release it is built on, and checks that in its tests.
+- **The animation starts when the window has focus.** In a terminal that reports focus, such as cmux beside another pane, the logo animation used to wait for focus and never ran.
+
 ## v0.6.0 (2026-11-07)
 
-All that is gold does not glitter, and not every green run is proven. RIFT now checks your project the way CI does. `/verify` tests the whole thing from a clean checkout and tells you what your changes broke and what was already broken. Built on OpenCode v2.2.6. Full notes: https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v0.6.0
+Even the very wise cannot see all ends. RIFT now checks your project the way CI does, instead of trusting that it works. `/verify` tests the whole thing from a clean checkout and tells you what your changes broke and what was already broken. Built on OpenCode v2.2.6. Full notes: https://github.com/Datum-Collective/RIFT-coding-agent/releases/tag/v0.6.0
 
 ### Added
 - **`/verify`, the whole project from scratch.** RIFT copies what git would commit into a private folder, with no `node_modules`, build output or `.env`, so nothing left over on your machine can fake a pass. It installs from the lockfile with the lockfile frozen. Then it runs your project's own checks in CI order: format, lint, typecheck, build, tests, then end-to-end tests and the agent's graph checks. If the build fails, the tests are marked skipped and never reported as passing, but lint and typecheck still report. Supports bun, npm, pnpm, yarn, Go, Rust, Python (uv or poetry) and Makefile targets. Parts of the project RIFT can't check are listed by name.
@@ -12,7 +30,7 @@ All that is gold does not glitter, and not every green run is proven. RIFT now c
 - **Flaky tests are named.** A failing test is rerun. If it fails and then passes on the same code, it is reported as flaky. It never counts as a pass or as a regression.
 - **Mutation testing on your changes.** RIFT makes small deliberate breaks in the lines you changed and lists the ones no test notices. This is advice and never changes the verdict. `/verify quick` skips it.
 - `/verify fix` hands the failures to the agent, newest first. `/verify <path>` checks only the packages that contain that path. `/verify stop` cancels a run.
-- When a check needs approval, you get one prompt that lists every command. "Always" saves the whole list. The report lands as one line in the transcript and does not wake the model. The sidebar shows the run as it goes.
+- When a check needs approval, you get one approval request that lists every command. "Always" saves the whole list. The report lands as one line in the transcript and does not wake the model. The sidebar shows the run as it goes.
 
 ### Changed
 - **The check after each agent turn runs on the same engine.** It now runs on a snapshot of your files rather than the files themselves, so a `lint --fix` script no longer edits your work. The agent is told whether a failure is new or was already failing before its change.

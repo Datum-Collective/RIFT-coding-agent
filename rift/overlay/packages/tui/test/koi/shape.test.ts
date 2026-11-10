@@ -6,7 +6,7 @@ import { random } from "../../src/koi/random"
 const grid: Grid = { pw: 240, ph: 72, aspect: 2, size: 1.7 }
 
 function straightKoi(pattern = PATTERNS[0]!, at = { x: 150, y: 70 }): Koi {
-  const home: Habitat = { w: grid.pw, h: grid.ph * grid.aspect, size: grid.size, rng: random(3), koi: [] }
+  const home: Habitat = { w: grid.pw, h: grid.ph * grid.aspect, size: grid.size, rng: random(3) }
   const koi = newKoi(home, pattern)
   koi.heading = 0
   koi.phase = 0
@@ -108,15 +108,11 @@ describe("a koi's shape", () => {
     expect(koi.j).toEqual(before)
   })
 
-  test("eyes appear once the koi is grown, sit on the head, and are not there while it is small", () => {
-    const grown = shapeKoi(grid, straightKoi())
-    expect(grown.eyeR).toBeGreaterThan(0)
+  test("its eyes sit on its head", () => {
+    const shape = shapeKoi(grid, straightKoi())
+    expect(shape.eyeR).toBeGreaterThan(0)
     const head = { x: 150, y: 70 }
-    for (const eye of grown.eyes) expect(Math.hypot(eye.x - head.x, eye.y - head.y)).toBeLessThan(RADII[0]! * grid.size)
-
-    const small = straightKoi()
-    small.grow = 0.5
-    expect(shapeKoi(grid, small).eyeR).toBe(0)
+    for (const eye of shape.eyes) expect(Math.hypot(eye.x - head.x, eye.y - head.y)).toBeLessThan(RADII[0]! * grid.size)
   })
 
   test("patches are drawn for a patterned koi and are absent for a plain one", () => {
@@ -136,13 +132,5 @@ describe("a koi's shape", () => {
     for (let i = 0; i < metallic.w * metallic.h; i++) if (metallic.sheen[i]! < 0) expect(metallic.sil[i]!).toBeLessThan(0)
 
     expect(shapeKoi(grid, straightKoi(PATTERNS[0]!)).hasSheen).toBe(false)
-  })
-
-  test("a koi that has not grown yet is smaller", () => {
-    const whole = shapeKoi(grid, straightKoi())
-    const young = straightKoi()
-    young.grow = 0.6
-    const smaller = shapeKoi(grid, young)
-    expect(inside(smaller.sil, smaller.w * smaller.h)).toBeLessThan(inside(whole.sil, whole.w * whole.h))
   })
 })

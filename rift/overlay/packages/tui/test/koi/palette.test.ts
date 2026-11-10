@@ -28,7 +28,7 @@ function hsv({ r, g, b }: Rgb) {
 
 const hueGap = (a: number, b: number) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b))
 
-const colourful = [Tag.eye, Tag.eyePale, Tag.ink, Tag.red, Tag.orange, Tag.gold, Tag.sheen, Tag.pad, Tag.padRim, Tag.padVein, Tag.petal, Tag.petalInner, Tag.stamen]
+const colourful = [Tag.eye, Tag.eyePale, Tag.ink, Tag.red, Tag.orange, Tag.gold, Tag.sheen]
 
 describe("RIFT palette", () => {
   for (const [name, palette] of [["dark", dark], ["light", light]] as const) {
@@ -54,16 +54,6 @@ describe("RIFT palette", () => {
     test(`${name}: the patches on a koi can be told from its body`, () => {
       const koi = [Tag.ink, Tag.red, Tag.orange, Tag.gold]
       for (const a of koi) for (const b of koi) if (a < b) expect(dist2(palette.tags[a]!, palette.tags[b]!)).toBeGreaterThan(2500)
-    })
-
-    test(`${name}: pads show against the canvas but stay quieter than the koi`, () => {
-      const pad = palette.tags[Tag.pad]!
-      expect(dist2(pad, palette.bg)).toBeGreaterThan(300)
-      const padContrast = Math.abs(lum(pad) - lum(palette.bg))
-      const koiContrast = Math.abs(lum(palette.tags[Tag.ink]!) - lum(palette.bg))
-      expect(padContrast).toBeLessThan(koiContrast)
-      expect(dist2(palette.tags[Tag.padRim]!, pad)).toBeGreaterThan(20)
-      expect(dist2(palette.tags[Tag.padVein]!, pad)).toBeGreaterThan(20)
     })
 
     test(`${name}: the eye is dark on a light head and pale on a dark one`, () => {

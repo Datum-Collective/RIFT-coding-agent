@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { OptimizedBuffer, RGBA, ResourceContext } from "@opentui/core"
-import { paintCells } from "../../src/koi/paint"
+import { paintCells, paintDots } from "../../src/koi/paint"
 import type { Placed } from "../../src/koi/pond"
 
 const PAGE = RGBA.fromInts(0, 0, 0, 255)
@@ -36,13 +36,6 @@ describe("paintCells", () => {
     expect(word(buffer.withBuffers((cells) => cells.fg.slice()), buffer, 3, 1)).toEqual([47, 129, 247])
     expect(word(buffer.withBuffers((cells) => cells.bg.slice()), buffer, 3, 1)).toEqual([10, 20, 30])
     expect(charAt(buffer, 4, 1)).toBe(" ")
-  })
-
-  test("a cell with a glyph of its own, the logo's dots at rest, is drawn with that glyph in its colours", () => {
-    const buffer = screen()
-    expect(paintCells(buffer, [{ ...cell(3, 1, 0, [170, 170, 170], [0, 0, 0]), char: "⣿" }])).toBe(1)
-    expect(charAt(buffer, 3, 1)).toBe("⣿")
-    expect(word(buffer.withBuffers((cells) => cells.fg.slice()), buffer, 3, 1)).toEqual([170, 170, 170])
   })
 
   test("goes behind text: a cell that already has a character is left alone", () => {
@@ -114,5 +107,57 @@ describe("paintCells", () => {
     expect(paintCells(buffer, [cell(3, 1), cell(0, 0)], { r: 0, g: 0, b: 0 })).toBe(0)
     // Without being told the page's colour it takes the top left cell for it, as before.
     expect(paintCells(buffer, [cell(3, 1)])).toBe(1)
+  })
+})
+
+describe("paintDots", () => {
+  /** A screenful of braille the size of the test screen, with dots in the cells given. */
+  const dots = (cells: { col: number; row: number; bits: number; rgb: [number, number, number] }[]) => {
+    const bits = new Uint8Array(10 * 4)
+    const rgb = new Uint8Array(10 * 4 * 3)
+    for (const cell of cells) {
+      bits[cell.row * 10 + cell.col] = cell.bits
+      rgb.set(cell.rgb, (cell.row * 10 + cell.col) * 3)
+    }
+    return { cols: 10, rows: 4, bits, rgb }
+  }
+
+  test("draws each cell's dots as its braille character in its colour, and leaves cells with no dots alone", () => {
+    const buffer = screen()
+    expect(paintDots(buffer, dots([{ col: 3, row: 1, bits: 0xff, rgb: [255, 127, 30] }, { col: 4, row: 2, bits: 0x01, rgb: [72, 6, 14] }]))).toBe(2)
+    expect(charAt(buffer, 3, 1)).toBe("⣿")
+    expect(charAt(buffer, 4, 2)).toBe("⠁")
+    expect(word(buffer.withBuffers((cells) => cells.fg.slice()), buffer, 3, 1)).toEqual([255, 127, 30])
+    expect(word(buffer.withBuffers((cells) => cells.fg.slice()), buffer, 4, 2)).toEqual([72, 6, 14])
+    expect(charAt(buffer, 5, 2)).toBe(" ")
+    // The page's own background stays: the dots lie on it.
+    expect(word(buffer.withBuffers((cells) => cells.bg.slice()), buffer, 3, 1)).toEqual([0, 0, 0])
+  })
+
+  test("goes behind text and panels, as the koi do", () => {
+    const buffer = screen()
+    buffer.setCell(3, 1, "X", WHITE, PAGE)
+    buffer.setCell(5, 1, " ", WHITE, PANEL)
+    expect(paintDots(buffer, dots([{ col: 3, row: 1, bits: 0xff, rgb: [255, 255, 255] }, { col: 5, row: 1, bits: 0xff, rgb: [255, 255, 255] }]), { r: 0, g: 0, b: 0 })).toBe(0)
+    expect(charAt(buffer, 3, 1)).toBe("X")
+    expect(charAt(buffer, 5, 1)).toBe(" ")
+  })
+
+  test("the space between two words is left alone, so a line of text stays whole", () => {
+    const buffer = screen()
+    buffer.drawText("ab cd", 2, 1, WHITE)
+    const all = dots(Array.from({ length: 10 }, (_, col) => ({ col, row: 1, bits: 0xff, rgb: [255, 255, 255] as [number, number, number] })))
+    paintDots(buffer, all)
+    expect(charAt(buffer, 4, 1)).toBe(" ")
+    // Beside the text, as against inside it, the scene still comes right up to it.
+    expect(charAt(buffer, 1, 1)).toBe("⣿")
+    expect(charAt(buffer, 7, 1)).toBe("⣿")
+  })
+
+  test("a scene bigger than the screen is cut to it", () => {
+    const buffer = OptimizedBuffer.create(4, 2, "wcwidth", { respectAlpha: true, owner: new ResourceContext({ objectCapacity: 8, renderCellsMax: 100_000 }) })
+    buffer.clear(PAGE)
+    const all = dots(Array.from({ length: 40 }, (_, i) => ({ col: i % 10, row: Math.floor(i / 10), bits: 0x40, rgb: [1, 2, 3] as [number, number, number] })))
+    expect(paintDots(buffer, all)).toBe(8)
   })
 })
