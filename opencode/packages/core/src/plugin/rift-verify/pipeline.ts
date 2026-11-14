@@ -115,7 +115,7 @@ export type Progress =
   | { readonly type: "finished"; readonly stage: RiftStages.StageId; readonly outcome: RiftVerdict.Outcome | RiftVerdict.Settled }
   | { readonly type: "comparing" }
   | { readonly type: "mutating"; readonly done: number; readonly total: number }
-  | { readonly type: "done"; readonly at: number; readonly verdict: RiftVerdict.Verdict; readonly headline: string; readonly receipt: string }
+  | { readonly type: "done"; readonly at: number; readonly verdict: RiftVerdict.Verdict; readonly headline: string; readonly receipt: string; readonly notes?: readonly string[] }
   | { readonly type: "cancelled"; readonly at: number; readonly reason: string }
 
 const MAX_RECEIPTS = 50
@@ -141,14 +141,30 @@ const ACTIVE: ReadonlySet<string> = new Set<Active>(["preparing", "asking", "run
 const base = (view: Rift.Run) => ({ id: view.id, tree: view.tree, started: view.started, stages: view.stages })
 const active = (view: Rift.Run): Active => (ACTIVE.has(view.phase) ? (view.phase as Active) : "running")
 
+const EVIDENCE_LINES = 12
+const EVIDENCE_CHARS = 900
+
+/**
+ * What the user can check a result against. A failure shows the end of the real output of its last attempt; a pass
+ * shows how it ended and the digest of the full output, which the sealed receipt also holds.
+ */
+export const evidence = (outcome: RiftVerdict.Outcome | RiftVerdict.Settled): string | undefined => {
+  if (outcome.status === "skipped" || outcome.status === "not_run") return undefined
+  const last = outcome.attempts[outcome.attempts.length - 1]!
+  if (outcome.status === "passed") return `exit 0 in ${(last.ms / 1000).toFixed(1)}s, output sha256 ${last.digest.slice(0, 12)}`
+  const lines = last.tail.trimEnd().split("\n").slice(-EVIDENCE_LINES).join("\n")
+  const text = lines.length > EVIDENCE_CHARS ? lines.slice(-EVIDENCE_CHARS) : lines
+  return text.length > 0 ? text : undefined
+}
+
 /** The sidebar's view of one stage's outcome. */
 const settled = (stage: Rift.Stage, outcome: RiftVerdict.Outcome | RiftVerdict.Settled): Rift.Stage => {
-  const { id, unit, kind, command } = stage
-  if (outcome.status === "skipped") return { id, unit, kind, command, status: "skipped", reason: "waits on a stage that did not pass" }
-  if (outcome.status === "not_run") return { id, unit, kind, command, status: "not_run", reason: outcome.reason }
+  const { id, unit, kind, command, why } = stage
+  if (outcome.status === "skipped") return { id, unit, kind, command, why, status: "skipped", reason: "waits on a stage that did not pass" }
+  if (outcome.status === "not_run") return { id, unit, kind, command, why, status: "not_run", reason: outcome.reason }
   const ms = outcome.attempts.reduce((sum, attempt) => sum + attempt.ms, 0)
   const counts = "attribution" in outcome ? RiftVerdict.counts(outcome.attribution, outcome.tests) : undefined
-  return { id, unit, kind, command, status: outcome.status, attempt: outcome.attempts.length, ms, ...counts }
+  return { id, unit, kind, command, why, status: outcome.status, attempt: outcome.attempts.length, ms, evidence: evidence(outcome), ...counts }
 }
 
 /** Pure reducer from engine events to the sidebar's view. */
@@ -159,7 +175,7 @@ export const step = (view: Rift.Run, event: Progress): Rift.Run => {
       return {
         ...base(view),
         phase: "running",
-        stages: event.plan.stages.map((stage) => ({ id: stage.id, unit: stage.unit, kind: stage.kind, command: stage.command, status: "pending" as const })),
+        stages: event.plan.stages.map((stage) => ({ id: stage.id, unit: stage.unit, kind: stage.kind, command: stage.command, why: RiftStages.why(stage.kind), status: "pending" as const })),
       }
     case "asking":
       return { ...base(view), phase: "asking" }
@@ -172,7 +188,7 @@ export const step = (view: Rift.Run, event: Progress): Rift.Run => {
     case "mutating":
       return { ...base(view), phase: "mutating", mutants: { done: event.done, total: event.total } }
     case "done":
-      return { ...base(view), phase: "done", finished: event.at, verdict: event.verdict, headline: event.headline, receipt: event.receipt }
+      return { ...base(view), phase: "done", finished: event.at, verdict: event.verdict, headline: event.headline, receipt: event.receipt, notes: event.notes }
     case "cancelled":
       return {
         ...base(view),
@@ -473,7 +489,7 @@ export const make = (deps: Deps) =>
               text: RiftVerdict.format(summary),
               headline: RiftVerdict.headline(summary),
             }
-            yield* emit({ type: "done", at: Date.now(), verdict, headline: report.headline, receipt: sealed.digest })
+            yield* emit({ type: "done", at: Date.now(), verdict, headline: report.headline, receipt: sealed.digest, notes: findings.map((finding) => `${finding.file}: ${finding.detail}`) })
             return { kind: "ran", report } as const
           }),
         )

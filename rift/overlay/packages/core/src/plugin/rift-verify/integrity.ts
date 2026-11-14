@@ -9,7 +9,11 @@ export * as RiftIntegrity from "./integrity.js"
  * to get a green run, a `warn` is something worth a look. Neither is proof of intent.
  */
 
-export type Severity = "block" | "warn"
+/**
+ * `block` makes the run tampered, `warn` is worth a look, and `gap` is something the checks cannot speak for: the run
+ * may pass, but it proves nothing about it, so it cannot be called verified.
+ */
+export type Severity = "block" | "warn" | "gap"
 
 export interface Finding {
   readonly severity: Severity
@@ -40,6 +44,17 @@ const ASSERT = /\b(?:expect|assert\w*|should|require\.\w+|ok)\s*[.(]|\bt\.(?:Err
 const FORCED = /\|\|\s*true\b|;\s*true\s*$|\bexit\s+0\b|--passWithNoTests|--allow-empty|continue-on-error\s*:\s*true|--no-verify|-\s*run\s*:\s*['"]?(?:true|echo)\b/
 const LOOSENED = /"(?:strict|noImplicitAny|strictNullChecks|noUncheckedIndexedAccess)"\s*:\s*false/
 const SUPPRESS = /@ts-(?:ignore|nocheck)|eslint-disable|biome-ignore|#\s*type:\s*ignore|#\s*noqa|\/\/\s*nolint|#!?\[allow\(|@SuppressWarnings/
+
+// Source files, and the added lines that declare something callable: a function, a method, an arrow function, a class.
+const CODE_FILE = /\.(?:[cm]?[jt]sx?|go|rs|py|java|kt|rb|ex)$/
+const DECLARATION =
+  /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function\b|class\b)|^\s*(?:export\s+)?(?:const|let)\s+\w+\s*(?::[^=]+)?=\s*(?:async\s*)?(?:\([^)]*\)|\w+)\s*(?::[^=]+)?=>|^\s*(?:async\s+)?def\s+\w+|^\s*func\s+|^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+\w+|^\s*(?:public|private|protected)\s+(?:static\s+)?[\w<>\[\],\s]+\s+\w+\s*\(/
+
+/** The name a declaration line gives, or the line itself when it has none this can read. */
+const declaredName = (line: string) =>
+  /(?:function|class|const|let|def|func|fn)\s*\*?\s*(?:\([^)]*\)\s*)?([A-Za-z_$][\w$]*)/.exec(line)?.[1] ??
+  /([A-Za-z_$][\w$]*)\s*\(/.exec(line)?.[1] ??
+  line.trim()
 
 const MAX_FINDINGS = 20
 
@@ -105,6 +120,18 @@ export const review = (diffs: readonly FileDiff[]): Finding[] => {
     const suppressed = count(file.added, SUPPRESS)
     if (suppressed > 0) add("warn", "suppression", file.path, `${suppressed} lint or type error${suppressed > 1 ? "s" : ""} suppressed`)
   }
+
+  // Code that was added and no test that was added or changed beside it. The checks can pass and still say nothing
+  // about it, because nothing exercises it.
+  if (!diffs.some((file) => isTest(file.path) && file.status !== "deleted"))
+    for (const file of diffs) {
+      if (isTest(file.path) || CONFIG_FILE.test(file.path) || MANIFEST.test(file.path) || /\.d\.ts$/.test(file.path)) continue
+      if (!CODE_FILE.test(file.path) || file.status === "deleted") continue
+      // New only if no removed line declared the same name: an edit shows as one line removed and one added.
+      const before = new Set(file.removed.filter((line) => DECLARATION.test(line)).map(declaredName))
+      const declared = file.added.filter((line) => DECLARATION.test(line) && !before.has(declaredName(line)))
+      if (declared.length > 0) add("gap", "untested-addition", file.path, `new code with no test in this change: ${declared[0]!.trim().slice(0, 70)}`)
+    }
   return findings.slice(0, MAX_FINDINGS)
 }
 
@@ -115,5 +142,5 @@ export const format = (findings: readonly Finding[]) =>
     ? ""
     : [
         "Test integrity",
-        ...findings.map((finding) => `- ${finding.severity === "block" ? "BLOCKED" : "check"}: ${finding.file}: ${finding.detail} [${finding.rule}]`),
+        ...findings.map((finding) => `- ${finding.severity === "block" ? "BLOCKED" : finding.severity === "gap" ? "NOT TESTED" : "check"}: ${finding.file}: ${finding.detail} [${finding.rule}]`),
       ].join("\n")

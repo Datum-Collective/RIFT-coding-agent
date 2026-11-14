@@ -156,6 +156,10 @@ describe("rift contract", () => {
         run: { phase: "done", verdict: "verified", stages: [{ command: "bun run test", status: "passed" }] },
       })
       expect((yield* receipts(session.id)).map((receipt) => receipt.verdict)).toEqual(["failing", "verified"])
+      // The verifier said it fails, the agent was sent back, and only the later passing run closes the dispute.
+      expect(yield* stored(`disputes:${session.id}`)).toMatchObject([
+        { check: "bun run test", status: "resolved", round: 1, claim: expect.stringContaining("fails"), resolution: expect.stringContaining("passed in a later run") },
+      ])
     }),
   )
 
@@ -171,6 +175,40 @@ describe("rift contract", () => {
       expect(found.map((report) => [report.decision, report.verdict])).toEqual([["fix", "regressed"]])
       expect(found[0]?.text).toContain("new, not failing at the start of this prompt")
       expect(found[0]?.text).toContain("These checks failed on your changes")
+    }),
+  )
+
+  it.live("an edit outside the verified folder is recorded, so the sidebar can say it was not checked", () =>
+    Effect.gen(function* () {
+      const elsewhere = yield* tmpdirScoped()
+      const target = path.join(elsewhere.path, "cart.ts")
+      const { session, sessions } = yield* project("true", [...allow, { action: "*", resource: "*", effect: "allow" }])
+      yield* serve((_, turn) => (turn === 1 ? TestLLM.toolCall("call-write", "write", { path: target, content: "export const x = 1\n" }) : TestLLM.text("Done", `done-${turn}`)))
+      yield* prompt(sessions, session.id, "Write a file elsewhere")
+      const found = yield* until(() => stored(`outside:${session.id}`), (value) => Array.isArray(value) && value.length > 0)
+      expect(found).toEqual([target])
+    }),
+  )
+
+  it.live("a turn that edited only outside the verified folder says nothing was checked, once", () =>
+    Effect.gen(function* () {
+      const elsewhere = yield* tmpdirScoped()
+      const target = path.join(elsewhere.path, "cart.ts")
+      const { session, sessions } = yield* project("true", [...allow, { action: "*", resource: "*", effect: "allow" }])
+      yield* serve((_, turn) => (turn === 1 ? TestLLM.toolCall("call-write", "write", { path: target, content: "export const x = 1\n" }) : TestLLM.text("Done", `done-${turn}`)))
+      yield* prompt(sessions, session.id, "Write a file elsewhere")
+      const notices = yield* until(() => parked(sessions, session.id), (items) => items.some((item) => item.text.includes("outside")))
+      const found = notices.filter((item) => item.text.includes("outside"))
+      expect(found).toHaveLength(1)
+      expect(found[0]?.verdict).toBe("unproven")
+      expect(found[0]?.text).toContain(target)
+      expect(found[0]?.text).toContain("No check ran on them")
+      // A later prompt that edits nothing outside is not told about the old files again.
+      yield* serve((_, turn) => TestLLM.text("Answer", `answer-${turn}`))
+      yield* prompt(sessions, session.id, "A question")
+      const transcript = yield* sessions.messages({ sessionID: session.id, order: "asc" })
+      expect(transcript.filter((message) => message.type === "synthetic" && JSON.stringify(message).includes("edited outside it"))).toHaveLength(1)
+      expect(yield* stored(`outside:${session.id}`)).toEqual([])
     }),
   )
 
@@ -199,9 +237,9 @@ describe("rift contract", () => {
     }),
   )
 
-  it.live("an agent that keeps editing cannot loop past the cap", () =>
+  it.live("an agent whose failure keeps changing cannot loop past the cap", () =>
     Effect.gen(function* () {
-      const { session, sessions, write } = yield* project("false")
+      const { session, sessions, write } = yield* project("echo $(date +%N | tr 0-9 a-j); false")
       let calls = 0
       yield* serve((_, turn) => {
         calls = turn
@@ -213,6 +251,30 @@ describe("rift contract", () => {
       expect(reports(messages).map((report) => report.decision)).toEqual(["fix", "fix", "fix", "give_up"])
       expect(reports(messages).at(-1)?.text).toContain("not proven")
       expect(calls).toBe(RiftVerifyPlugin.MAX_ROUNDS + 2)
+      expect(yield* stored(`disputes:${session.id}`)).toMatchObject([
+        { check: "bun run test", status: "unresolved", round: 1, evidence: expect.stringContaining("exited with code 1"), resolution: `still failing after ${RiftVerifyPlugin.MAX_ROUNDS} fix rounds` },
+      ])
+    }),
+  )
+
+  it.live("a fix that leaves the failure exactly as it was is told so, and the loop stops after two of them", () =>
+    Effect.gen(function* () {
+      const { session, sessions, write } = yield* project("false")
+      let calls = 0
+      yield* serve((_, turn) => {
+        calls = turn
+        write("a.ts", `export const a = ${turn + 1}\n`)
+        return TestLLM.text("Done", `done-${turn}`)
+      })
+      yield* prompt(sessions, session.id, "Change a")
+      const found = reports(yield* sessions.messages({ sessionID: session.id, order: "asc" }))
+      expect(found.map((report) => report.decision)).toEqual(["fix", "fix", "give_up"])
+      expect(found[0]?.text).toContain("which line of the output")
+      expect(found[1]?.text).toContain("left this failure exactly as it was")
+      expect(found[2]?.text).toContain("Stopped")
+      // Two fixes, then the turn in which the agent tells the user the work is not proven.
+      expect(calls).toBe(4)
+      expect(yield* stored(`disputes:${session.id}`)).toMatchObject([{ status: "unresolved" }])
     }),
   )
 
@@ -381,6 +443,80 @@ describe("rift contract", () => {
       expect(status(dir)).toBe(before)
       expect((yield* receipts(session.id)).map((receipt) => receipt.verdict)).toEqual(["regressed"])
     }),
+  )
+
+  const head = (dir: string) => execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim()
+  const message = (dir: string) => execFileSync("git", ["log", "-1", "--format=%B"], { cwd: dir, encoding: "utf8" })
+  const withCoauthor = <A, E, R>(value: string | undefined, run: Effect.Effect<A, E, R>) =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const before = process.env.RIFT_COAUTHOR
+        if (value === undefined) delete process.env.RIFT_COAUTHOR
+        else process.env.RIFT_COAUTHOR = value
+        return before
+      }),
+      () => run,
+      (before) =>
+        Effect.sync(() => {
+          if (before === undefined) delete process.env.RIFT_COAUTHOR
+          else process.env.RIFT_COAUTHOR = before
+        }),
+    )
+
+  it.live("/ship refuses work nothing has verified, and commits nothing", () =>
+    Effect.gen(function* () {
+      const { session, sessions, dir, write } = yield* project("true")
+      write("a.ts", "export const a = 2\n")
+      const before = head(dir)
+      yield* sessions.command({ sessionID: session.id, command: "ship", text: "change a" })
+      const notice = yield* until(() => parked(sessions, session.id), (items) => items.length > 0)
+      expect(notice[0]?.text).toContain("Not shipped: nothing has been verified")
+      expect(head(dir)).toBe(before)
+    }),
+  )
+
+  it.live("/ship commits verified work with RIFT as co-author, and not a push", () =>
+    withCoauthor(
+      "RIFT <1234+rift@users.noreply.github.com>",
+      Effect.gen(function* () {
+        const { session, sessions, dir, write } = yield* project("true")
+        write("a.ts", "export const a = 2\n")
+        yield* sessions.command({ sessionID: session.id, command: "verify", text: "quick" })
+        expect(yield* finished(session.id)).toMatchObject({ phase: "done", verdict: "verified" })
+        const before = head(dir)
+        yield* sessions.command({ sessionID: session.id, command: "ship", text: "change a" })
+        yield* until(() => Effect.succeed(head(dir)), (value) => value !== before)
+        expect(message(dir)).toContain("change a")
+        expect(message(dir)).toContain("Co-Authored-By: RIFT <1234+rift@users.noreply.github.com>")
+        expect(status(dir)).toBe("")
+        const notice = yield* until(() => parked(sessions, session.id), (items) => items.some((item) => item.description?.startsWith("Ship: committed")))
+        expect(notice.at(-1)?.text).toContain("not pushed")
+      }),
+    ),
+  )
+
+  it.live("/ship without an identity commits but says RIFT is not credited; code changed after verifying is refused", () =>
+    withCoauthor(
+      undefined,
+      Effect.gen(function* () {
+        const { session, sessions, dir, write } = yield* project("true")
+        write("a.ts", "export const a = 2\n")
+        yield* sessions.command({ sessionID: session.id, command: "verify", text: "quick" })
+        yield* finished(session.id)
+        write("a.ts", "export const a = 3\n")
+        const before = head(dir)
+        yield* sessions.command({ sessionID: session.id, command: "ship", text: "late edit" })
+        const refused = yield* until(() => parked(sessions, session.id), (items) => items.some((item) => item.text.includes("Not shipped")))
+        expect(refused.find((item) => item.text.includes("Not shipped"))?.text).toContain("the code has changed since it was verified")
+        expect(head(dir)).toBe(before)
+        yield* sessions.command({ sessionID: session.id, command: "verify", text: "quick" })
+        yield* until(() => finished(session.id), (run) => run?.phase === "done" && (run as { tree?: string }).tree !== undefined)
+        yield* Effect.sleep("300 millis")
+        yield* sessions.command({ sessionID: session.id, command: "ship", text: "after reverify" })
+        yield* until(() => Effect.succeed(head(dir)), (value) => value !== before)
+        expect(message(dir)).not.toContain("Co-Authored-By")
+      }),
+    ),
   )
 
   it.live("a declined /verify runs nothing and ends unproven, not stuck running", () =>

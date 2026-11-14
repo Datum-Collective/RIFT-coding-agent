@@ -245,3 +245,23 @@ describe("RiftMutation", () => {
     expect(chosen).toContain("small.ts")
   })
 })
+
+describe("RiftVerdict.judge with a gap", () => {
+  const plan = planOf(stage("test"))
+  const gap: RiftIntegrity.Finding = { severity: "gap", rule: "untested-addition", file: "cart.ts", detail: "x" }
+
+  test("passing checks are not enough when the change added code nothing tests", () => {
+    const outcomes = new Map([[plan.stages[0]!.id, passed]])
+    expect(RiftVerdict.judge(plan, outcomes, [], true)).toBe("verified")
+    expect(RiftVerdict.judge(plan, outcomes, [gap], true)).toBe("unproven")
+  })
+
+  test("a failure still outranks a gap", () => {
+    const outcomes = new Map([[plan.stages[0]!.id, broken(["a"], { kind: "introduced", tests: ["a"] })]])
+    expect(RiftVerdict.judge(plan, outcomes, [gap], true)).toBe("regressed")
+  })
+
+  test("the report says which file has no test", () => {
+    expect(RiftIntegrity.format([gap])).toContain("cart.ts")
+  })
+})

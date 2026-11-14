@@ -9,6 +9,7 @@ import type { Rift } from "@opencode/schema/rift"
 import type { Session } from "@opencode/schema/session"
 import { Permission } from "../../src/permission.js"
 import { RiftPipeline } from "../../src/plugin/rift-verify/pipeline.js"
+import { RiftVerdict } from "../../src/plugin/rift-verify/verdict.js"
 import { RiftReceipt } from "../../src/plugin/rift-verify/receipt.js"
 import type { RiftStages } from "../../src/plugin/rift-verify/stages.js"
 import { RiftWorkspace } from "../../src/plugin/rift-verify/workspace.js"
@@ -247,4 +248,47 @@ describe("RiftPipeline, the change tier", () => {
     expect(graph.proofs).toMatchObject([{ node: "a", label: "a holds", status: "passed" }])
     expect(report.text).toContain("- proven: a")
   }, 60_000)
+})
+
+describe("what the sidebar can check a result against", () => {
+  const attempt = (status: "passed" | "failed", tail: string): RiftVerdict.Attempt => ({ status, ms: 1500, tail, digest: "a".repeat(64), failures: [] })
+  const planned = (kind: RiftStages.Kind): Rift.Run =>
+    RiftPipeline.step(
+      { id: "r", tree: "t", started: 1, stages: [], phase: "preparing" },
+      { type: "planned", plan: { stages: [{ id: `.:${kind}:x` as RiftStages.StageId, unit: "." as RiftStages.UnitDir, kind, name: "x", command: "run x", cwd: ".", needs: [], rerun: false, timeoutMs: 1 }], notes: [], uncovered: [] } },
+    )
+
+  test("every planned check says why it runs", () => {
+    expect(planned("test").stages[0]!.why).toContain("tests")
+    expect(planned("typecheck").stages[0]!.why).toBeTruthy()
+  })
+
+  test("a failure carries the end of its real output, a pass carries the output digest", () => {
+    const lines = Array.from({ length: 40 }, (_, index) => `line ${index}`).join("\n")
+    const failed = RiftPipeline.step(planned("test"), {
+      type: "finished",
+      stage: ".:test:x" as RiftStages.StageId,
+      outcome: { status: "failed", attempts: [attempt("failed", lines)], tests: ["a"], flaky: [], attribution: { kind: "introduced", tests: ["a"] } },
+    }).stages[0]!
+    expect(failed.why).toBeTruthy()
+    expect(failed.evidence).toContain("line 39")
+    expect(failed.evidence).not.toContain("line 0\n")
+    const passed = RiftPipeline.step(planned("test"), {
+      type: "finished",
+      stage: ".:test:x" as RiftStages.StageId,
+      outcome: { status: "passed", attempts: [attempt("passed", "ok")] },
+    }).stages[0]!
+    expect(passed.evidence).toBe(`exit 0 in 1.5s, output sha256 ${"a".repeat(12)}`)
+    expect(passed.why).toBeTruthy()
+  })
+})
+
+describe("what a finished run tells the sidebar beyond its checks", () => {
+  test("the findings of the integrity review travel with the verdict", () => {
+    const view = RiftPipeline.step(
+      { id: "r", tree: "t", started: 1, stages: [], phase: "running" },
+      { type: "done", at: 2, verdict: "unproven", headline: "h", receipt: "x", notes: ["cart.ts: new code with no test in this change"] },
+    )
+    expect(view).toMatchObject({ phase: "done", verdict: "unproven", notes: ["cart.ts: new code with no test in this change"] })
+  })
 })
