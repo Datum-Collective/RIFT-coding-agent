@@ -128,3 +128,40 @@ describe("RiftReceipt", () => {
     expect(RiftReceipt.audit([{ ...first, verdict: "failed" }, next])).toContain("does not match its digest")
   })
 })
+
+describe("code added with no test", () => {
+  const file = (path: string, added: string[], status: "modified" | "added" | "deleted" = "modified") => ({ path, status, added, removed: [] as string[] })
+  const rules = (diffs: ReturnType<typeof file>[]) => RiftIntegrity.review(diffs).map((finding) => `${finding.severity}:${finding.rule}:${finding.file}`)
+
+  test("a new function with no test file in the change is a gap, and names the file", () => {
+    expect(rules([file("cart.ts", ["export const totalWithTax = (p: number[]) => p.length"])])).toEqual(["gap:untested-addition:cart.ts"])
+    expect(rules([file("a.py", ["def total(prices):"])])).toEqual(["gap:untested-addition:a.py"])
+    expect(rules([file("a.go", ["func Total(p []int) int {"])])).toEqual(["gap:untested-addition:a.go"])
+    expect(rules([file("a.rs", ["pub fn total() -> u32 {"])])).toEqual(["gap:untested-addition:a.rs"])
+  })
+
+  test("a test added or changed in the same change covers it", () => {
+    expect(rules([file("cart.ts", ["export function total() {}"]), file("cart.test.ts", ["test('x', () => {})"])])).toEqual([])
+  })
+
+  test("a deleted test does not count as one", () => {
+    expect(rules([file("cart.ts", ["export function total() {}"]), file("cart.test.ts", [], "deleted")]).some((rule) => rule.startsWith("gap:"))).toBe(true)
+  })
+
+  test("edits that add no function, docs, constants and config are not gaps", () => {
+    expect(rules([file("cart.ts", ["  return a + b", "// a note", "export const RATE = 1.1"])])).toEqual([])
+    expect(rules([file("README.md", ["export function x() {}"])])).toEqual([])
+    expect(rules([file("types.d.ts", ["export function x(): void"])])).toEqual([])
+  })
+
+  test("editing a function that was already there is not new code, even though its line is removed and added", () => {
+    const changed = { path: "cart.ts", status: "modified" as const, added: ["export const f = (a: number) => a + 1 // edited"], removed: ["export const f = (a: number) => a + 1"] }
+    expect(RiftIntegrity.review([changed]).map((finding) => finding.rule)).toEqual([])
+    const renamed = { ...changed, added: ["export const g = (a: number) => a + 1"] }
+    expect(RiftIntegrity.review([renamed]).map((finding) => finding.rule)).toEqual(["untested-addition"])
+  })
+
+  test("one finding per file, however many functions it adds", () => {
+    expect(rules([file("a.ts", ["export function a() {}", "export function b() {}"])])).toEqual(["gap:untested-addition:a.ts"])
+  })
+})

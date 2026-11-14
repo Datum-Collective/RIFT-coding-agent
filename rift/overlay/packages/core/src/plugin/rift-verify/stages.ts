@@ -6,6 +6,19 @@ import path from "node:path"
 export const KINDS = ["install", "format", "lint", "typecheck", "build", "test", "e2e", "proof"] as const
 export type Kind = (typeof KINDS)[number]
 
+/** Why each kind of check runs, said to the user next to the check. */
+const WHY: Readonly<Record<Kind, string>> = {
+  install: "The other checks need the project's dependencies, so they are installed in a clean copy first.",
+  format: "Formatting drift is cheap to catch and noisy in review.",
+  lint: "Static rules catch misuse the compiler accepts, without running any code.",
+  typecheck: "A type error is a bug found without running anything, and the agent's edit may have broken a caller.",
+  build: "The project has to compile before its behaviour can be judged.",
+  test: "The project's own tests say whether existing behaviour still holds on the agent's change.",
+  e2e: "End-to-end tests catch breakage between parts that unit tests cover one at a time.",
+  proof: "The agent claimed this in its engineering graph; this check is the evidence for the claim.",
+}
+export const why = (kind: string): string | undefined => WHY[kind as Kind]
+
 /**
  * Which kinds gate a kind: in the stage's own unit, and for install at the unit's install root. A kind the plan
  * lacks is dropped, not failed. Static checks need only the install, so a lint failure never hides a test result.
@@ -211,6 +224,26 @@ const manifest = (text: string | undefined): Record<string, unknown> | undefined
   }
 }
 
+/**
+ * Which package manager runs a project that shows no lockfile. The lockfile may simply be out of view: the project
+ * can be one package of a workspace whose lockfile sits in a folder above it. So the project's own words decide, in
+ * the order of how plainly they say it: the `packageManager` field, a bunfig.toml, then the scripts. Only a project
+ * that says nothing is npm's.
+ */
+const inferRunner = (pkg: Record<string, unknown>, scripts: Record<string, unknown>, bunfig: boolean): "bun" | "pnpm" | "yarn" | "npm" => {
+  const declared = typeof pkg.packageManager === "string" ? /^(bun|pnpm|yarn|npm)@/.exec(pkg.packageManager)?.[1] : undefined
+  if (declared) return declared as "bun" | "pnpm" | "yarn" | "npm"
+  if (bunfig) return "bun"
+  return Object.values(scripts).some((script) => typeof script === "string" && /(^|[\s;&|(])bunx?(\s|$)/.test(script)) ? "bun" : "npm"
+}
+
+/** Dependency specs only pnpm and Bun resolve; npm fails on them with EUNSUPPORTEDPROTOCOL. */
+const PROTOCOL = /^(catalog|workspace):/
+const protocolDependencies = (pkg: Record<string, unknown>) =>
+  ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"].some((key) =>
+    Object.values((pkg[key] ?? {}) as Record<string, unknown>).some((spec) => typeof spec === "string" && PROTOCOL.test(spec)),
+  )
+
 const node: Ecosystem = {
   id: "node",
   looks: "package.json scripts",
@@ -222,8 +255,8 @@ const node: Ecosystem = {
     const pkg = manifest(project.read(dir, "package.json"))
     if (!pkg) return { declared: [], notes: [`${join(dir, "package.json")} is not valid JSON`] }
     const lock = project.find(dir, LOCKS)
-    const runner = lock ? RUNNER[lock.name as (typeof LOCKS)[number]] : "npm"
     const scripts = (pkg.scripts ?? {}) as Record<string, unknown>
+    const runner = lock ? RUNNER[lock.name as (typeof LOCKS)[number]] : inferRunner(pkg, scripts, project.has(dir, "bunfig.toml"))
     const script = (name: string) => (typeof scripts[name] === "string" ? (scripts[name] as string) : undefined)
     const declared = named(
       SCRIPTS,
@@ -244,8 +277,14 @@ const node: Ecosystem = {
         : runner === "yarn" && (berry || project.has(dir, ".yarnrc.yml"))
           ? FROZEN["yarn-berry"]
           : FROZEN[runner]
-      if (!locked) notes.push(`${dir}: dependencies resolved without a lockfile`)
-      declared.unshift({ kind: "install", name: "install", command: install, ecosystem: "node" })
+      if (!locked && runner === "npm" && protocolDependencies(pkg)) {
+        // Nothing is installed, so the checks that follow fail or are not run, in the open. Installing with npm
+        // would only fail on a spec it cannot read, and say nothing true about the code.
+        notes.push(`${dir}: dependencies use catalog: or workspace: specs, which npm cannot install, and no lockfile shows which tool can`)
+      } else {
+        if (!locked) notes.push(`${dir}: dependencies resolved without a lockfile`)
+        declared.unshift({ kind: "install", name: "install", command: install, ecosystem: "node" })
+      }
     }
     return { declared, covers, notes }
   },

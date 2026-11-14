@@ -1,6 +1,7 @@
 import { Prompt, type PromptRef } from "../component/prompt"
 import { createEffect, createMemo, createSignal, onMount, Show, untrack } from "solid-js"
 import { Landing } from "../component/landing"
+import { IdleSingularity } from "../component/idle-singularity"
 import { useArgs } from "../context/args"
 import { useRouteData } from "../context/route"
 import { usePromptRef } from "../context/prompt"
@@ -80,6 +81,7 @@ export function Home() {
 
   return (
     <>
+      <IdleSingularity />
       <box
         flexGrow={1}
         alignItems="center"

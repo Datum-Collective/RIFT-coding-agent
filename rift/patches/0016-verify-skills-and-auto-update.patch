@@ -1,0 +1,83 @@
+diff --git b/opencode/packages/cli/src/services/updater.ts a/opencode/packages/cli/src/services/updater.ts
+index bf48332012..71d41cf994 100644
+--- b/opencode/packages/cli/src/services/updater.ts
++++ a/opencode/packages/cli/src/services/updater.ts
+@@ -168,7 +168,7 @@ const make = Effect.gen(function* () {
+         Effect.orElseSucceed(() => undefined),
+       ),
+     )
+-    return values.findLast((value) => value !== undefined) ?? "notify"
++    return values.findLast((value) => value !== undefined) ?? "auto"
+   })
+ 
+   const exec = Effect.fnUntraced(function* (command: string[], timeout: Duration.Input = "30 seconds") {
+diff --git b/opencode/packages/tui/src/component/dialog-skill.tsx a/opencode/packages/tui/src/component/dialog-skill.tsx
+index 5e45e628b1..b3fdbfbddc 100644
+--- b/opencode/packages/tui/src/component/dialog-skill.tsx
++++ a/opencode/packages/tui/src/component/dialog-skill.tsx
+@@ -9,7 +9,10 @@ import type { LocationRef } from "@opencode/client"
+ 
+ export type DialogSkillProps = {
+   location?: LocationRef
++  /** IDs of skills already selected, so they aren't re-added. */
++  selected?: readonly string[]
+   onSelect: (skill: string) => void
++  onDone: () => void
+ }
+ 
+ export function DialogSkill(props: DialogSkillProps) {
+@@ -37,6 +40,12 @@ export function DialogSkill(props: DialogSkillProps) {
+   )
+ 
+   const showError = createMemo(() => Boolean(loadError()))
++  const selected = new Set(props.selected ?? [])
++
++  const handleDone = () => {
++    props.onDone()
++    dialog.clear()
++  }
+ 
+   const options = createMemo<DialogSelectOption<string>[]>(() => {
+     if (showError()) return []
+@@ -46,9 +55,10 @@ export function DialogSkill(props: DialogSkillProps) {
+       title: skill.name.padEnd(maxWidth),
+       description: skill.description?.replace(/\s+/g, " ").trim(),
+       value: skill.id,
++      selected: selected.has(skill.id),
+       onSelect: () => {
+         props.onSelect(skill.id)
+-        dialog.clear()
++        // Keep the dialog open so the user can pick more skills.
+       },
+     }))
+   })
+@@ -59,6 +69,7 @@ export function DialogSkill(props: DialogSkillProps) {
+       options={options()}
+       renderFilter={!showError() && !skills.loading}
+       locked={showError() || skills.loading}
++      onCancel={handleDone}
+       emptyView={
+         <Switch
+           fallback={
+diff --git b/opencode/packages/tui/src/component/prompt/index.tsx a/opencode/packages/tui/src/component/prompt/index.tsx
+index ea0b27579f..1590878274 100644
+--- b/opencode/packages/tui/src/component/prompt/index.tsx
++++ a/opencode/packages/tui/src/component/prompt/index.tsx
+@@ -592,6 +592,7 @@ export function Prompt(props: PromptProps) {
+           dialog.replace(() => (
+             <DialogSkill
+               location={currentLocation.ref}
++              selected={store.prompt.skills?.map((item) => item.id) ?? []}
+               onSelect={(skill) => {
+                 if (store.prompt.skills?.some((item) => item.id === skill)) return
+                 const text = `@${skill}`
+@@ -618,6 +619,9 @@ export function Prompt(props: PromptProps) {
+                   }),
+                 )
+               }}
++              onDone={() => {
++                dialog.clear()
++              }}
+             />
+           ))
+         },

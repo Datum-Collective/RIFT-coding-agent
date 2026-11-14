@@ -1,26 +1,21 @@
 diff --git a/opencode/packages/tui/src/routes/home.tsx b/opencode/packages/tui/src/routes/home.tsx
-index 71e7b64..6994c5f 100644
+index 71e7b64..f137118 100644
 --- a/opencode/packages/tui/src/routes/home.tsx
 +++ b/opencode/packages/tui/src/routes/home.tsx
-@@ -1,6 +1,6 @@
+@@ -1,6 +1,7 @@
  import { Prompt, type PromptRef } from "../component/prompt"
  import { createEffect, createMemo, createSignal, onMount, Show, untrack } from "solid-js"
 -import { Logo } from "../component/logo"
 +import { Landing } from "../component/landing"
++import { IdleSingularity } from "../component/idle-singularity"
  import { useArgs } from "../context/args"
  import { useRouteData } from "../context/route"
  import { usePromptRef } from "../context/prompt"
-@@ -33,6 +33,6 @@ export function Home() {
-   const location = useLocation()
-   const dimensions = useTerminalDimensions()
-   const [logoWidth, setLogoWidth] = createSignal(0)
-   // Global MCP elicitations can arrive without a session route, so keep them reachable from Home.
-   const currentLocation = () => route.location ?? data.location.default()
-   const forms = createMemo(() => data.session.form.list("global", currentLocation()) ?? [])
-@@ -80,31 +79,28 @@ export function Home() {
+@@ -80,31 +81,29 @@ export function Home() {
  
    return (
      <>
++      <IdleSingularity />
        <box
          flexGrow={1}
          alignItems="center"

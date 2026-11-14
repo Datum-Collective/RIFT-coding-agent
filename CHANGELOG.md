@@ -2,6 +2,27 @@
 
 Release notes for RIFT versions, newest first. Entries for v0.1.10 to v0.1.13 are only on the Releases page. Full notes and downloads: https://github.com/Datum-Collective/RIFT-coding-agent/releases
 
+## v8.0.0 (2026-11-14)
+
+The verifier now explains itself, repairs what it breaks, and knows when work is ready to ship. Built on OpenCode v2.2.7.
+
+### Added
+- **Why, what, result, evidence for every check.** Each verification stage says why it ran, the exact command, the outcome, and the real output (failures) or a digest (passes). No model writes the evidence.
+- **Verifier vs agent.** Disagreements are tracked: opened when the agent ends its turn with a check failing, resolved only when a later run of that check passes, unresolved when fix rounds run out. Shown in the sidebar.
+- **Repair loop.** Failures go back to the agent with a diagnosis request. A fix that leaves the failure unchanged is called out, and the loop stops after two fixes that changed nothing.
+- **Untested-code gap.** New code with no test is reported as `NOT TESTED` and keeps a run `unproven`.
+- **Stray-edit warning.** Edits outside the verified project folder are flagged in the sidebar and at the end of the turn.
+- **`/ship`.** Commits only when the work is verified, current, and has no open disagreement. Never pushes. Adds a `Co-Authored-By` trailer when `RIFT_COAUTHOR` is set.
+- **Black hole** returns on the home screen.
+- Sidebar shows the project folder and expandable check details.
+
+### Fixed
+- Verification no longer runs `npm install` in Bun projects; the install runner is inferred from the project.
+- Verification checks the folder being edited, not the folder RIFT started in.
+
+### Changed
+- Upstream updated from OpenCode v2.2.6 to v2.2.7.
+
 ## v7.0.1 (2026-11-10)
 
 RIFT now builds and publishes itself whenever `main` advances, and clients install updates automatically.

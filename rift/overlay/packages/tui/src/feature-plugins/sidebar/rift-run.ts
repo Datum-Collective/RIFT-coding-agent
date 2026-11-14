@@ -65,17 +65,139 @@ const detail = (stage: Rift.Stage) => {
   return ""
 }
 
-/** One line per stage, in order. Past `limit` stages, the passes fold into a single count. */
-export function stages(run: Rift.Run, limit = 6): Line[] {
-  const line = (stage: Rift.Stage): Line => ({
-    ...STAGE[stage.status],
-    text: `${stage.unit === "." ? "" : `${stage.unit} `}${stage.command}${detail(stage)}`,
+/** One line per stage, in order, each with the stage it came from. Past `limit` stages, the passes fold into a count. */
+export function entries(run: Rift.Run, limit = 6): { line: Line; stage?: Rift.Stage }[] {
+  const entry = (stage: Rift.Stage) => ({
+    stage,
+    line: { ...STAGE[stage.status], text: `${stage.unit === "." ? "" : `${stage.unit} `}${stage.command}${detail(stage)}` },
   })
-  if (run.stages.length <= limit) return run.stages.map(line)
+  if (run.stages.length <= limit) return run.stages.map(entry)
   const passed = run.stages.filter((stage) => stage.status === "passed").length
   return [
-    ...run.stages.filter((stage) => stage.status !== "passed").map(line),
-    ...(passed > 0 ? [{ glyph: "✓", tone: "success" as const, text: `${passed} passed` }] : []),
+    ...run.stages.filter((stage) => stage.status !== "passed").map(entry),
+    ...(passed > 0 ? [{ line: { glyph: "✓", tone: "success" as const, text: `${passed} passed` } }] : []),
+  ]
+}
+
+/** One line per stage, in order. Past `limit` stages, the passes fold into a single count. */
+export const stages = (run: Rift.Run, limit = 6): Line[] => entries(run, limit).map((item) => item.line)
+
+const seconds = (ms: number | undefined) => (ms === undefined ? "" : ` in ${(ms / 1000).toFixed(1)}s`)
+
+/** How a check ended, in words: the result line of a check's detail. */
+const result = (stage: Rift.Stage) => {
+  switch (stage.status) {
+    case "passed":
+      return `passed${seconds(stage.ms)}`
+    case "flaky":
+      return `flaky: failed, then passed on the same code${seconds(stage.ms)}`
+    case "failed":
+    case "timed_out":
+      return `${stage.status === "timed_out" ? "timed out" : "failed"}${detail(stage)}${seconds(stage.ms)}`
+    case "skipped":
+    case "not_run":
+      return `not run: ${stage.reason ?? "no reason recorded"}`
+    case "running":
+      return "running now"
+    case "pending":
+      return "waiting its turn"
+  }
+}
+
+/** A check needs reading when it failed or could not run. One skipped only because an earlier check failed says nothing the failure above does not. */
+export const needsAttention = (stage: Rift.Stage) =>
+  stage.status !== "passed" && stage.status !== "pending" && stage.status !== "running" && stage.status !== "skipped"
+
+const EVIDENCE_SHOWN = 6
+/** Room for a label such as `verifier` and a space, so wrapped text hangs under the first word, not under the label. */
+const LABEL = 9
+
+/** Breaks text into rows of at most `width` columns at spaces; a word longer than a row is cut. */
+export function wrap(text: string, width: number): string[] {
+  const room = Math.max(8, width)
+  const rows: string[] = []
+  let row = ""
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    let rest = word
+    while (rest.length > room) {
+      if (row) rows.push(row)
+      rows.push(rest.slice(0, room))
+      rest = rest.slice(room)
+      row = ""
+    }
+    if (row && row.length + 1 + rest.length > room) {
+      rows.push(row)
+      row = rest
+    } else row = row ? `${row} ${rest}` : rest
+  }
+  if (row) rows.push(row)
+  return rows
+}
+
+/** A label, then text wrapped so every later row is indented to start under the first row's text. */
+function field(label: string, text: string, width: number, tone: Tone): Line[] {
+  return wrap(text, width - LABEL).map((row, index) => ({ glyph: " ", tone, text: `${(index === 0 ? label : "").padEnd(LABEL)}${row}` }))
+}
+
+/**
+ * What a check says about itself, for the user to judge: why it ran, what ran, how it ended, and the output it
+ * ended on. A check that failed is always spelled out; the others only when the user opens them. Rows are already
+ * wrapped to `width`, so a long sentence keeps its indent.
+ */
+export function details(stage: Rift.Stage, open: boolean, width = 36): Line[] {
+  if (!open && !needsAttention(stage)) return []
+  const tone = STAGE[stage.status].tone
+  const evidence = (stage.evidence ?? "").split("\n").filter((row) => row.trim().length > 0)
+  const shown = stage.status === "passed" ? evidence : evidence.slice(-EVIDENCE_SHOWN)
+  return [
+    ...(stage.why ? field("why", stage.why, width, "muted") : []),
+    ...field("ran", stage.command, width, "muted"),
+    ...field("result", result(stage), width, tone),
+    ...shown.flatMap((row, index) => field(index === 0 ? "output" : "", row, width, "muted")),
+  ]
+}
+
+const DISPUTE: Record<Rift.Dispute["status"], { glyph: string; tone: Tone; label: string }> = {
+  open: { glyph: "≠", tone: "error", label: "open" },
+  resolved: { glyph: "✓", tone: "success", label: "resolved" },
+  unresolved: { glyph: "✗", tone: "error", label: "unresolved" },
+}
+
+/** Where the verifier and the agent disagreed, and how that ended. Empty when they never did. */
+export function disputes(list: readonly Rift.Dispute[] | undefined, width = 36): Line[] {
+  return (list ?? []).flatMap((item) => {
+    const style = DISPUTE[item.status]
+    return [
+      { glyph: style.glyph, tone: style.tone, text: `${item.check} · ${style.label}` },
+      ...field("verifier", `${item.claim}. Sent back in round ${item.round}.`, width, "muted"),
+      ...(item.resolution ? field("outcome", item.resolution, width, style.tone) : field("outcome", "not fixed yet", width, "warning")),
+    ]
+  })
+}
+
+/**
+ * What the run could not vouch for, one row each, in the words the integrity review used. Shown under the header, so
+ * a run with every check passing and a verdict of unproven says why.
+ */
+export function notes(run: Rift.Run, width = 36): Line[] {
+  if (run.phase !== "done" || !run.notes || run.notes.length === 0) return []
+  const tone: Tone = run.verdict === "tampered" ? "error" : "warning"
+  return run.notes.flatMap((note) => wrap(note, width - 2).map((row, index) => ({ glyph: index === 0 ? "!" : " ", tone, text: row })))
+}
+
+/** A folder for a person: the last two parts, and a mark where the rest was left out. */
+export function place(folder: string): string {
+  const parts = folder.split("/").filter(Boolean)
+  return parts.length <= 2 ? folder : `…/${parts.slice(-2).join("/")}`
+}
+
+/** The warning for edits outside the verified folder, or nothing when there were none. */
+export function strays(files: readonly string[] | undefined, width = 36): Line[] {
+  if (!files || files.length === 0) return []
+  return [
+    { glyph: "⚠", tone: "warning", text: `${files.length === 1 ? "1 file" : `${files.length} files`} edited outside this folder` },
+    ...files.flatMap((file) => wrap(place(file), width).map((row) => ({ glyph: " ", tone: "muted" as const, text: row }))),
+    { glyph: " ", tone: "warning", text: "No check covers them." },
   ]
 }
 

@@ -125,7 +125,8 @@ export const outcome = (outcomes: ReadonlyMap<RiftStages.StageId, Outcome>, stag
 /**
  * One function decides the verdict for both tiers, first match wins: tampered (an integrity block) > regressed
  * (a broken stage attributed introduced, mixed or unknown) > failing (broken, all already failing) > unproven
- * (nothing ran, anything not run, skipped or flaky, or no test stage when the tier needs one) > verified.
+ * (nothing ran, anything not run, skipped or flaky, no test stage when the tier needs one, or added code with no
+ * test in the change) > verified.
  */
 export const judge = (
   plan: RiftStages.Plan,
@@ -140,6 +141,8 @@ export const judge = (
   if (failed.length > 0) return "failing"
   if (all.length === 0 || all.some((item) => item.status !== "passed")) return "unproven"
   if (needsTest && !plan.stages.some((stage) => stage.kind === "test" || stage.kind === "e2e")) return "unproven"
+  // Everything that ran passed, but a gap is code nothing exercises: passing says nothing about it.
+  if (findings.some((finding) => finding.severity === "gap")) return "unproven"
   return "verified"
 }
 
@@ -256,7 +259,7 @@ const findingsText = (findings: readonly RiftIntegrity.Finding[]) =>
     ? ""
     : [
         "Test integrity",
-        ...findings.map((finding) => `- ${finding.severity === "block" ? "BLOCKED" : "check"}: ${finding.file}: ${finding.detail} [${finding.rule}]`),
+        ...findings.map((finding) => `- ${finding.severity === "block" ? "BLOCKED" : finding.severity === "gap" ? "NOT TESTED" : "check"}: ${finding.file}: ${finding.detail} [${finding.rule}]`),
       ].join("\n")
 
 const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`

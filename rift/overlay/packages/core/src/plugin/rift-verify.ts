@@ -1,5 +1,6 @@
 export * as RiftVerifyPlugin from "./rift-verify.js"
 
+import { execFileSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import path from "node:path"
 import { define } from "@opencode/plugin/effect/plugin"
@@ -10,8 +11,12 @@ import { Agent } from "@opencode/schema/agent"
 import { Rift } from "@opencode/schema/rift"
 import { Permission } from "../permission.js"
 import type { PluginInternal } from "./internal.js"
+import { RiftDisputes } from "./rift-verify/disputes.js"
 import { RiftGraph } from "./rift-verify/graph.js"
 import { RiftPipeline } from "./rift-verify/pipeline.js"
+import { RiftRepair } from "./rift-verify/repair.js"
+import { RiftShip } from "./rift-verify/ship.js"
+import { RiftScope } from "./rift-verify/scope.js"
 import { RiftStages } from "./rift-verify/stages.js"
 import { RiftVerdict } from "./rift-verify/verdict.js"
 import { RiftWorkspace } from "./rift-verify/workspace.js"
@@ -44,6 +49,10 @@ const boot = () => (processBoot ??= crypto.randomUUID())
 // Storage holds JSON. This drops the undefined fields the type checker cannot rule out.
 const json = (value: unknown) => JSON.parse(JSON.stringify(value))
 const key = (sessionID: string, tier: RiftPipeline.Tier) => `run:${sessionID}:${tier}`
+const disputeKey = (sessionID: string) => `disputes:${sessionID}`
+const outsideKey = (sessionID: string) => `outside:${sessionID}`
+const decodeOutside = Schema.decodeUnknownOption(Schema.Array(Schema.String))
+const decodeDisputes = Schema.decodeUnknownOption(Schema.Array(Rift.Dispute))
 
 interface Loop {
   /** The tree when the current prompt started, so edits the user already had are not counted. */
@@ -51,6 +60,10 @@ interface Loop {
   /** The tree the last verification saw, so unchanged work is not checked twice. */
   verified?: RiftWorkspace.TreeId
   round: number
+  /** What each round's failure looked like, so a fix that changed nothing is seen as that. */
+  signatures: string[]
+  /** The edits outside the folder this prompt that the user was already told about. */
+  toldOutside: string
   /** The rounds ran out for this prompt, so nothing runs again until the next one. */
   finished: boolean
 }
@@ -111,8 +124,10 @@ export const Plugin = define({
       const change = Option.getOrUndefined(decodeStored(yield* ctx.storage.get(key(sessionID, "change"))))
       const project = Option.getOrUndefined(decodeStored(yield* ctx.storage.get(key(sessionID, "project"))))
       const graph = yield* graphView(sessionID)
-      if (!change && !project && graph.length === 0) return null
-      return { change: change && { run: change.run, round: change.round }, project: project?.run, graph } satisfies Rift.State
+      const disputes = Option.getOrElse(decodeDisputes(yield* ctx.storage.get(disputeKey(sessionID))), () => [] as readonly Rift.Dispute[])
+      const outside = Option.getOrElse(decodeOutside(yield* ctx.storage.get(outsideKey(sessionID))), () => [] as readonly string[])
+      if (!change && !project && graph.length === 0 && outside.length === 0) return null
+      return { change: change && { run: change.run, round: change.round }, project: project?.run, graph, disputes, root, outside } satisfies Rift.State
     })
 
     const rpc = yield* ctx.rpc.register(Rift.Definition, { get: (input) => state(input.sessionID) }).pipe(Effect.orDie)
@@ -130,13 +145,35 @@ export const Plugin = define({
     const loop = (sessionID: string) => {
       const existing = loops.get(sessionID)
       if (existing) return existing
-      const created: Loop = { round: 0, finished: false }
+      const created: Loop = { round: 0, signatures: [], toldOutside: "", finished: false }
       loops.set(sessionID, created)
       return created
     }
 
     const publish = Effect.fn("RiftVerify.publish")(function* (sessionID: string, tier: RiftPipeline.Tier, view: Rift.Run) {
       yield* ctx.storage.set(key(sessionID, tier), json({ boot: boot(), run: view, round: tier === "change" ? loop(sessionID).round : 0 }))
+      yield* changed(sessionID)
+    })
+
+    /** The dispute ledger changes only through RiftDisputes, from the run that was just stored. */
+    const dispute = Effect.fn("RiftVerify.dispute")(function* (
+      sessionID: Session.ID,
+      tier: RiftPipeline.Tier,
+      change: (disputes: readonly Rift.Dispute[], run: Rift.Run) => Rift.Dispute[],
+    ) {
+      const stored = Option.getOrUndefined(decodeStored(yield* ctx.storage.get(key(sessionID, tier))))
+      if (!stored) return
+      const before = Option.getOrElse(decodeDisputes(yield* ctx.storage.get(disputeKey(sessionID))), () => [] as readonly Rift.Dispute[])
+      const after = change(before, stored.run)
+      if (JSON.stringify(after) === JSON.stringify(before)) return
+      yield* ctx.storage.set(disputeKey(sessionID), json(after))
+      yield* changed(sessionID)
+    })
+
+    /** Remembers files edited outside the verified folder, so the sidebar can say they were not checked. */
+    const away = Effect.fn("RiftVerify.away")(function* (sessionID: Session.ID, files: readonly string[]) {
+      const known = Option.getOrElse(decodeOutside(yield* ctx.storage.get(outsideKey(sessionID))), () => [] as readonly string[])
+      yield* ctx.storage.set(outsideKey(sessionID), json(RiftScope.remember(known, files)))
       yield* changed(sessionID)
     })
 
@@ -202,6 +239,7 @@ export const Plugin = define({
         yield* changed(sessionID)
         return
       }
+      yield* dispute(sessionID, "change", (list, run) => RiftDisputes.settle(list, run, Date.now()))
       // emit("done") during the run already wrote the final view to storage; re-emit so clients see it.
       yield* changed(sessionID)
     })
@@ -236,30 +274,29 @@ export const Plugin = define({
       .hook("execute.after", (event) => {
         if (event.tool !== "write" && event.tool !== "edit" && event.tool !== "patch") return Effect.void
         if (event.status !== "completed") return Effect.void
-        const files: string[] = []
-        if (event.tool === "write") {
-          const r = (event.result as { readonly resource?: string }).resource
-          if (typeof r === "string") files.push(r)
-        } else if (event.tool === "edit") {
-          const p = (event.input as { readonly path?: string }).path
-          if (typeof p === "string") files.push(p)
-        } else {
-          const a = (event.result as { readonly applied?: unknown })?.applied
-          if (Array.isArray(a))
-            for (const item of a) {
-              const r = (item as { readonly resource?: string }).resource
-              if (typeof r === "string") files.push(r)
-            }
-        }
-        const code = files.filter((file) => SOURCE.test(file) && !IGNORE.test(file))
-        if (code.length === 0) return Effect.void
+        const files = RiftScope.edited(event.tool, event.input, event.result)
+        const elsewhere = RiftScope.outside(root, files.filter((file) => !IGNORE.test(file)))
+        const warn =
+          elsewhere.length > 0
+            ? away(event.sessionID, elsewhere).pipe(
+                Effect.catchCause((cause) => Effect.logWarning("failed to record an edit outside the project", { cause })),
+                Effect.forkIn(scope, { startImmediately: true }),
+                Effect.asVoid,
+              )
+            : Effect.void
+        const code = files.filter((file) => SOURCE.test(file) && !IGNORE.test(file) && !elsewhere.includes(path.resolve(root, file)))
+        if (code.length === 0) return warn
         const entry = editSessions.get(event.sessionID) ?? { generation: 0, files: new Set<string>() }
         entry.generation++
         for (const file of code) entry.files.add(file)
         editSessions.set(event.sessionID, entry)
-        return verifyEdits(event.sessionID).pipe(
-          Effect.forkIn(scope, { startImmediately: true }),
-          Effect.asVoid,
+        return warn.pipe(
+          Effect.andThen(
+            verifyEdits(event.sessionID).pipe(
+              Effect.forkIn(scope, { startImmediately: true }),
+              Effect.asVoid,
+            ),
+          ),
         )
       })
       .pipe(Effect.orDie)
@@ -284,6 +321,7 @@ export const Plugin = define({
         })
         return
       }
+      yield* dispute(sessionID, "project", (list, run) => RiftDisputes.settle(list, run, Date.now()))
       const { report } = result
       const wake = fix && RiftVerdict.fixable(report.verdict)
       if (wake) {
@@ -292,6 +330,8 @@ export const Plugin = define({
         current.baseline = snapshot.tree
         current.verified = snapshot.tree
         current.round = 0
+        current.signatures = []
+        current.toldOutside = ""
         current.finished = false
       }
       yield* ctx.session.synthetic({
@@ -347,13 +387,59 @@ export const Plugin = define({
       })
     })
 
+    // Ships only what the verifier has passed, as it stands now. A commit, never a push; RIFT is named as a co-author
+    // only when an account's identity is configured (RIFT_COAUTHOR="Name <email>").
+    yield* ctx.command.transform((editor) => {
+      editor.add({
+        name: "ship",
+        description: "commit the verified work with RIFT as co-author: /ship <commit message>",
+        execute: (input) =>
+          Effect.gen(function* () {
+            const message = input.prompt.text.trim()
+            if (message.length === 0) return yield* Effect.fail(new Error("Usage: /ship <commit message>"))
+            const snapshot = yield* RiftWorkspace.snapshot(root)
+            if (!snapshot) return yield* Effect.fail(new Error("/ship needs a git repository."))
+            const now = yield* state(input.sessionID)
+            const run = [now?.change?.run, now?.project].filter((item): item is Rift.Run => item !== undefined).sort((a, b) => b.started - a.started)[0]
+            const gate = RiftShip.gate({ run, tree: snapshot.tree, disputes: now?.disputes ?? [] })
+            const notice = (text: string, description: string, verdict: string) =>
+              ctx.session.synthetic({ sessionID: input.sessionID, text, description, metadata: { source: "rift-verify", tier: "ship", verdict }, resume: false })
+            if (!gate.ready) {
+              yield* notice(`Not shipped: ${gate.reasons.join("; ")}. Run /verify, or let RIFT finish, and try again.`, "Ship: blocked", "unproven")
+              return
+            }
+            const full = RiftShip.withTrailer(message, RiftShip.identity(process.env.RIFT_COAUTHOR))
+            const committed = yield* Effect.try({
+              try: () => {
+                execFileSync("git", ["add", "-A"], { cwd: root, stdio: "pipe" })
+                execFileSync("git", ["commit", "-q", "-F", "-"], { cwd: root, input: full, stdio: ["pipe", "pipe", "pipe"] })
+                return execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: root, encoding: "utf8" }).trim()
+              },
+              catch: (error) => new Error(`git could not commit: ${String((error as { stderr?: Buffer }).stderr ?? error).trim()}`),
+            })
+            const credited = RiftShip.identity(process.env.RIFT_COAUTHOR)
+            yield* notice(
+              `Shipped ${committed}: the verifier passed this tree (receipt ${run!.phase === "done" ? run!.receipt.slice(0, 12) : ""}). Committed locally, not pushed.${credited ? ` ${credited.name} is credited as co-author.` : " No co-author identity is set (RIFT_COAUTHOR), so the commit has no RIFT credit."}`,
+              `Ship: committed ${committed}`,
+              "verified",
+            )
+          }),
+      })
+    })
+
     yield* ctx.session.hook("prompt", (event) =>
-      RiftWorkspace.snapshot(root).pipe(
+      // Edits elsewhere are reported per prompt: a new prompt starts with none.
+      ctx.storage.set(outsideKey(event.sessionID), json([])).pipe(
+        Effect.andThen(changed(event.sessionID)),
+        Effect.andThen(RiftWorkspace.snapshot(root)),
+      ).pipe(
         Effect.map((snapshot) => {
           const current = loop(event.sessionID)
           current.baseline = snapshot?.tree
           current.verified = undefined
           current.round = 0
+          current.signatures = []
+          current.toldOutside = ""
           current.finished = false
         }),
       ),
@@ -363,6 +449,25 @@ export const Plugin = define({
       const session = yield* ctx.session.get({ sessionID })
       if (session.parentID) return
       const current = loop(sessionID)
+      // Work done somewhere else was checked by nothing. Say so, once, instead of letting a quiet turn read as fine.
+      const away = Option.getOrElse(decodeOutside(yield* ctx.storage.get(outsideKey(sessionID))), () => [] as readonly string[])
+      const told = away.join("\n")
+      if (away.length > 0 && told !== current.toldOutside) {
+        current.toldOutside = told
+        yield* ctx.session.wait({ sessionID }).pipe(
+          Effect.andThen(
+            ctx.session.synthetic({
+              sessionID,
+              text: `RIFT verification covers ${root}. ${away.length === 1 ? "This file was" : "These files were"} edited outside it:\n${away.map((file) => `- ${file}`).join("\n")}\nNo check ran on them. Open RIFT in the folder where the work is, or run its checks and read the output yourself.`,
+              description: "Verify: edits outside the project were not checked",
+              metadata: { source: "rift-verify", tier: "change", verdict: "unproven" },
+              resume: false,
+            }),
+          ),
+          Effect.catchCause((cause) => Effect.logWarning("failed to post the outside-edit notice", { sessionID, cause })),
+          Effect.forkIn(scope),
+        )
+      }
       const now = yield* RiftWorkspace.snapshot(root)
       // Without a prompt in this process, the work is compared with HEAD.
       const baseline = current.baseline ?? now?.headTree
@@ -381,8 +486,13 @@ export const Plugin = define({
       // The checks can take minutes; verify the tree they actually saw, and let a later edit run them again.
       current.verified = now.tree
       if (result.kind === "empty") return
+      yield* dispute(session.id, "change", (list, run) => RiftDisputes.settle(list, run, Date.now()))
       const { report } = result
-      const decision = RiftVerdict.decide(report.verdict, current.round, MAX_ROUNDS)
+      const latest = Option.getOrUndefined(decodeStored(yield* ctx.storage.get(key(sessionID, "change"))))
+      if (latest && RiftVerdict.fixable(report.verdict)) current.signatures.push(RiftRepair.signature(latest.run))
+      const step = RiftRepair.next(RiftRepair.repeats(current.signatures))
+      // A fix that changed nothing twice is a guess that is not working: stop and say so, rather than spend the rounds.
+      const decision: RiftVerdict.Decision = step.type === "stop" ? { type: "give_up" } : RiftVerdict.decide(report.verdict, current.round, MAX_ROUNDS)
       const metadata = { source: "rift-verify", tier: "change", decision: decision.type, verdict: report.verdict }
       if (decision.type === "report") {
         if (report.verdict === "verified") return
@@ -395,16 +505,23 @@ export const Plugin = define({
         )
         return
       }
-      if (decision.type === "fix") current.round++
-      else current.finished = true
+      if (decision.type === "fix") {
+        current.round++
+        yield* dispute(session.id, "change", (list, run) => RiftDisputes.raise(list, run, current.round, Date.now()))
+      } else {
+        current.finished = true
+        yield* dispute(session.id, "change", (list) => RiftDisputes.giveUp(list, MAX_ROUNDS, Date.now()))
+      }
       const stored = Option.getOrUndefined(decodeStored(yield* ctx.storage.get(key(sessionID, "change"))))
       if (stored) yield* publish(sessionID, "change", stored.run)
       yield* ctx.session.synthetic({
         sessionID,
         text:
           decision.type === "fix"
-            ? `${report.text}\n\n${INSTRUCTION[report.verdict as keyof typeof INSTRUCTION]}`
-            : `${report.text}\n\nStopped after ${MAX_ROUNDS} fix rounds. Tell the user this work is not proven. Change nothing else.`,
+            ? `${report.text}\n\n${INSTRUCTION[report.verdict as keyof typeof INSTRUCTION]}${step.type === "stop" ? "" : ` ${step.text}`}`
+            : step.type === "stop"
+              ? `${report.text}\n\nThe last fixes left this failure exactly as it was. Stopped. Tell the user this work is not proven and what you tried. Change nothing else.`
+              : `${report.text}\n\nStopped after ${MAX_ROUNDS} fix rounds. Tell the user this work is not proven. Change nothing else.`,
         metadata,
       })
     })

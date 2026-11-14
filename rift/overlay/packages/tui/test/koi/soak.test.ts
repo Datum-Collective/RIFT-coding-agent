@@ -25,6 +25,14 @@ const cpu = () => {
   return (used.user + used.system) / 1000
 }
 
+/**
+ * Painting into a buffer costs the runtime about 20 MB the first time it is done 900 or so times (compiled
+ * code and the native-memory bindings, once), and nothing after: 900 more calls after that grow the heap by
+ * under 20 KB. The heap budgets below are for a leak, which grows on every frame, so the warm-up has to be
+ * past that one-off cost or they fail on a healthy build, and fail differently depending on what ran first.
+ */
+const WARM_FRAMES = 1500
+
 describe("a long idle", () => {
   test("the stream above the composer at 60 fps, typed into all the while: a frame is cheap and the heap does not grow", () => {
     const pond = createPond({ cols: 160, rows: 7, aspect: 2, palette, seed: 3 })
@@ -38,7 +46,7 @@ describe("a long idle", () => {
       pond.draw()
       return paintCells(buffer, pond.cells())
     }
-    for (let warm = 0; warm < 300; warm++) frame()
+    for (let warm = 0; warm < WARM_FRAMES; warm++) frame()
 
     Bun.gc(true)
     const before = process.memoryUsage().heapUsed
@@ -71,7 +79,7 @@ describe("a long idle", () => {
         scene.render()
         return paintDots(buffer, scene, { r: 0, g: 0, b: 0 })
       }
-      for (let index = 0; index < 60; index++) frame()
+      for (let index = 0; index < WARM_FRAMES; index++) frame()
 
       Bun.gc(true)
       const before = process.memoryUsage().heapUsed

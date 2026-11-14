@@ -32,6 +32,10 @@ export const Stage = Schema.Struct({
   /** Failing tests the change introduced, and ones the baseline fails too. */
   introduced: optional(Schema.Number),
   preexisting: optional(Schema.Number),
+  /** Why the verifier ran this check, in words the user can judge. */
+  why: optional(Schema.String),
+  /** What it printed: the end of the real output of the last attempt, never a summary written by a model. */
+  evidence: optional(Schema.String),
 })
 export type Stage = typeof Stage.Type
 
@@ -49,10 +53,30 @@ export const Run = Schema.Union([
     verdict: RunVerdict,
     headline: Schema.String,
     receipt: Schema.String,
+    /** What the run could not vouch for or found wrong beyond a failing check, such as code added with no test. */
+    notes: optional(Schema.Array(Schema.String)),
   }),
   Schema.Struct({ ...RunBase, phase: Schema.Literal("cancelled"), finished: Schema.Number, reason: Schema.String }),
 ])
 export type Run = typeof Run.Type
+
+/**
+ * Where the verifier and the agent disagreed. Opened when the agent ended its turn with a check failing; closed
+ * `resolved` only by a later run in which that same check passed, `unresolved` when the fix rounds ran out.
+ */
+export const Dispute = Schema.Struct({
+  /** The stage id, so a later run can be matched to the check that was disputed. */
+  stage: Schema.String,
+  check: Schema.String,
+  raised: Schema.Number,
+  round: Schema.Number,
+  claim: Schema.String,
+  evidence: optional(Schema.String),
+  status: Schema.Literals(["open", "resolved", "unresolved"]),
+  resolution: optional(Schema.String),
+  closed: optional(Schema.Number),
+})
+export type Dispute = typeof Dispute.Type
 
 /** Composed when read from each writer's own key, so the per-turn run, /verify and the graph never share one. */
 export const State = Schema.Struct({
@@ -61,6 +85,11 @@ export const State = Schema.Struct({
   /** The latest /verify. */
   project: optional(Run),
   graph: Schema.Array(Node),
+  disputes: optional(Schema.Array(Dispute)),
+  /** The folder every check ran in. */
+  root: optional(Schema.String),
+  /** Files the agent edited outside that folder, which no check covers. The newest few. */
+  outside: optional(Schema.Array(Schema.String)),
 })
 export type State = typeof State.Type
 

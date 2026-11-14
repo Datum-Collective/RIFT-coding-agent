@@ -194,3 +194,37 @@ test("docs-only edits are recognised", () => {
   expect(RiftStages.docsOnly(["a.md", "b.ts"])).toBe(false)
   expect(RiftStages.docsOnly([])).toBe(false)
 })
+
+describe("RiftStages when no lockfile is in view", () => {
+  // The user opened RIFT in a package of a Bun workspace: its bun.lock is a folder above, outside the project.
+  const member = {
+    name: "cli",
+    dependencies: { effect: "catalog:", "@scope/schema": "workspace:*" },
+    scripts: { typecheck: "bun check --no-script -b", test: "bun test" },
+  }
+
+  test("a Bun package is run with bun, never with npm", () => {
+    expect(commands(plan({ "package.json": json(member) })).some((command) => command.startsWith("npm"))).toBe(false)
+    expect(commands(plan({ "package.json": json(member) }))).toContain("bun run test")
+  })
+
+  test("the packageManager field decides, and wins over what the scripts mention", () => {
+    const pnpm = { dependencies: { a: "1" }, packageManager: "pnpm@9.0.0", scripts: { test: "bun test" } }
+    expect(commands(plan({ "package.json": json(pnpm) }))).toContain("pnpm run test")
+  })
+
+  test("a bunfig.toml says Bun even when the scripts do not", () => {
+    expect(commands(plan({ "package.json": json({ scripts: { test: "vitest" } }), "bunfig.toml": "" }))).toEqual(["bun run test"])
+  })
+
+  test("an npm project stays npm", () => {
+    expect(commands(plan({ "package.json": json({ scripts: { test: "jest" } }) }))).toEqual(["npm run test"])
+  })
+
+  test("dependencies npm cannot install are not installed with npm, and the report says why", () => {
+    const protocols = { dependencies: { effect: "catalog:" }, scripts: { test: "jest" } }
+    const result = plan({ "package.json": json(protocols) })
+    expect(commands(result).some((command) => command.startsWith("npm install"))).toBe(false)
+    expect(RiftStages.detect(tree({ "package.json": json(protocols) })).units[0]!.notes.join(" ")).toContain("catalog:")
+  })
+})
