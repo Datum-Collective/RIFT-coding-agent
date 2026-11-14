@@ -73,6 +73,9 @@ function project(testScript: string, permission: readonly { action: string; reso
     write("a.ts", "export const a = 1\n")
     const git = (...args: string[]) => execFileSync("git", args, { cwd: tmp.path })
     git("init", "-q")
+    // /ship commits with the repository's own identity; a CI runner has none.
+    git("config", "user.name", "t")
+    git("config", "user.email", "t@t")
     git("add", "-A")
     git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init")
     const sessions = yield* Session.Service
